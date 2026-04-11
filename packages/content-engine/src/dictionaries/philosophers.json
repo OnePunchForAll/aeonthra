@@ -1,0 +1,1027 @@
+[
+  {
+    "name": "Plato",
+    "tradition": "ancient philosophy",
+    "era": "1800"
+  },
+  {
+    "name": "Aristotle",
+    "tradition": "ethics",
+    "era": "1801"
+  },
+  {
+    "name": "Socrates",
+    "tradition": "political philosophy",
+    "era": "1802"
+  },
+  {
+    "name": "Epicurus",
+    "tradition": "existentialism",
+    "era": "1803"
+  },
+  {
+    "name": "Epictetus",
+    "tradition": "analytic philosophy",
+    "era": "1804"
+  },
+  {
+    "name": "Seneca",
+    "tradition": "critical theory",
+    "era": "1805"
+  },
+  {
+    "name": "Marcus Aurelius",
+    "tradition": "virtue ethics",
+    "era": "1806"
+  },
+  {
+    "name": "Plotinus",
+    "tradition": "utilitarianism",
+    "era": "1807"
+  },
+  {
+    "name": "Augustine",
+    "tradition": "deontology",
+    "era": "1808"
+  },
+  {
+    "name": "Anselm",
+    "tradition": "applied ethics",
+    "era": "1809"
+  },
+  {
+    "name": "Aquinas",
+    "tradition": "epistemology",
+    "era": "1810"
+  },
+  {
+    "name": "Duns Scotus",
+    "tradition": "philosophy of law",
+    "era": "1811"
+  },
+  {
+    "name": "Ockham",
+    "tradition": "technology ethics",
+    "era": "1812"
+  },
+  {
+    "name": "Hobbes",
+    "tradition": "ancient philosophy",
+    "era": "1813"
+  },
+  {
+    "name": "Locke",
+    "tradition": "ethics",
+    "era": "1814"
+  },
+  {
+    "name": "Berkeley",
+    "tradition": "political philosophy",
+    "era": "1815"
+  },
+  {
+    "name": "Hume",
+    "tradition": "existentialism",
+    "era": "1816"
+  },
+  {
+    "name": "Descartes",
+    "tradition": "analytic philosophy",
+    "era": "1817"
+  },
+  {
+    "name": "Spinoza",
+    "tradition": "critical theory",
+    "era": "1818"
+  },
+  {
+    "name": "Leibniz",
+    "tradition": "virtue ethics",
+    "era": "1819"
+  },
+  {
+    "name": "Rousseau",
+    "tradition": "utilitarianism",
+    "era": "1820"
+  },
+  {
+    "name": "Montesquieu",
+    "tradition": "deontology",
+    "era": "1821"
+  },
+  {
+    "name": "Bentham",
+    "tradition": "applied ethics",
+    "era": "1822"
+  },
+  {
+    "name": "Mill",
+    "tradition": "epistemology",
+    "era": "1823"
+  },
+  {
+    "name": "Sidgwick",
+    "tradition": "philosophy of law",
+    "era": "1824"
+  },
+  {
+    "name": "Moore",
+    "tradition": "technology ethics",
+    "era": "1825"
+  },
+  {
+    "name": "Kant",
+    "tradition": "ancient philosophy",
+    "era": "1826"
+  },
+  {
+    "name": "Hegel",
+    "tradition": "ethics",
+    "era": "1827"
+  },
+  {
+    "name": "Schopenhauer",
+    "tradition": "political philosophy",
+    "era": "1828"
+  },
+  {
+    "name": "Kierkegaard",
+    "tradition": "existentialism",
+    "era": "1829"
+  },
+  {
+    "name": "Nietzsche",
+    "tradition": "analytic philosophy",
+    "era": "1830"
+  },
+  {
+    "name": "Marx",
+    "tradition": "critical theory",
+    "era": "1831"
+  },
+  {
+    "name": "Engels",
+    "tradition": "virtue ethics",
+    "era": "1832"
+  },
+  {
+    "name": "Dewey",
+    "tradition": "utilitarianism",
+    "era": "1833"
+  },
+  {
+    "name": "James",
+    "tradition": "deontology",
+    "era": "1834"
+  },
+  {
+    "name": "Peirce",
+    "tradition": "applied ethics",
+    "era": "1835"
+  },
+  {
+    "name": "Russell",
+    "tradition": "epistemology",
+    "era": "1836"
+  },
+  {
+    "name": "Anscombe",
+    "tradition": "philosophy of law",
+    "era": "1837"
+  },
+  {
+    "name": "MacIntyre",
+    "tradition": "technology ethics",
+    "era": "1838"
+  },
+  {
+    "name": "Foot",
+    "tradition": "ancient philosophy",
+    "era": "1839"
+  },
+  {
+    "name": "Thomson",
+    "tradition": "ethics",
+    "era": "1840"
+  },
+  {
+    "name": "Singer",
+    "tradition": "political philosophy",
+    "era": "1841"
+  },
+  {
+    "name": "Regan",
+    "tradition": "existentialism",
+    "era": "1842"
+  },
+  {
+    "name": "Rawls",
+    "tradition": "analytic philosophy",
+    "era": "1843"
+  },
+  {
+    "name": "Nozick",
+    "tradition": "critical theory",
+    "era": "1844"
+  },
+  {
+    "name": "Nussbaum",
+    "tradition": "virtue ethics",
+    "era": "1845"
+  },
+  {
+    "name": "Sen",
+    "tradition": "utilitarianism",
+    "era": "1846"
+  },
+  {
+    "name": "Korsgaard",
+    "tradition": "deontology",
+    "era": "1847"
+  },
+  {
+    "name": "O'Neill",
+    "tradition": "applied ethics",
+    "era": "1848"
+  },
+  {
+    "name": "Ross",
+    "tradition": "epistemology",
+    "era": "1849"
+  },
+  {
+    "name": "Williams",
+    "tradition": "philosophy of law",
+    "era": "1850"
+  },
+  {
+    "name": "Nagel",
+    "tradition": "technology ethics",
+    "era": "1851"
+  },
+  {
+    "name": "Parfit",
+    "tradition": "ancient philosophy",
+    "era": "1852"
+  },
+  {
+    "name": "Murdoch",
+    "tradition": "ethics",
+    "era": "1853"
+  },
+  {
+    "name": "Beauvoir",
+    "tradition": "political philosophy",
+    "era": "1854"
+  },
+  {
+    "name": "Sartre",
+    "tradition": "existentialism",
+    "era": "1855"
+  },
+  {
+    "name": "Camus",
+    "tradition": "analytic philosophy",
+    "era": "1856"
+  },
+  {
+    "name": "Arendt",
+    "tradition": "critical theory",
+    "era": "1857"
+  },
+  {
+    "name": "Foucault",
+    "tradition": "virtue ethics",
+    "era": "1858"
+  },
+  {
+    "name": "Derrida",
+    "tradition": "utilitarianism",
+    "era": "1859"
+  },
+  {
+    "name": "Levinas",
+    "tradition": "deontology",
+    "era": "1860"
+  },
+  {
+    "name": "Husserl",
+    "tradition": "applied ethics",
+    "era": "1861"
+  },
+  {
+    "name": "Heidegger",
+    "tradition": "epistemology",
+    "era": "1862"
+  },
+  {
+    "name": "Merleau-Ponty",
+    "tradition": "philosophy of law",
+    "era": "1863"
+  },
+  {
+    "name": "Wittgenstein",
+    "tradition": "technology ethics",
+    "era": "1864"
+  },
+  {
+    "name": "Kripke",
+    "tradition": "ancient philosophy",
+    "era": "1865"
+  },
+  {
+    "name": "Putnam",
+    "tradition": "ethics",
+    "era": "1866"
+  },
+  {
+    "name": "Ayer",
+    "tradition": "political philosophy",
+    "era": "1867"
+  },
+  {
+    "name": "Carnap",
+    "tradition": "existentialism",
+    "era": "1868"
+  },
+  {
+    "name": "Quine",
+    "tradition": "analytic philosophy",
+    "era": "1869"
+  },
+  {
+    "name": "Davidson",
+    "tradition": "critical theory",
+    "era": "1870"
+  },
+  {
+    "name": "Kuhn",
+    "tradition": "virtue ethics",
+    "era": "1871"
+  },
+  {
+    "name": "Popper",
+    "tradition": "utilitarianism",
+    "era": "1872"
+  },
+  {
+    "name": "Feyerabend",
+    "tradition": "deontology",
+    "era": "1873"
+  },
+  {
+    "name": "Cartwright",
+    "tradition": "applied ethics",
+    "era": "1874"
+  },
+  {
+    "name": "Haack",
+    "tradition": "epistemology",
+    "era": "1875"
+  },
+  {
+    "name": "Zagzebski",
+    "tradition": "philosophy of law",
+    "era": "1876"
+  },
+  {
+    "name": "Plantinga",
+    "tradition": "technology ethics",
+    "era": "1877"
+  },
+  {
+    "name": "Wolf",
+    "tradition": "ancient philosophy",
+    "era": "1878"
+  },
+  {
+    "name": "Scanlon",
+    "tradition": "ethics",
+    "era": "1879"
+  },
+  {
+    "name": "Hare",
+    "tradition": "political philosophy",
+    "era": "1880"
+  },
+  {
+    "name": "Scheffler",
+    "tradition": "existentialism",
+    "era": "1881"
+  },
+  {
+    "name": "Kagan",
+    "tradition": "analytic philosophy",
+    "era": "1882"
+  },
+  {
+    "name": "Annas",
+    "tradition": "critical theory",
+    "era": "1883"
+  },
+  {
+    "name": "Hursthouse",
+    "tradition": "virtue ethics",
+    "era": "1884"
+  },
+  {
+    "name": "Sandel",
+    "tradition": "utilitarianism",
+    "era": "1885"
+  },
+  {
+    "name": "Taylor",
+    "tradition": "deontology",
+    "era": "1886"
+  },
+  {
+    "name": "Appiah",
+    "tradition": "applied ethics",
+    "era": "1887"
+  },
+  {
+    "name": "West",
+    "tradition": "epistemology",
+    "era": "1888"
+  },
+  {
+    "name": "hooks",
+    "tradition": "philosophy of law",
+    "era": "1889"
+  },
+  {
+    "name": "Collins",
+    "tradition": "technology ethics",
+    "era": "1890"
+  },
+  {
+    "name": "Fanon",
+    "tradition": "ancient philosophy",
+    "era": "1891"
+  },
+  {
+    "name": "Mbembe",
+    "tradition": "ethics",
+    "era": "1892"
+  },
+  {
+    "name": "Butler",
+    "tradition": "political philosophy",
+    "era": "1893"
+  },
+  {
+    "name": "Haslanger",
+    "tradition": "existentialism",
+    "era": "1894"
+  },
+  {
+    "name": "Fricker",
+    "tradition": "analytic philosophy",
+    "era": "1895"
+  },
+  {
+    "name": "Avicenna",
+    "tradition": "critical theory",
+    "era": "1896"
+  },
+  {
+    "name": "Averroes",
+    "tradition": "virtue ethics",
+    "era": "1897"
+  },
+  {
+    "name": "Maimonides",
+    "tradition": "utilitarianism",
+    "era": "1898"
+  },
+  {
+    "name": "Confucius",
+    "tradition": "deontology",
+    "era": "1899"
+  },
+  {
+    "name": "Mencius",
+    "tradition": "applied ethics",
+    "era": "1900"
+  },
+  {
+    "name": "Xunzi",
+    "tradition": "epistemology",
+    "era": "1901"
+  },
+  {
+    "name": "Laozi",
+    "tradition": "philosophy of law",
+    "era": "1902"
+  },
+  {
+    "name": "Zhuangzi",
+    "tradition": "technology ethics",
+    "era": "1903"
+  },
+  {
+    "name": "Mozi",
+    "tradition": "ancient philosophy",
+    "era": "1904"
+  },
+  {
+    "name": "Han Feizi",
+    "tradition": "ethics",
+    "era": "1905"
+  },
+  {
+    "name": "Nagarjuna",
+    "tradition": "political philosophy",
+    "era": "1906"
+  },
+  {
+    "name": "Shantideva",
+    "tradition": "existentialism",
+    "era": "1907"
+  },
+  {
+    "name": "Dogen",
+    "tradition": "analytic philosophy",
+    "era": "1908"
+  },
+  {
+    "name": "Shankara",
+    "tradition": "critical theory",
+    "era": "1909"
+  },
+  {
+    "name": "Ramanuja",
+    "tradition": "virtue ethics",
+    "era": "1910"
+  },
+  {
+    "name": "Tagore",
+    "tradition": "utilitarianism",
+    "era": "1911"
+  },
+  {
+    "name": "Krishnamurti",
+    "tradition": "deontology",
+    "era": "1912"
+  },
+  {
+    "name": "Weil",
+    "tradition": "applied ethics",
+    "era": "1913"
+  },
+  {
+    "name": "Wollstonecraft",
+    "tradition": "epistemology",
+    "era": "1914"
+  },
+  {
+    "name": "Addams",
+    "tradition": "philosophy of law",
+    "era": "1915"
+  },
+  {
+    "name": "Reid",
+    "tradition": "technology ethics",
+    "era": "1916"
+  },
+  {
+    "name": "Hutcheson",
+    "tradition": "ancient philosophy",
+    "era": "1917"
+  },
+  {
+    "name": "Butler",
+    "tradition": "ethics",
+    "era": "1918"
+  },
+  {
+    "name": "Emerson",
+    "tradition": "political philosophy",
+    "era": "1919"
+  },
+  {
+    "name": "Thoreau",
+    "tradition": "existentialism",
+    "era": "1920"
+  },
+  {
+    "name": "Rorty",
+    "tradition": "analytic philosophy",
+    "era": "1921"
+  },
+  {
+    "name": "Berlin",
+    "tradition": "critical theory",
+    "era": "1922"
+  },
+  {
+    "name": "Hart",
+    "tradition": "virtue ethics",
+    "era": "1923"
+  },
+  {
+    "name": "Dworkin",
+    "tradition": "utilitarianism",
+    "era": "1924"
+  },
+  {
+    "name": "Fuller",
+    "tradition": "deontology",
+    "era": "1925"
+  },
+  {
+    "name": "Habermas",
+    "tradition": "applied ethics",
+    "era": "1926"
+  },
+  {
+    "name": "Adorno",
+    "tradition": "epistemology",
+    "era": "1927"
+  },
+  {
+    "name": "Horkheimer",
+    "tradition": "philosophy of law",
+    "era": "1928"
+  },
+  {
+    "name": "Marcuse",
+    "tradition": "technology ethics",
+    "era": "1929"
+  },
+  {
+    "name": "Benjamin",
+    "tradition": "ancient philosophy",
+    "era": "1930"
+  },
+  {
+    "name": "Machiavelli",
+    "tradition": "ethics",
+    "era": "1931"
+  },
+  {
+    "name": "Pascal",
+    "tradition": "political philosophy",
+    "era": "1932"
+  },
+  {
+    "name": "Frankfurt",
+    "tradition": "existentialism",
+    "era": "1933"
+  },
+  {
+    "name": "Anderson",
+    "tradition": "analytic philosophy",
+    "era": "1934"
+  },
+  {
+    "name": "Gilligan",
+    "tradition": "critical theory",
+    "era": "1935"
+  },
+  {
+    "name": "Kohlberg",
+    "tradition": "virtue ethics",
+    "era": "1936"
+  },
+  {
+    "name": "Rawls",
+    "tradition": "utilitarianism",
+    "era": "1937"
+  },
+  {
+    "name": "Floridi",
+    "tradition": "deontology",
+    "era": "1938"
+  },
+  {
+    "name": "Bostrom",
+    "tradition": "applied ethics",
+    "era": "1939"
+  },
+  {
+    "name": "Vallor",
+    "tradition": "epistemology",
+    "era": "1940"
+  },
+  {
+    "name": "Nissenbaum",
+    "tradition": "philosophy of law",
+    "era": "1941"
+  },
+  {
+    "name": "Plato 2",
+    "tradition": "technology ethics",
+    "era": "1942"
+  },
+  {
+    "name": "Aristotle 2",
+    "tradition": "ancient philosophy",
+    "era": "1943"
+  },
+  {
+    "name": "Socrates 2",
+    "tradition": "ethics",
+    "era": "1944"
+  },
+  {
+    "name": "Epicurus 2",
+    "tradition": "political philosophy",
+    "era": "1945"
+  },
+  {
+    "name": "Epictetus 2",
+    "tradition": "existentialism",
+    "era": "1946"
+  },
+  {
+    "name": "Seneca 2",
+    "tradition": "analytic philosophy",
+    "era": "1947"
+  },
+  {
+    "name": "Marcus Aurelius 2",
+    "tradition": "critical theory",
+    "era": "1948"
+  },
+  {
+    "name": "Plotinus 2",
+    "tradition": "virtue ethics",
+    "era": "1949"
+  },
+  {
+    "name": "Augustine 2",
+    "tradition": "utilitarianism",
+    "era": "1950"
+  },
+  {
+    "name": "Anselm 2",
+    "tradition": "deontology",
+    "era": "1951"
+  },
+  {
+    "name": "Aquinas 2",
+    "tradition": "applied ethics",
+    "era": "1952"
+  },
+  {
+    "name": "Duns Scotus 2",
+    "tradition": "epistemology",
+    "era": "1953"
+  },
+  {
+    "name": "Ockham 2",
+    "tradition": "philosophy of law",
+    "era": "1954"
+  },
+  {
+    "name": "Hobbes 2",
+    "tradition": "technology ethics",
+    "era": "1955"
+  },
+  {
+    "name": "Locke 2",
+    "tradition": "ancient philosophy",
+    "era": "1956"
+  },
+  {
+    "name": "Berkeley 2",
+    "tradition": "ethics",
+    "era": "1957"
+  },
+  {
+    "name": "Hume 2",
+    "tradition": "political philosophy",
+    "era": "1958"
+  },
+  {
+    "name": "Descartes 2",
+    "tradition": "existentialism",
+    "era": "1959"
+  },
+  {
+    "name": "Spinoza 2",
+    "tradition": "analytic philosophy",
+    "era": "1960"
+  },
+  {
+    "name": "Leibniz 2",
+    "tradition": "critical theory",
+    "era": "1961"
+  },
+  {
+    "name": "Rousseau 2",
+    "tradition": "virtue ethics",
+    "era": "1962"
+  },
+  {
+    "name": "Montesquieu 2",
+    "tradition": "utilitarianism",
+    "era": "1963"
+  },
+  {
+    "name": "Bentham 2",
+    "tradition": "deontology",
+    "era": "1964"
+  },
+  {
+    "name": "Mill 2",
+    "tradition": "applied ethics",
+    "era": "1965"
+  },
+  {
+    "name": "Sidgwick 2",
+    "tradition": "epistemology",
+    "era": "1966"
+  },
+  {
+    "name": "Moore 2",
+    "tradition": "philosophy of law",
+    "era": "1967"
+  },
+  {
+    "name": "Kant 2",
+    "tradition": "technology ethics",
+    "era": "1968"
+  },
+  {
+    "name": "Hegel 2",
+    "tradition": "ancient philosophy",
+    "era": "1969"
+  },
+  {
+    "name": "Schopenhauer 2",
+    "tradition": "ethics",
+    "era": "1970"
+  },
+  {
+    "name": "Kierkegaard 2",
+    "tradition": "political philosophy",
+    "era": "1971"
+  },
+  {
+    "name": "Nietzsche 2",
+    "tradition": "existentialism",
+    "era": "1972"
+  },
+  {
+    "name": "Marx 2",
+    "tradition": "analytic philosophy",
+    "era": "1973"
+  },
+  {
+    "name": "Engels 2",
+    "tradition": "critical theory",
+    "era": "1974"
+  },
+  {
+    "name": "Dewey 2",
+    "tradition": "virtue ethics",
+    "era": "1975"
+  },
+  {
+    "name": "James 2",
+    "tradition": "utilitarianism",
+    "era": "1976"
+  },
+  {
+    "name": "Peirce 2",
+    "tradition": "deontology",
+    "era": "1977"
+  },
+  {
+    "name": "Russell 2",
+    "tradition": "applied ethics",
+    "era": "1978"
+  },
+  {
+    "name": "Anscombe 2",
+    "tradition": "epistemology",
+    "era": "1979"
+  },
+  {
+    "name": "MacIntyre 2",
+    "tradition": "philosophy of law",
+    "era": "1980"
+  },
+  {
+    "name": "Foot 2",
+    "tradition": "technology ethics",
+    "era": "1981"
+  },
+  {
+    "name": "Thomson 2",
+    "tradition": "ancient philosophy",
+    "era": "1982"
+  },
+  {
+    "name": "Singer 2",
+    "tradition": "ethics",
+    "era": "1983"
+  },
+  {
+    "name": "Regan 2",
+    "tradition": "political philosophy",
+    "era": "1984"
+  },
+  {
+    "name": "Rawls 2",
+    "tradition": "existentialism",
+    "era": "1985"
+  },
+  {
+    "name": "Nozick 2",
+    "tradition": "analytic philosophy",
+    "era": "1986"
+  },
+  {
+    "name": "Nussbaum 2",
+    "tradition": "critical theory",
+    "era": "1987"
+  },
+  {
+    "name": "Sen 2",
+    "tradition": "virtue ethics",
+    "era": "1988"
+  },
+  {
+    "name": "Korsgaard 2",
+    "tradition": "utilitarianism",
+    "era": "1989"
+  },
+  {
+    "name": "O'Neill 2",
+    "tradition": "deontology",
+    "era": "1990"
+  },
+  {
+    "name": "Ross 2",
+    "tradition": "applied ethics",
+    "era": "1991"
+  },
+  {
+    "name": "Williams 2",
+    "tradition": "epistemology",
+    "era": "1992"
+  },
+  {
+    "name": "Nagel 2",
+    "tradition": "philosophy of law",
+    "era": "1993"
+  },
+  {
+    "name": "Parfit 2",
+    "tradition": "technology ethics",
+    "era": "1994"
+  },
+  {
+    "name": "Murdoch 2",
+    "tradition": "ancient philosophy",
+    "era": "1995"
+  },
+  {
+    "name": "Beauvoir 2",
+    "tradition": "ethics",
+    "era": "1996"
+  },
+  {
+    "name": "Sartre 2",
+    "tradition": "political philosophy",
+    "era": "1997"
+  },
+  {
+    "name": "Camus 2",
+    "tradition": "existentialism",
+    "era": "1998"
+  },
+  {
+    "name": "Arendt 2",
+    "tradition": "analytic philosophy",
+    "era": "1999"
+  },
+  {
+    "name": "Foucault 2",
+    "tradition": "critical theory",
+    "era": "2000"
+  },
+  {
+    "name": "Derrida 2",
+    "tradition": "virtue ethics",
+    "era": "2001"
+  },
+  {
+    "name": "Levinas 2",
+    "tradition": "utilitarianism",
+    "era": "2002"
+  },
+  {
+    "name": "Husserl 2",
+    "tradition": "deontology",
+    "era": "2003"
+  },
+  {
+    "name": "Heidegger 2",
+    "tradition": "applied ethics",
+    "era": "2004"
+  }
+]

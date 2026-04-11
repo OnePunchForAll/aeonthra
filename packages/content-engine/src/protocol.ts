@@ -1,0 +1,82 @@
+import type { ConceptRelation, LearningConcept, MegaPhase } from "@learning/schema";
+import type { Block } from "./pipeline.ts";
+import { meaningfulWords, normalizePhrase, truncateReadable } from "./pipeline.ts";
+
+const phases = [
+  { id: "genesis", title: "Genesis", tagline: "Meet the signal before the jargon hardens.", summary: "Surface the topic, the repeated move, and the strongest evidence.", winCondition: "You can paraphrase the topic before reciting its label.", modes: [["signal-scan","Signal Scan",["signal-garden","thread-atlas"],"orient"],["concept-sense","Concept Sense",["signal-garden","mirror-harbor"],"orient"],["evidence-glimpse","Evidence Glimpse",["thread-atlas","signal-garden"],"orient"],["name-lock","Name Lock",["mirror-harbor","signal-garden"],"orient"]] },
+  { id: "forge", title: "Forge", tagline: "Turn recognition into command.", summary: "Compress, rebuild, and teach the idea in clean language.", winCondition: "You can explain the topic without copying the source.", modes: [["plain-language","Plain Language",["neural-forge","mirror-harbor"],"build"],["evidence-pin","Evidence Pin",["thread-atlas","signal-garden"],"build"],["contrast-check","Contrast Check",["thread-atlas","mirror-harbor"],"build"],["teach-forward","Teach Forward",["mirror-harbor","neural-forge"],"build"]] },
+  { id: "crucible", title: "Crucible", tagline: "Catch the elegant wrong version.", summary: "Stress the concept with distortions, collisions, and weak shortcuts.", winCondition: "You can hear the wrong version and repair it quickly.", modes: [["weak-reading","Weak Reading",["mirror-harbor","signal-garden"],"stress"],["collision","Collision",["neural-forge","thread-atlas"],"stress"],["lie-break","Lie Break",["signal-garden","mirror-harbor"],"stress"],["counterexample","Counterexample",["thread-atlas","neural-forge"],"stress"]] },
+  { id: "architect", title: "Architect", tagline: "Use the idea for real work.", summary: "Aim the concept at assignments, structure, and future responses.", winCondition: "You can use the topic inside course work, not just define it.", modes: [["assignment-link","Assignment Link",["thread-atlas","signal-garden"],"design"],["question-forge","Question Forge",["neural-forge","mirror-harbor"],"design"],["failure-map","Failure Map",["mirror-harbor","thread-atlas"],"design"],["transfer-bridge","Transfer Bridge",["thread-atlas","signal-garden"],"design"]] },
+  { id: "transcend", title: "Transcend", tagline: "Leave with a recovery path.", summary: "Turn the session into confidence cues, blindspot notes, and next moves.", winCondition: "You know what is sturdy, what is shaky, and how to recover fast.", modes: [["blindspot-scan","Blindspot Scan",["mirror-harbor","signal-garden"],"transcend"],["confidence-mark","Confidence Mark",["mirror-harbor","neural-forge"],"transcend"],["future-use","Future Use",["thread-atlas","signal-garden"],"transcend"],["recovery-note","Recovery Note",["neural-forge","mirror-harbor"],"transcend"]] }
+] as const;
+
+const pairFor = (concept: LearningConcept, concepts: LearningConcept[], relations: ConceptRelation[]) => {
+  const relation = relations.find((entry) => entry.fromId === concept.id || entry.toId === concept.id);
+  const otherId = relation ? relation.fromId === concept.id ? relation.toId : relation.fromId : concepts.find((candidate) => candidate.id !== concept.id)?.id;
+  return concepts.find((candidate) => candidate.id === otherId) ?? null;
+};
+
+const evidenceFor = (blocks: Block[], concept: LearningConcept, firstLabel = "Anchor fragment") => {
+  const conceptBlocks = blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId));
+  const chosen = (conceptBlocks.length ? conceptBlocks : blocks).slice(0, 2);
+  const tokens = meaningfulWords(concept.label);
+  if (!chosen.length) {
+    return [{
+      label: firstLabel,
+      excerpt: truncateReadable(concept.excerpt || concept.summary),
+      sourceItemId: concept.sourceItemIds[0] ?? concept.id
+    }];
+  }
+  return chosen.map((block, index) => ({
+    label: index === 0 ? firstLabel : "Support fragment",
+    excerpt: truncateReadable(block.sentences.find((sentence) => tokens.some((token) => normalizePhrase(sentence).includes(token))) ?? block.lead ?? block.summary),
+    sourceItemId: block.sourceItemId
+  }));
+};
+
+function modeCopy(modeKey: string, primary: LearningConcept, secondary: LearningConcept | null, evidenceLines: string[]) {
+  const pair = secondary ? `${primary.label} and ${secondary.label}` : primary.label;
+  const evidence = `Evidence:\n${evidenceLines.join("\n")}`;
+  const table: Record<string, { objective: string; setup: string; prompt: string; tasks: string[]; reflection: string; }> = {
+    "signal-scan": { objective: `Notice what ${primary.label} keeps doing across the source.`, setup: "Use the fragments to infer the topic before you reduce it to a term.", prompt: `What repeated move makes ${primary.label} feel important here?\n${evidence}`, tasks: ["Name the repeated move.", "Write one plain-language paraphrase.", "Point to the sentence that proves it."], reflection: `What felt understandable about ${primary.label} before you formalized it?` },
+    "concept-sense": { objective: `Turn ${primary.label} into a plain idea you can carry.`, setup: "Focus on what the source is trying to help the learner notice.", prompt: `If you had to explain ${primary.label} without jargon, what would you say?\n${evidence}`, tasks: ["Write the simple version.", "Keep one precise source phrase.", "Name what would be lost if you oversimplified it."], reflection: `What wording made ${primary.label} feel less intimidating?` },
+    "evidence-glimpse": { objective: `Bind ${primary.label} to the sentence that makes it real.`, setup: "Do not let the topic float free from the source.", prompt: `Which fragment makes ${primary.label} most teachable, and why?\n${evidence}`, tasks: ["Choose the best fragment.", "Underline the decisive wording.", "Say why the other fragment is weaker."], reflection: `Could you recover ${primary.label} tomorrow from that evidence alone?` },
+    "name-lock": { objective: `Lock the right label onto the idea without bloating it.`, setup: "Treat naming as the last step, not the first one.", prompt: `Why is ${primary.label} a better label here than a looser summary?\n${evidence}`, tasks: [`Define ${primary.label} in one sentence.`, "Name the strongest supporting line.", "State the confusion this label prevents."], reflection: `What changed once the topic had a cleaner name?` },
+    "plain-language": { objective: `Rebuild ${primary.label} in language you would actually use.`, setup: "Keep the meaning, lose the stiffness.", prompt: `Rewrite ${primary.label} as something you could say to a classmate who missed the reading.\n${evidence}`, tasks: ["Write the classmate version.", "Keep one exact anchor phrase.", "Add one sentence about why it matters."], reflection: `Which sentence made ${primary.label} feel teachable?` },
+    "evidence-pin": { objective: `Pin ${primary.label} to its strongest evidence line.`, setup: "The concept only counts if you can prove it belongs here.", prompt: `What exact wording makes ${primary.label} defensible?\n${evidence}`, tasks: ["Quote the best line.", "Explain why it earns the label.", "Name one tempting but weaker line."], reflection: `Where does your explanation still lean on memory instead of evidence?` },
+    "contrast-check": { objective: `Separate ${pair} so they stop bleeding together.`, setup: "Clarity often appears when two ideas must answer the same demand.", prompt: `What difference between ${pair} would matter on an assignment or quiz?\n${evidence}`, tasks: ["Write the sharpest difference.", "Give one sentence where it matters.", "Name the wrong shortcut to avoid."], reflection: "What false overlap would have fooled you earlier?" },
+    "teach-forward": { objective: `Teach ${primary.label} one clean step forward.`, setup: "Assume the other person is stressed and behind, not lazy.", prompt: `Teach ${primary.label} using the smallest amount of wording that still works.\n${evidence}`, tasks: ["Give the one-minute explanation.", "Add one concrete cue from the source.", "Write one rescue sentence."], reflection: `What part of teaching ${primary.label} still feels fragile?` },
+    "weak-reading": { objective: `Spot the weak reading of ${primary.label} before it hardens.`, setup: "The bad version is usually shorter, smoother, and more tempting.", prompt: `What shallow reading of ${primary.label} would sound plausible but break the source?\n${evidence}`, tasks: ["Write the tempting wrong version.", "Show where it breaks.", "Rewrite it correctly."], reflection: "Why would the weak reading be easy to believe?" },
+    "collision": { objective: `Force ${pair} into the same case and watch them split.`, setup: "Clarity appears when two ideas must answer the same demand.", prompt: `Where do ${pair} pull apart under pressure?\n${evidence}`, tasks: ["Write the first answer.", "Write the rival answer.", "Say what the split teaches you."], reflection: "Which side did your instincts trust first?" },
+    "lie-break": { objective: `Interrupt the sentence that would quietly corrupt ${primary.label}.`, setup: "Treat the misconception like a live hazard, not a trivia miss.", prompt: `What sentence about ${primary.label} would you stop immediately, and how would you repair it?\n${evidence}`, tasks: ["Write the bad sentence.", "Write the interruption line.", "Write the repaired version in fewer words."], reflection: "Can you now hear the wrong version faster than before?" },
+    "counterexample": { objective: `Build the smallest counterexample that protects ${primary.label}.`, setup: "Use contrast to reveal the boundary of the idea.", prompt: `What tiny case would expose a bad reading of ${pair}?\n${evidence}`, tasks: ["Describe the case.", "Say which weak reading it defeats.", "Name what survives after the correction."], reflection: `What edge of ${primary.label} became clearer after the counterexample?` },
+    "assignment-link": { objective: `Translate ${primary.label} into something usable for course work.`, setup: "Move from study language into response language.", prompt: `How would ${primary.label} show up in an assignment, discussion, or explanation task from this bundle?\n${evidence}`, tasks: ["Name one likely output.", "Write the move the student would need to make.", "Name the shallow version to avoid."], reflection: `What would real use of ${primary.label} look like instead of mere recall?` },
+    "question-forge": { objective: `Forge a question that proves whether ${pair} is really understood.`, setup: "The best question makes bluffing hard.", prompt: `What question would expose fake understanding of ${pair}?\n${evidence}`, tasks: ["Write the question.", "Name the key feature of a strong answer.", "Write the trap for shallow recall."], reflection: "What did writing the question reveal about your own grip?" },
+    "failure-map": { objective: `Map how a learner would fail ${primary.label} and what repair would help most.`, setup: "Study the failure path, not just the ideal path.", prompt: `If someone kept missing ${primary.label}, what would probably be going wrong?\n${evidence}`, tasks: ["Name the likely misunderstanding.", "Trace the habit causing it.", "Write the shortest useful repair."], reflection: `What confusion around ${primary.label} feels most likely for you?` },
+    "transfer-bridge": { objective: `Build a bridge from ${primary.label} to future use.`, setup: "Ask where the topic should travel next, not just where it came from.", prompt: `Where will ${pair} matter again after this session ends?\n${evidence}`, tasks: ["Name two future contexts.", "Choose one and describe the transfer move.", "Write the cue you want future-you to notice."], reflection: `What future task would prove you really own ${primary.label}?` },
+    "blindspot-scan": { objective: `Scan for the piece of ${primary.label} that still feels smoother than it should.`, setup: "Confidence is useful, but only if it stays honest.", prompt: `Where is the hidden weak spot in your understanding of ${primary.label}?\n${evidence}`, tasks: ["Name the weak spot.", "Name the sentence you still need.", "State the next small repair move."], reflection: "What false certainty did this topic create?" },
+    "confidence-mark": { objective: `Mark what you can truly do with ${pair}.`, setup: "Separate recognition, explanation, and transfer instead of blending them together.", prompt: `How strong is your command of ${pair} right now?\n${evidence}`, tasks: ["Rate recognition.", "Rate explanation.", "Rate transfer."], reflection: "Which part feels earned, and which part still feels borrowed?" },
+    "future-use": { objective: `Map where ${primary.label} should reappear later.`, setup: "Leave with future retrieval cues, not just present understanding.", prompt: `What later task, chapter, or discussion would make ${primary.label} reappear?\n${evidence}`, tasks: ["Name three likely return points.", "Pick the strongest one.", "Write the cue that should trigger recall."], reflection: `If ${primary.label} vanished later, what would that reveal?` },
+    "recovery-note": { objective: `Write the recovery note that future-you will actually trust about ${primary.label}.`, setup: "Assume forgetting is normal and prepare the return path now.", prompt: `What should future-you reread first to recover ${primary.label} quickly and correctly?\n${evidence}`, tasks: ["Write the first recovery sentence.", "Name the anchor fragment.", "Add one warning about the returning confusion."], reflection: "What kind of note would still help you a week from now?" }
+  };
+  return table[modeKey]!;
+}
+
+export function buildProtocol(blocks: Block[], concepts: LearningConcept[], relations: ConceptRelation[]): MegaPhase[] {
+  return phases.map((phase, phaseIndex) => ({
+    id: phase.id,
+    title: phase.title,
+    tagline: phase.tagline,
+    summary: phase.summary,
+    totalMinutes: 20,
+    winCondition: phase.winCondition,
+    conceptIds: Array.from(new Set(phase.modes.flatMap((_, modeIndex) => { const primary = concepts[(phaseIndex + modeIndex) % concepts.length]!, secondary = pairFor(primary, concepts, relations); return secondary ? [primary.id, secondary.id] : [primary.id]; }))),
+    submodes: phase.modes.map(([modeKey, title, engineIds, challengeLevel], modeIndex) => {
+      const primary = concepts[(phaseIndex + modeIndex) % concepts.length]!;
+      const secondary = pairFor(primary, concepts, relations);
+      const evidence = evidenceFor(blocks, primary);
+      const copy = modeCopy(modeKey, primary, secondary, evidence.map((fragment, index) => `${index + 1}. ${fragment.excerpt}`));
+      return { id: `${phase.id}-${modeKey}`, title, engineIds: [...engineIds], durationMinutes: 5, challengeLevel, objective: copy.objective, setup: copy.setup, prompt: copy.prompt, tasks: copy.tasks, reflection: copy.reflection, conceptIds: secondary ? [primary.id, secondary.id] : [primary.id], evidence };
+    })
+  }));
+}

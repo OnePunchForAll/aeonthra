@@ -1,0 +1,156 @@
+[
+  {
+    "id": "template-1",
+    "template": "{concept} is NOT {opposite}. Remember: {concept} = {summary}, {opposite} = {oppositeSummary}.",
+    "requires": [],
+    "quality": "high",
+    "tone": "emphatic"
+  },
+  {
+    "id": "template-2",
+    "template": "{acronym} stands for {concept}. Use each letter to recall {elements}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "structured"
+  },
+  {
+    "id": "template-3",
+    "template": "Imagine {philosopher} saying: \"{simplifiedCore}\" That is {concept}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "visual"
+  },
+  {
+    "id": "template-4",
+    "template": "Remember the number {count}: {concept} breaks into {count} parts - {elements}.",
+    "requires": [],
+    "quality": "high",
+    "tone": "accessible"
+  },
+  {
+    "id": "template-5",
+    "template": "Picture this: {scene}. That image anchors {concept}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "playful"
+  },
+  {
+    "id": "template-6",
+    "template": "{concept} is like {analogy}: {connection}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "minimal"
+  },
+  {
+    "id": "template-7",
+    "template": "{concept} rhymes with \"{rhymingWord}\" because {connection}.",
+    "requires": [],
+    "quality": "high",
+    "tone": "emphatic"
+  },
+  {
+    "id": "template-8",
+    "template": "Remember {letterWord}: each letter points back to a part of {concept}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "structured"
+  },
+  {
+    "id": "template-9",
+    "template": "On opposite day, {concept} would mean {oppositeDescription}. Since it does not, remember: {trueDescription}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "visual"
+  },
+  {
+    "id": "template-10",
+    "template": "{concept} in three words: {word1}, {word2}, {word3}.",
+    "requires": [],
+    "quality": "high",
+    "tone": "accessible"
+  },
+  {
+    "id": "template-11",
+    "template": "Put {concept} in a room with {objects}. Each object cues {elements}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "playful"
+  },
+  {
+    "id": "template-12",
+    "template": "If {concept} entered a debate, it would defend this line: {simplifiedCore}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "minimal"
+  },
+  {
+    "id": "template-13",
+    "template": "Checkpoint for {concept}: ask \"{question}\" and answer \"{answer}\".",
+    "requires": [],
+    "quality": "high",
+    "tone": "emphatic"
+  },
+  {
+    "id": "template-14",
+    "template": "Think of {concept} as a glowing sign that says \"{signal}\".",
+    "requires": [],
+    "quality": "medium",
+    "tone": "structured"
+  },
+  {
+    "id": "template-15",
+    "template": "{concept} bridges {leftSide} and {rightSide}. Cross the bridge by remembering {connection}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "visual"
+  },
+  {
+    "id": "template-16",
+    "template": "Stack {concept} like this: {elements}. The top of the stack is what matters most.",
+    "requires": [],
+    "quality": "high",
+    "tone": "accessible"
+  },
+  {
+    "id": "template-17",
+    "template": "Lock {concept} to this verb: {verb}. If you remember the action, the concept follows.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "playful"
+  },
+  {
+    "id": "template-18",
+    "template": "{concept} has the shape of {shape}. That shape reminds you that {connection}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "minimal"
+  },
+  {
+    "id": "template-19",
+    "template": "If you had to teach {concept} in one breath, you would say: {simplifiedCore}.",
+    "requires": [],
+    "quality": "high",
+    "tone": "emphatic"
+  },
+  {
+    "id": "template-20",
+    "template": "Pair {concept} with {partner}. One tells you {summary}; the other reminds you {connection}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "structured"
+  },
+  {
+    "id": "template-21",
+    "template": "Under pressure, remember this about {concept}: {simplifiedCore}.",
+    "requires": [],
+    "quality": "medium",
+    "tone": "visual"
+  },
+  {
+    "id": "template-22",
+    "template": "Anchor {concept} to {scene}. When the picture returns, so does the idea.",
+    "requires": [],
+    "quality": "high",
+    "tone": "accessible"
+  }
+]

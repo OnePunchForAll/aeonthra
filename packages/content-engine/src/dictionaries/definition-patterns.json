@@ -1,0 +1,398 @@
+[
+  {
+    "id": "pattern-1",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-2",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+are\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-3",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+refers\\s+to\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-4",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+means\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-5",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+describes\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-6",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+represents\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-7",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+focuses\\s+on\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-8",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+emphasizes\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-9",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+includes\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-10",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+involves\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-11",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+requires\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-12",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+consists\\s+of\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-13",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+states\\s+that\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-14",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+argues\\s+that\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-15",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+maintains\\s+that\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-16",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+proposes\\s+that\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-17",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+suggests\\s+that\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-18",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+can\\s+be\\s+understood\\s+as\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-19",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+best\\s+described\\s+as\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-20",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+functions\\s+as\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-21",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+works\\s+by\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-22",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+asks\\s+whether\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-23",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+treats\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-24",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+defines\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-25",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+calls\\s+for\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-26",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+centers\\s+on\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-27",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+points\\s+to\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-28",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+reveals\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-29",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+shows\\s+how\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-30",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+matters\\s+because\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-31",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+serves\\s+as\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-32",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+designed\\s+to\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-33",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+used\\s+to\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-34",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+helps\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-35",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+offers\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-36",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+provides\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-37",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+supports\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.77
+  },
+  {
+    "id": "pattern-38",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+allows\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.82
+  },
+  {
+    "id": "pattern-39",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+enables\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.87
+  },
+  {
+    "id": "pattern-40",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+about\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.92
+  },
+  {
+    "id": "pattern-41",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+is\\s+built\\s+around\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.72
+  },
+  {
+    "id": "pattern-42",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+judges\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.86
+  },
+  {
+    "id": "pattern-43",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+asks\\s+how\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.84
+  },
+  {
+    "id": "pattern-44",
+    "pattern": "([A-Z][A-Za-z][A-Za-z\\s'&-]{2,60}?)\\s+asks\\s+what\\s+([^.]+\\.)",
+    "captures": [
+      "concept",
+      "definition"
+    ],
+    "confidence": 0.84
+  }
+]

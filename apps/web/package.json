@@ -1,0 +1,16 @@
+{
+  "name": "@learning/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@learning/content-engine": "*",
+    "@learning/interactions-engine": "*",
+    "@learning/schema": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

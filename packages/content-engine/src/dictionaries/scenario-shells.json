@@ -1,0 +1,470 @@
+[
+  {
+    "id": "shell-1",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-2",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-3",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-4",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-5",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-6",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-7",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-8",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-9",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-10",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-11",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-12",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-13",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-14",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-15",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-16",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-17",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-18",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-19",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-20",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-21",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-22",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-23",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-24",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-25",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-26",
+    "domain": "education",
+    "template": "You are {role}. A {threat} is about to {harmAction} affecting {victimGroup}. You can {intervention} that would {saveAction} but {cost}. What do you do?",
+    "slots": [
+      "role",
+      "threat",
+      "harmAction",
+      "victimGroup",
+      "intervention",
+      "saveAction",
+      "cost"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-27",
+    "domain": "technology",
+    "template": "An AI company discovers their algorithm {problem}. Fixing it would {cost} but leaving it would {harm}. As {role}, what do you recommend?",
+    "slots": [
+      "problem",
+      "cost",
+      "harm",
+      "role"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-28",
+    "domain": "campus",
+    "template": "A learner can {optionA} or {optionB} before a major deadline, but each choice changes {consequence}. What should happen next?",
+    "slots": [
+      "optionA",
+      "optionB",
+      "consequence"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-29",
+    "domain": "ethics",
+    "template": "A campus office can extend {support} to one group first, but delaying the other would {harm}. How should priorities be set?",
+    "slots": [
+      "support",
+      "harm"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  },
+  {
+    "id": "shell-30",
+    "domain": "planning",
+    "template": "A library must decide whether to {policyA} or {policyB}. One increases access; the other protects quality. Which matters more?",
+    "slots": [
+      "policyA",
+      "policyB"
+    ],
+    "frameworks-applicable": [
+      "consequentialism",
+      "deontology",
+      "virtue-ethics"
+    ]
+  }
+]
