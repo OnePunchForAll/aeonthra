@@ -85,12 +85,15 @@ const CHROME_FRAGMENT_PATTERNS = [
   "marked done", "in progress", "points possible", "no due date", "allowed attempts",
   "discussion topic", "manage item", "assign to", "share to commons", "filter by",
   "search entries", "context_module", "wiki_page", "screenreader-only", "collapse all",
-  "links to an external site", "download transcript", "split screen", "unread", "subscribed"
+  "links to an external site", "download transcript", "split screen", "unread", "subscribed",
+  "you need to have javascript enabled in order to access this site",
+  "submission types", "question count", "this criterion is linked to a learning outcome",
+  "edit criterion description", "delete criterion row", "full marks", "criteria ratings pts"
 ] as const;
 const GENERIC_TOPIC_WORDS = new Set([
   "support", "services", "resources", "personnel", "processes", "policies", "module", "student",
   "success", "skills", "navigation", "section", "items", "classroom", "opportunity", "complete",
-  "review", "introduction", "transcript", "explore"
+  "review", "introduction", "transcript", "explore", "university", "information", "education", "activity", "submission"
 ]);
 const UPLOAD_UI_BLOCKLIST = new Set([
   "imported source",
@@ -116,25 +119,90 @@ const MNEMONIC_META_PHRASES = [
   "the definition"
 ] as const;
 const REFLECTION_PATTERNS = [
-  /\breflection activity\b/i,
-  /^topic:/i,
-  /discussion_topics/i,
-  /\/quizzes\//i,
   /\/external_tools\//i,
   /\bmy name\b/i,
   /\bmy goal\b/i,
   /\bi pursue\b/i,
   /\bi am excited\b/i,
-  /\bprepare now\b/i,
   /\bintroduce yourself\b/i,
+  /\btell us about yourself\b/i,
+  /\bshare (?:a little )?about yourself\b/i,
+  /\bwhere are you from\b/i,
+  /\bwhat do you hope to\b/i,
   /\bthis tool needs to be loaded in a new browser window\b/i,
   /\breload the page to access the tool again\b/i,
   /\bgrades for\b/i,
   /\bcourse syllabus\b/i
 ] as const;
+const GENERIC_ACTIVITY_PATTERNS = [
+  /^(module\s+\d+\s+)?reflection activity$/i,
+  /^(module\s+\d+\s+)?reflection question(?:s)?$/i,
+  /^(module\s+\d+\s+)?reflection journal$/i,
+  /^(module\s+\d+\s+)?reflection discussion forum$/i,
+  /^(module\s+\d+\s+)?discussion(?: topic| forum)?$/i,
+  /^(module\s+\d+\s+)?quiz$/i,
+  /^(module\s+\d+\s+)?assignment$/i,
+  /^(module\s+\d+\s+)?page$/i,
+  /^(module\s+\d+\s+)?topic$/i,
+  /^final grade$/i
+] as const;
+const SCAFFOLD_LABEL_PATTERNS = [
+  /^common confusion$/i,
+  /^common mistake$/i,
+  /^core idea$/i,
+  /^going deeper$/i,
+  /^initial post$/i,
+  /^key distinction$/i,
+  /^memory hook$/i,
+  /^real world application$/i
+] as const;
+const INSTRUCTIONAL_SIGNAL_PATTERNS = [
+  /\b(student success|orientation|navigation|online environment|support services|resources|skills for success)\b/i,
+  /\b(discussions?|quizzes?|journals?|reflection questions?|practice activities?)\b/i,
+  /\b(learn|review|practice|understand|strengthen|support|help|guide|introduce|complete)\b/i,
+  /\b(portal|classroom|tool|policy|process|personnel|resource|service|submission)\b/i
+] as const;
+
+const ENCODING_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/â€™/g, "'"],
+  [/â€˜/g, "'"],
+  [/â€œ/g, "\""],
+  [/â€\u009d/g, "\""],
+  [/â€"/g, "\""],
+  [/â€“/g, "-"],
+  [/â€”/g, "-"],
+  [/â€¦/g, "..."],
+  [/Â/g, " "]
+] as const;
+
+const stripEncodingArtifacts = (text: string): string => {
+  let next = text;
+  for (const [pattern, replacement] of ENCODING_REPLACEMENTS) {
+    next = next.replace(pattern, replacement);
+  }
+  return next
+    .replace(/\u00ad/g, "")
+    .replace(/\u200b/g, "")
+    .replace(/�+/g, " ");
+};
+
+const stripScaffoldLines = (text: string): string =>
+  text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !SCAFFOLD_LABEL_PATTERNS.some((pattern) => pattern.test(line)))
+    .join("\n");
 
 export const normalizeText = (text: string): string =>
-  text.replace(/\r/g, "\n").replace(/[ \t]+/g, " ").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  stripScaffoldLines(
+    stripEncodingArtifacts(text)
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+  )
+    .trim();
 
 const stripHtml = (value: string): string =>
   value
@@ -154,6 +222,7 @@ export const cleanPassage = (text: string): string =>
     .replace(/\bDownload Transcript\b/gi, " ")
     .replace(/\bWhat students have to say\b/gi, " ")
     .replace(/\bLearn more\b/gi, " ")
+    .replace(/\bYou need to have JavaScript enabled in order to access this site\.?\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -229,6 +298,13 @@ export const truncateReadable = (text: string, maxLength = 220): string => {
   return `${candidate.slice(0, wordBoundary > 40 ? wordBoundary : maxLength).trim()}...`;
 };
 
+const normalizeCandidateName = (text: string): string =>
+  cleanPassage(text)
+    .replace(/^(the|a|an)\s+/i, "")
+    .replace(/^module\s+\d+\s*-\s*/i, "")
+    .replace(/^module\s+\d+\s+/i, "")
+    .trim();
+
 const ensureSentence = (text: string): string => {
   const cleaned = truncateReadable(text);
   return /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
@@ -253,7 +329,11 @@ const blockedLabel = (label: string): boolean => {
   if (!normalized || startsWithArticle(label) || /^[\d\s\W]+$/.test(label)) return true;
   if (label.includes("|")) return true;
   if (UPLOAD_UI_BLOCKLIST.has(normalized)) return true;
+  if (SCAFFOLD_LABEL_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
+  if (/\bsyllabus\b/i.test(normalized)) return true;
   if (CANVAS_CHROME.has(normalized) || normalized.startsWith("reflection activity")) return true;
+  if (GENERIC_ACTIVITY_PATTERNS.some((pattern) => pattern.test(normalized))) return true;
+  if (/^week\s+\d+\s*[-–]/i.test(label)) return true;
   if (/^(while|if|why|how|and|because)\b/i.test(normalized)) return true;
   if (/\b(response|assignment|discussion|demo|bundle|primer)\b/i.test(normalized)) return true;
   if (/\bis the (framework|approach|view|theory) that\b/i.test(normalized)) return true;
@@ -267,6 +347,53 @@ const blockedLabel = (label: string): boolean => {
   return words.length <= 2 && genericCount === words.length;
 };
 
+const labelTokenSet = (label: string): Set<string> =>
+  new Set(
+    meaningfulWords(label)
+      .map(stem)
+      .filter(Boolean)
+  );
+
+const sharesPrimarySource = (
+  left: Pick<LearningConcept, "sourceItemIds">,
+  right: Pick<LearningConcept, "sourceItemIds">
+): boolean =>
+  left.sourceItemIds.some((sourceId) => right.sourceItemIds.includes(sourceId));
+
+const redundantSpecificityShadow = (
+  candidate: Pick<LearningConcept, "label" | "definition" | "sourceItemIds" | "keywords">,
+  other: Pick<LearningConcept, "label" | "definition" | "sourceItemIds" | "keywords">
+): boolean => {
+  const candidateTokens = [...labelTokenSet(candidate.label)];
+  const otherTokens = labelTokenSet(other.label);
+  if (
+    candidate.label === other.label
+    || candidateTokens.length === 0
+    || candidateTokens.length >= otherTokens.size
+  ) {
+    return false;
+  }
+  if (!candidateTokens.every((token) => otherTokens.has(token))) {
+    return false;
+  }
+  if (!sharesPrimarySource(candidate, other)) {
+    return false;
+  }
+  const definitionSimilarity = trigramJaccard(candidate.definition, other.definition);
+  const normalizedDefinitionMatch = normalizeLoose(candidate.definition) === normalizeLoose(other.definition);
+  if (!normalizedDefinitionMatch && definitionSimilarity < 0.45) {
+    return false;
+  }
+  const keywordOverlap = candidate.keywords.filter((keyword) => other.keywords.includes(keyword)).length;
+  return keywordOverlap >= Math.max(1, Math.min(candidate.keywords.length, 2));
+};
+
+const pruneRedundantConcepts = (concepts: LearningConcept[]): LearningConcept[] =>
+  concepts.filter((concept, index) => !concepts.some((other, otherIndex) =>
+    otherIndex !== index
+    && redundantSpecificityShadow(concept, other)
+  ));
+
 const isBundleEchoLabel = (label: string, bundle: CaptureBundle): boolean => {
   if (bundle.items.length !== 1) return false;
   if (bundle.source === "extension-capture") return false;
@@ -279,11 +406,13 @@ const isBundleEchoLabel = (label: string, bundle: CaptureBundle): boolean => {
 const skipForConceptMining = (item: CaptureItem): boolean => {
   const title = normalizePhrase(item.title);
   const url = item.canonicalUrl.toLowerCase();
-  const text = item.plainText.slice(0, 800);
+  const text = cleanPassage(item.plainText).slice(0, 1600);
+  const genericActivity = GENERIC_ACTIVITY_PATTERNS.some((pattern) => pattern.test(title));
+  const hasInstructionalSignals = INSTRUCTIONAL_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
+  const meaningfulCount = meaningfulWords(text).length;
   return REFLECTION_PATTERNS.some((pattern) => pattern.test(item.title) || pattern.test(url) || pattern.test(text))
-    || title.includes("reflection")
-    || title.startsWith("topic")
-    || title.includes("discussion")
+    || /^week\s+\d+\s*[-–]/i.test(item.title)
+    || (genericActivity && (!hasInstructionalSignals || meaningfulCount < 8))
     || title.includes("welcome to orientation")
     || title.includes("why this orientation")
     || title.includes("syllabus")
@@ -299,7 +428,7 @@ const isValidSentence = (text: string): boolean => {
   if (!normalized || normalized.length < 10 || normalized.length > 500) return false;
   if (!/^[A-Z"']/.test(normalized.trim())) return false;
   if (!/[.!?"]$/.test(normalized.trim())) return false;
-  if (!/\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|focuses|supports|helps|reveals|shows|provides|allows|guides)\b/i.test(normalized)) return false;
+  if (!/\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides)\b/i.test(normalized)) return false;
   if (lexicalDiversity(normalized) < 0.4) return false;
   if (contentWordCount(normalized) < 3) return false;
   return !/\{[^}]+\}/.test(normalized);
@@ -343,6 +472,7 @@ const scoreContentBlock = (block: Omit<ContentBlock, "score">): number => {
   let score = 0;
   const normalized = normalizePhrase(block.text);
   if (block.wordCount < 12) return 0;
+  if (normalized.includes("you need to have javascript enabled in order to access this site")) return 0;
   if (normalized.includes("this tool needs to be loaded in a new browser window")) return 0;
   if (normalized.includes("reload the page to access the tool again")) return 0;
   if (normalized.includes("load ") && normalized.includes(" in a new window")) return 0;
@@ -357,7 +487,7 @@ const scoreContentBlock = (block: Omit<ContentBlock, "score">): number => {
   if (block.emphasizedTerms.length > 0) score += 8;
   if (block.parentHeading && !blockedLabel(block.parentHeading)) score += Math.max(0, 10 - Math.floor(frequencyRank(block.parentHeading.split(/\s+/)[0] ?? "") / 3000));
   score += meaningfulWords(block.text).slice(0, 10).reduce((sum, token) => sum + (frequencyRank(token) > 4000 ? 0.6 : 0.2), 0);
-  if (/^(module|item|quiz|assignment|due|points?)\s/i.test(block.text)) return 0;
+  if (/^(module|item|quiz|assignment|due|points?|submission types?|question count|unlock)\s/i.test(block.text)) return 0;
   if (/^(click|tap|select|choose|go to|return to)\s/i.test(block.text)) return 0;
   if (/^(my\s+\w+|i\s+\w+)/i.test(block.text)) return 0;
   if (/\b(my name|my goal|i am excited|i pursue)\b/i.test(block.text)) return 0;
@@ -392,7 +522,60 @@ const extractStructuredBlocks = (item: CaptureItem): ContentBlock[] => {
   }
   const scored = blocks.map((block) => ({ ...block, score: scoreContentBlock(block) }));
   if (scored.some((block) => block.type !== "heading")) return scored;
-  return normalizeText(item.plainText).split(/\n{2,}/).map((entry) => cleanPassage(entry)).filter((entry) => entry.length >= 40).map((text, index) => ({ id: `${item.id}:fallback:${index}`, sourceItemId: item.id, sourceKind: item.kind, sourceTitle: item.title, type: "paragraph" as const, text, parentHeading: cleanTitle(item.title), position: index + 1, wordCount: text.split(/\s+/).filter(Boolean).length, sentenceCount: splitIntoSentences(text).length || 1, emphasizedTerms: [], score: 0 })).map((block) => ({ ...block, score: scoreContentBlock(block) }));
+  const fallbackLines = normalizeText(item.plainText)
+    .split(/\n+/)
+    .map((entry) => cleanPassage(entry))
+    .filter((entry) => entry.length >= 12);
+
+  let fallbackHeading = cleanTitle(item.title);
+  const fallbackBlocks: Array<Omit<ContentBlock, "score">> = [];
+
+  fallbackLines.forEach((text, index) => {
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    const sentenceCount = splitIntoSentences(text).length || (/[.!?]/.test(text) ? 1 : 0);
+    const looksLikeHeading = (
+      /^module\s+\d+\s*[-:]/i.test(text) ||
+      (/^[A-Z][^.!?]{8,84}$/.test(text) && wordCount <= 10 && sentenceCount === 0)
+    );
+
+    if (looksLikeHeading) {
+      fallbackHeading = cleanTitle(text);
+      fallbackBlocks.push({
+        id: `${item.id}:fallback-heading:${index}`,
+        sourceItemId: item.id,
+        sourceKind: item.kind,
+        sourceTitle: item.title,
+        type: "heading",
+        text: fallbackHeading,
+        parentHeading: null,
+        position: index + 1,
+        wordCount,
+        sentenceCount,
+        emphasizedTerms: []
+      });
+      return;
+    }
+
+    if (text.length < 28) {
+      return;
+    }
+
+    fallbackBlocks.push({
+      id: `${item.id}:fallback:${index}`,
+      sourceItemId: item.id,
+      sourceKind: item.kind,
+      sourceTitle: item.title,
+      type: "paragraph",
+      text,
+      parentHeading: fallbackHeading,
+      position: index + 1,
+      wordCount,
+      sentenceCount,
+      emphasizedTerms: []
+    });
+  });
+
+  return fallbackBlocks.map((block) => ({ ...block, score: scoreContentBlock(block) }));
 };
 
 const extractHeadingTopics = (item: CaptureItem): string[] => {
@@ -413,13 +596,41 @@ const leadSentence = (text: string): string => ensureSentence(splitIntoSentences
 const scoreTitle = (title: string): number => { if (blockedLabel(title)) return -20; const words = meaningfulWords(title); const genericCount = words.filter((word) => GENERIC_TOPIC_WORDS.has(word)).length; return (words.length >= 2 && words.length <= 6 ? 16 : 6) + (title.length >= 10 && title.length <= 48 ? 8 : 2) - genericCount * 3; };
 const categoryFor = (block: ContentBlock): string => titleCase(block.parentHeading || cleanTitle(block.sourceTitle) || titleCase(block.sourceKind.replace(/-/g, " ")));
 
+const titleCandidatesFromText = (item: CaptureItem): string[] =>
+  normalizeText(item.plainText)
+    .split(/\n+/)
+    .map((entry) => cleanTitle(entry))
+    .filter((entry) => entry.length >= 6 && entry.length <= 90)
+    .filter((entry) => !blockedLabel(entry));
+
+const preferredItemTitle = (item: CaptureItem, structured: ContentBlock[]): string => {
+  const candidatePool = [
+    cleanTitle(item.title),
+    ...item.headingTrail.map((entry) => cleanTitle(entry)),
+    ...structured
+      .filter((block) => block.type === "heading")
+      .map((block) => cleanTitle(block.text)),
+    ...titleCandidatesFromText(item)
+  ]
+    .map((entry) => titleCase(entry))
+    .filter(Boolean)
+    .filter((entry, index, array) => array.findIndex((candidate) => normalizePhrase(candidate) === normalizePhrase(entry)) === index);
+
+  const preferred = candidatePool
+    .map((candidate) => ({ candidate, score: scoreTitle(candidate) }))
+    .filter((entry) => entry.score > 8)
+    .sort((left, right) => right.score - left.score)[0]?.candidate;
+
+  return preferred ?? titleCase(cleanTitle(item.title));
+};
+
 const findTopicSentences = (block: ContentBlock): string[] => {
   const sentences = splitIntoSentences(block.text);
   return sentences.filter((sentence) => DEFINITION_PATTERNS.some((pattern) => { pattern.regex.lastIndex = 0; return pattern.regex.test(sentence); }) || /\b(involves|includes|requires|consists of|focuses on|emphasizes)\b/i.test(sentence) || /\b(unlike|in contrast to|whereas|while)\b/i.test(sentence) || /\b(for example|for instance|such as|e\.g\.)\b/i.test(sentence));
 };
 
 const nearestSentenceForTerm = (term: string, block: ContentBlock): string | null => splitIntoSentences(block.text).find((sentence) => normalizePhrase(sentence).includes(normalizePhrase(term))) ?? null;
-const nounPhrases = (text: string): string[] => [...text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/g), ...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]{4,})\b/g), ...text.matchAll(/\b([a-z]+(?:ism|ity|tion|ics|ology))\b/gi), ...text.matchAll(/\b([a-z]+(?:\s+[a-z]+){0,2}\s+(?:framework|principle|theory|approach|report|services|support|management|portal|tutoring|analysis|reasoning))\b/gi)].map((match) => titleCase(cleanPassage(match[1] ?? ""))).filter((phrase) => phrase.length >= 3 && phrase.length <= 60 && !blockedLabel(phrase));
+const nounPhrases = (text: string): string[] => [...text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/g), ...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]{4,})\b/g), ...text.matchAll(/\b([a-z]+(?:ism|ity|tion|ics|ology))\b/gi), ...text.matchAll(/\b([a-z]+(?:\s+[a-z]+){0,2}\s+(?:framework|principle|theory|approach|report|services|support|management|portal|tutoring|analysis|reasoning))\b/gi)].map((match) => titleCase(normalizeCandidateName(match[1] ?? ""))).filter((phrase) => phrase.length >= 3 && phrase.length <= 60 && !blockedLabel(phrase));
 
 const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
   const candidates: ConceptCandidate[] = [];
@@ -432,7 +643,7 @@ const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
       pattern.regex.lastIndex = 0;
       const match = pattern.regex.exec(sentence);
       if (!match) continue;
-      const name = titleCase(cleanPassage(match[1] ?? ""));
+      const name = titleCase(normalizeCandidateName(match[1] ?? ""));
       if (blockedLabel(name)) continue;
       candidates.push({ name, sourceItemId: block.sourceItemId, sourceSentence: sentence, definition: ensureSentence(sentence), detail: truncateReadable(block.text, 240), extractionMethod: "explicit-definition", confidence: 1, evidence: splitIntoSentences(block.text).filter((entry) => entry !== sentence).slice(0, 2), category: categoryFor(block), keywords: blockKeywords(block) });
     }
@@ -501,15 +712,20 @@ const mergeCandidates = (candidates: ConceptCandidate[]): Seed[] => {
 const conceptPrimer = (label: string, definition: string): string => {
   void label;
   const cleaned = cleanPassage(definition);
+  const completeSentence = splitIntoSentences(cleaned)[0];
+  if (completeSentence && isValidPrimer(completeSentence)) {
+    return ensureSentence(completeSentence);
+  }
   const afterCopula = cleaned.replace(
     /^[A-Z][\w\s&'-]+?\s+(?:is|are|refers to|means|describes|focuses on|explains|shows)\s+(?:the\s+|an?\s+)?/i,
     ""
   ).trim();
   const source = afterCopula && afterCopula !== cleaned ? afterCopula : cleaned;
-  const words = source.split(/\s+/).slice(0, 15);
-  const candidate = words.join(" ").replace(/^[a-z]/, (value) => value.toUpperCase());
-  const primer = candidate.endsWith(".") ? candidate : `${candidate}.`;
-  return isValidPrimer(primer) ? primer : "";
+  if (source && source.length <= 160) {
+    const primer = source.replace(/^[a-z]/, (value) => value.toUpperCase());
+    return isValidPrimer(primer) ? ensureSentence(primer) : "";
+  }
+  return "";
 };
 
 const conceptMnemonic = (label: string, keywords: string[], confusion: string | null, category: string): string => {
@@ -567,9 +783,9 @@ export function buildBlocks(bundle: CaptureBundle): Block[] {
     const structured = extractStructuredBlocks(item);
     const strongBlocks = structured.filter((block) => block.score >= BLOCK_THRESHOLD);
     const leadBlock = strongBlocks[0] ?? structured[0];
+    const clean = preferredItemTitle(item, structured);
     const headingTopics = Array.from(new Set(extractHeadingTopics(item).concat(strongBlocks.filter((block) => block.type === "heading" && !blockedLabel(block.text)).map((block) => titleCase(block.text))).concat(strongBlocks.flatMap((block) => topicCandidatesFromBlock(block).slice(0, 2).map((candidate) => titleCase(candidate.name)))))).slice(0, 6);
     const lead = leadBlock ? leadSentence(leadBlock.text) : truncateReadable(item.excerpt);
-    const clean = cleanTitle(item.title);
     const strongSentences = strongBlocks.flatMap((block) => splitIntoSentences(block.text)).filter(isValidSentence).slice(0, 8);
     const keywords = Array.from(new Set(strongBlocks.flatMap(blockKeywords))).slice(0, 10);
     return { sourceItemId: item.id, sourceTitle: item.title, sourceKind: item.kind, cleanTitle: clean, headingTopics, lead, summary: truncateReadable([clean, lead].filter(Boolean).join(". ")), sentences: strongSentences.length > 0 ? strongSentences : splitIntoSentences(item.plainText).slice(0, 4), score: strongBlocks.reduce((sum, block) => sum + block.score, 0) + scoreTitle(clean), titleScore: scoreTitle(clean), keywords };
@@ -601,8 +817,9 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
   });
   const titleSeeds: ConceptCandidate[] = contentItems
     .map((item) => {
-      const title = cleanTitle(item.title);
-      const lead = extractStructuredBlocks(item).find((block) => block.score >= BLOCK_THRESHOLD);
+      const structured = extractStructuredBlocks(item);
+      const title = preferredItemTitle(item, structured);
+      const lead = structured.find((block) => block.score >= BLOCK_THRESHOLD);
       return {
         name: title,
         sourceItemId: item.id,
@@ -705,7 +922,8 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     }));
   const mergedConcepts = [...validConcepts, ...supplements];
   const filteredConcepts = mergedConcepts.filter((concept) => !isBundleEchoLabel(concept.label, bundle));
-  return (filteredConcepts.length > 0 ? filteredConcepts : mergedConcepts).slice(0, MAX_CONCEPTS);
+  const deDuplicatedConcepts = pruneRedundantConcepts(filteredConcepts.length > 0 ? filteredConcepts : mergedConcepts);
+  return deDuplicatedConcepts.slice(0, MAX_CONCEPTS);
 }
 
 function antonymMatch(leftKeywords: string[], rightKeywords: string[]): boolean {
@@ -756,4 +974,3 @@ export function paraphraseWithSynonyms(sentence: string): string {
   }).join("");
   return cleanPassage(next);
 }
-

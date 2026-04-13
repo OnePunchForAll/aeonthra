@@ -8,12 +8,34 @@ import {
   type EngineProfile,
   type LearningBundle,
   type LearningConcept,
+  type LearningSynthesis,
   type MegaPhase,
   type NeuralForgePhase
 } from "@learning/schema";
 import type { AppProgress } from "./workspace";
 
 const DEMO_CAPTURED_AT = "2026-04-10T18:30:00.000Z";
+const DEMO_PIPELINE_STAGES = [
+  "normalize",
+  "segment",
+  "extract",
+  "rank",
+  "align",
+  "fuse",
+  "crystallize",
+  "generate",
+  "package-offline"
+] as const;
+const DEMO_INSTRUCTOR_VERBS = [
+  "analyze",
+  "compare",
+  "explain",
+  "apply",
+  "defend",
+  "discuss",
+  "identify",
+  "evaluate"
+] as const;
 
 type DemoConceptSeed = {
   label: string;
@@ -617,6 +639,211 @@ function buildDemoNeuralForge(concepts: LearningConcept[]): { totalMinutes: numb
   };
 }
 
+function normalizeDemoText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function excerptForSource(bundle: CaptureBundle, sourceItemId: string, fallback: string): string {
+  return bundle.items.find((item) => item.id === sourceItemId)?.excerpt ?? fallback;
+}
+
+function buildDemoSynthesis(
+  bundle: CaptureBundle,
+  concepts: LearningConcept[],
+  relations: ConceptRelation[]
+): LearningSynthesis {
+  const countKind = (kind: CaptureItem["kind"]) => bundle.items.filter((item) => item.kind === kind).length;
+  const stableConceptIds = concepts.map((concept) => concept.id);
+  const focusThemes = concepts.slice(0, 8).map((concept, index) => {
+    const verbs = DEMO_INSTRUCTOR_VERBS.filter((verb) =>
+      normalizeDemoText(`${concept.transferHook} ${concept.summary}`).includes(verb)
+    );
+
+    return {
+      id: concept.id,
+      label: concept.label,
+      score: 160 - index * 9,
+      summary: concept.transferHook || concept.summary,
+      verbs,
+      sourceFamily: "mixed" as const,
+      conceptIds: [concept.id, ...concept.relatedConceptIds].slice(0, 4),
+      sourceItemIds: concept.sourceItemIds,
+      assignmentItemIds: bundle.items
+        .filter((item) =>
+          ["assignment", "discussion", "quiz"].includes(item.kind)
+          && normalizeDemoText(item.plainText).includes(normalizeDemoText(concept.label))
+        )
+        .map((item) => item.id)
+        .slice(0, 3),
+      evidence: [{
+        label: "Source anchor",
+        excerpt: excerptForSource(bundle, concept.sourceItemIds[0] ?? concept.id, concept.definition),
+        sourceItemId: concept.sourceItemIds[0] ?? concept.id
+      }]
+    };
+  });
+
+  const assignmentMappings = bundle.items
+    .filter((item) => ["assignment", "discussion", "quiz", "page"].includes(item.kind))
+    .map((item) => {
+      const normalized = normalizeDemoText(`${item.title} ${item.plainText}`);
+      const conceptIds = concepts
+        .filter((concept) =>
+          normalized.includes(normalizeDemoText(concept.label))
+          || concept.keywords.some((keyword) => normalized.includes(normalizeDemoText(keyword)))
+        )
+        .slice(0, 4)
+        .map((concept) => concept.id);
+      const likelySkills = DEMO_INSTRUCTOR_VERBS.filter((verb) => normalized.includes(verb));
+      const mappedConcepts = concepts.filter((concept) => conceptIds.includes(concept.id));
+
+      return {
+        id: stableHash(`demo-assignment:${item.id}`),
+        sourceItemId: item.id,
+        title: item.title,
+        kind: item.kind,
+        url: item.canonicalUrl,
+        summary: item.excerpt,
+        likelySkills,
+        conceptIds,
+        focusThemeIds: focusThemes
+          .filter((theme) => theme.conceptIds.some((conceptId) => conceptIds.includes(conceptId)))
+          .map((theme) => theme.id)
+          .slice(0, 3),
+        likelyPitfalls: mappedConcepts
+          .map((concept) => concept.commonConfusion)
+          .filter(Boolean)
+          .slice(0, 3),
+        checklist: [
+          ...likelySkills.map((skill) => `${skill.charAt(0).toUpperCase()}${skill.slice(1)} the framework instead of summarizing it.`),
+          ...mappedConcepts.slice(0, 2).map((concept) => `Use ${concept.label} with one source-backed explanation.`)
+        ].slice(0, 4),
+        evidence: [{
+          label: "Assignment signal",
+          excerpt: item.excerpt,
+          sourceItemId: item.id
+        }]
+      };
+    });
+
+  const retentionModules = [
+    {
+      id: "concept-ladder",
+      kind: "concept-ladder" as const,
+      title: "Concept Ladder",
+      summary: "Climb the strongest demo concepts in a stable sequence.",
+      conceptIds: concepts.slice(0, 5).map((concept) => concept.id),
+      prompts: concepts.slice(0, 5).map((concept) => `Teach ${concept.label} in one clean sentence, then connect it to another framework.`),
+      evidence: concepts.slice(0, 2).map((concept) => ({
+        label: "Stable concept",
+        excerpt: concept.definition,
+        sourceItemId: concept.sourceItemIds[0] ?? concept.id
+      }))
+    },
+    {
+      id: "distinction-drill",
+      kind: "distinction-drill" as const,
+      title: "Distinction Drill",
+      summary: "Separate the frameworks that most easily blur together.",
+      conceptIds: relations.slice(0, 4).flatMap((relation) => [relation.fromId, relation.toId]),
+      prompts: relations.slice(0, 3).map((relation) => relation.label),
+      evidence: relations.slice(0, 2).map((relation) => ({
+        label: "Contrast edge",
+        excerpt: relation.label,
+        sourceItemId: relation.fromId
+      }))
+    },
+    {
+      id: "corruption-detection",
+      kind: "corruption-detection" as const,
+      title: "Corruption Detection",
+      summary: "Catch the polished wrong version before it hardens.",
+      conceptIds: concepts.slice(0, 4).map((concept) => concept.id),
+      prompts: concepts.slice(0, 4).map((concept) => `What mistake would distort ${concept.label}, and what repairs it?`),
+      evidence: concepts.slice(0, 2).map((concept) => ({
+        label: "Confusion risk",
+        excerpt: concept.commonConfusion || concept.summary,
+        sourceItemId: concept.sourceItemIds[0] ?? concept.id
+      }))
+    },
+    {
+      id: "teach-back",
+      kind: "teach-back" as const,
+      title: "Teach-Back Prompts",
+      summary: "Practice explaining the strongest course themes in plain language.",
+      conceptIds: focusThemes.slice(0, 4).flatMap((theme) => theme.conceptIds),
+      prompts: focusThemes.slice(0, 4).map((theme) => `Teach why ${theme.label} matters in this ethics course.`),
+      evidence: focusThemes.slice(0, 2).map((theme) => theme.evidence[0]!)
+    },
+    {
+      id: "transfer-scenario",
+      kind: "transfer-scenario" as const,
+      title: "Transfer Scenarios",
+      summary: "Aim the textbook frameworks directly at the course assignments and discussions.",
+      conceptIds: assignmentMappings.slice(0, 4).flatMap((mapping) => mapping.conceptIds),
+      prompts: assignmentMappings.slice(0, 4).map((mapping) => `Before ${mapping.title}, which concept would you reach for first and why?`),
+      evidence: assignmentMappings.slice(0, 2).map((mapping) => mapping.evidence[0]!)
+    },
+    {
+      id: "confidence-reflection",
+      kind: "confidence-reflection" as const,
+      title: "Confidence Reflection",
+      summary: "Separate recognition from real command before the next quiz or paper.",
+      conceptIds: concepts.slice(0, 5).map((concept) => concept.id),
+      prompts: concepts.slice(0, 5).map((concept) => `Could you define, contrast, and apply ${concept.label} without looking?`),
+      evidence: concepts.slice(0, 2).map((concept) => ({
+        label: "Confidence cue",
+        excerpt: concept.transferHook,
+        sourceItemId: concept.sourceItemIds[0] ?? concept.id
+      }))
+    },
+    {
+      id: "review-queue",
+      kind: "review-queue" as const,
+      title: "Review Queue",
+      summary: "Keep the later-course ideas warm between sessions.",
+      conceptIds: concepts.slice(-4).map((concept) => concept.id),
+      prompts: concepts.slice(-4).map((concept) => `Recover ${concept.label} from memory, then verify with one supporting sentence.`),
+      evidence: concepts.slice(-2).map((concept) => ({
+        label: "Review target",
+        excerpt: concept.summary,
+        sourceItemId: concept.sourceItemIds[0] ?? concept.id
+      }))
+    }
+  ];
+
+  const deterministicHash = stableHash(JSON.stringify({
+    stableConceptIds,
+    focusThemes: focusThemes.map((theme) => [theme.id, theme.score]),
+    assignmentMappings: assignmentMappings.map((mapping) => [mapping.sourceItemId, mapping.conceptIds]),
+    retentionModules: retentionModules.map((module) => [module.id, module.conceptIds])
+  }));
+
+  return {
+    pipelineStages: [...DEMO_PIPELINE_STAGES],
+    sourceCoverage: {
+      canvasItemCount: bundle.items.filter((item) => item.kind !== "document").length,
+      textbookItemCount: bundle.items.filter((item) => item.kind === "document").length,
+      assignmentCount: countKind("assignment"),
+      discussionCount: countKind("discussion"),
+      quizCount: countKind("quiz"),
+      pageCount: countKind("page"),
+      moduleCount: countKind("module"),
+      documentCount: countKind("document")
+    },
+    stableConceptIds,
+    likelyAssessedSkills: Array.from(new Set(assignmentMappings.flatMap((mapping) => mapping.likelySkills))).sort(),
+    focusThemes,
+    assignmentMappings,
+    retentionModules,
+    deterministicHash
+  };
+}
+
 export function createDemoBundle(): CaptureBundle {
   const items = buildDemoItems();
   return {
@@ -641,6 +868,7 @@ export function createDemoLearningBundle(bundle: CaptureBundle): LearningBundle 
   const protocol = buildDemoProtocol(concepts);
   const neuralForge = buildDemoNeuralForge(concepts);
   const topLabel = concepts[0]?.label ?? "Ethics";
+  const synthesis = buildDemoSynthesis(bundle, concepts, relations);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -650,7 +878,8 @@ export function createDemoLearningBundle(bundle: CaptureBundle): LearningBundle 
     relations,
     engineProfiles: buildEngineProfiles(topLabel),
     protocol,
-    neuralForge
+    neuralForge,
+    synthesis
   };
 }
 

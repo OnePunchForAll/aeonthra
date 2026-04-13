@@ -5,7 +5,22 @@ import { resolve } from "node:path";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  server: {
+    port: 5180,
+    strictPort: true,
+    fs: {
+      allow: [
+        resolve(__dirname, "../../"),     // worktree root: dreamy-mendel/
+        resolve(__dirname, "../../../../") // main repo root: Canvas Converter/ (packages symlink target)
+      ]
+    },
+    watch: {
+      usePolling: true,
+      interval: 300
+    }
+  },
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@learning/schema": resolve(__dirname, "../../packages/schema/src/index.ts"),
       "@learning/content-engine": resolve(__dirname, "../../packages/content-engine/src/index.ts"),

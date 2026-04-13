@@ -55,6 +55,23 @@ export const neuralForgePhaseIds = [
   "recover"
 ] as const;
 
+export const sourceFamilies = [
+  "canvas",
+  "textbook",
+  "mixed",
+  "other"
+] as const;
+
+export const retentionModuleKinds = [
+  "concept-ladder",
+  "distinction-drill",
+  "corruption-detection",
+  "teach-back",
+  "transfer-scenario",
+  "confidence-reflection",
+  "review-queue"
+] as const;
+
 export const challengeLevels = [
   "orient",
   "build",
@@ -222,6 +239,66 @@ export const NeuralForgeSchema = z.object({
   phases: z.array(NeuralForgePhaseSchema).length(5)
 });
 
+export const SourceCoverageSchema = z.object({
+  canvasItemCount: z.number().int().nonnegative(),
+  textbookItemCount: z.number().int().nonnegative(),
+  assignmentCount: z.number().int().nonnegative(),
+  discussionCount: z.number().int().nonnegative(),
+  quizCount: z.number().int().nonnegative(),
+  pageCount: z.number().int().nonnegative(),
+  moduleCount: z.number().int().nonnegative(),
+  documentCount: z.number().int().nonnegative()
+});
+
+export const FocusThemeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  score: z.number(),
+  summary: z.string(),
+  verbs: z.array(z.string()).default([]),
+  sourceFamily: z.enum(sourceFamilies),
+  conceptIds: z.array(z.string()).default([]),
+  sourceItemIds: z.array(z.string()).default([]),
+  assignmentItemIds: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceFragmentSchema).min(1)
+});
+
+export const AssignmentIntelligenceSchema = z.object({
+  id: z.string(),
+  sourceItemId: z.string(),
+  title: z.string(),
+  kind: z.enum(captureItemKinds),
+  url: z.string().url(),
+  summary: z.string(),
+  likelySkills: z.array(z.string()).default([]),
+  conceptIds: z.array(z.string()).default([]),
+  focusThemeIds: z.array(z.string()).default([]),
+  likelyPitfalls: z.array(z.string()).default([]),
+  checklist: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceFragmentSchema).min(1)
+});
+
+export const RetentionModuleSchema = z.object({
+  id: z.string(),
+  kind: z.enum(retentionModuleKinds),
+  title: z.string(),
+  summary: z.string(),
+  conceptIds: z.array(z.string()).default([]),
+  prompts: z.array(z.string()).min(1),
+  evidence: z.array(EvidenceFragmentSchema).min(1)
+});
+
+export const LearningSynthesisSchema = z.object({
+  pipelineStages: z.array(z.string()).min(1),
+  sourceCoverage: SourceCoverageSchema,
+  stableConceptIds: z.array(z.string()).min(1),
+  likelyAssessedSkills: z.array(z.string()).default([]),
+  focusThemes: z.array(FocusThemeSchema).default([]),
+  assignmentMappings: z.array(AssignmentIntelligenceSchema).default([]),
+  retentionModules: z.array(RetentionModuleSchema).default([]),
+  deterministicHash: z.string()
+});
+
 export const LearningBundleSchema = z.object({
   schemaVersion: z.string(),
   generatedAt: z.string(),
@@ -230,7 +307,27 @@ export const LearningBundleSchema = z.object({
   relations: z.array(ConceptRelationSchema).default([]),
   engineProfiles: z.array(EngineProfileSchema).length(4),
   protocol: LearningProtocolSchema,
-  neuralForge: NeuralForgeSchema
+  neuralForge: NeuralForgeSchema,
+  synthesis: LearningSynthesisSchema
+});
+
+export const AppProgressSchema = z.object({
+  conceptMastery: z.record(z.number()).default({}),
+  chapterCompletion: z.record(z.number()).default({}),
+  goalCompletion: z.record(z.boolean()).default({}),
+  practiceMode: z.boolean().default(false)
+});
+
+export const OfflineSiteBundleSchema = z.object({
+  schemaVersion: z.string(),
+  exportedAt: z.string(),
+  title: z.string(),
+  canvasBundle: CaptureBundleSchema,
+  textbookBundle: CaptureBundleSchema,
+  mergedBundle: CaptureBundleSchema,
+  learningBundle: LearningBundleSchema,
+  progress: AppProgressSchema,
+  deterministicHash: z.string()
 });
 
 export const CourseKnowledgePackSchema = CaptureBundleSchema;
@@ -284,15 +381,25 @@ export type LearningBundle = z.infer<typeof LearningBundleSchema>;
 export type LearningConcept = z.infer<typeof LearningConceptSchema>;
 export type ConceptRelation = z.infer<typeof ConceptRelationSchema>;
 export type EngineProfile = z.infer<typeof EngineProfileSchema>;
+export type EvidenceFragment = z.infer<typeof EvidenceFragmentSchema>;
 export type MegaPhase = z.infer<typeof MegaPhaseSchema>;
 export type PhaseSubmode = z.infer<typeof PhaseSubmodeSchema>;
 export type NeuralForge = z.infer<typeof NeuralForgeSchema>;
 export type NeuralForgePhase = z.infer<typeof NeuralForgePhaseSchema>;
 export type NeuralForgeCard = z.infer<typeof NeuralForgeCardSchema>;
+export type SourceCoverage = z.infer<typeof SourceCoverageSchema>;
+export type FocusTheme = z.infer<typeof FocusThemeSchema>;
+export type AssignmentIntelligence = z.infer<typeof AssignmentIntelligenceSchema>;
+export type RetentionModule = z.infer<typeof RetentionModuleSchema>;
+export type LearningSynthesis = z.infer<typeof LearningSynthesisSchema>;
+export type AppProgress = z.infer<typeof AppProgressSchema>;
+export type OfflineSiteBundle = z.infer<typeof OfflineSiteBundleSchema>;
 export type PhaseId = (typeof phaseIds)[number];
 export type EngineId = (typeof engineIds)[number];
 export type RelationType = (typeof relationTypes)[number];
 export type NeuralForgePhaseId = (typeof neuralForgePhaseIds)[number];
+export type SourceFamily = (typeof sourceFamilies)[number];
+export type RetentionModuleKind = (typeof retentionModuleKinds)[number];
 export type CourseKnowledgePack = z.infer<typeof CourseKnowledgePackSchema>;
 export type BridgeMessage = z.infer<typeof BridgeMessageSchema>;
 
@@ -388,10 +495,12 @@ export function mergeCaptureBundle(
   item: CaptureItem,
   resources: CaptureResource[]
 ): CaptureBundle {
-  const nextItems = bundle.items.some((existing) => existing.contentHash === item.contentHash)
-    ? bundle.items.map((existing) =>
-        existing.canonicalUrl === item.canonicalUrl ? item : existing
-      )
+  const existingIndex = bundle.items.findIndex((existing) =>
+    existing.id === item.id || existing.canonicalUrl === item.canonicalUrl
+  );
+
+  const nextItems = existingIndex >= 0
+    ? bundle.items.map((existing, index) => (index === existingIndex ? item : existing))
     : [...bundle.items, item];
 
   const nextResources = [...bundle.resources];

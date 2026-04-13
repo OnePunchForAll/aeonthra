@@ -4,7 +4,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../node_modules/zod/v3/external.js
+// ../../../../../node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -116,7 +116,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../node_modules/zod/v3/helpers/util.js
+// ../../../../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -250,7 +250,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../node_modules/zod/v3/ZodError.js
+// ../../../../../node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -368,7 +368,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../node_modules/zod/v3/locales/en.js
+// ../../../../../node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -471,7 +471,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../node_modules/zod/v3/errors.js
+// ../../../../../node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -480,7 +480,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../node_modules/zod/v3/helpers/parseUtil.js
+// ../../../../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -590,14 +590,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../node_modules/zod/v3/helpers/errorUtil.js
+// ../../../../../node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../node_modules/zod/v3/types.js
+// ../../../../../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -4094,6 +4094,21 @@ var neuralForgePhaseIds = [
   "transfer",
   "recover"
 ];
+var sourceFamilies = [
+  "canvas",
+  "textbook",
+  "mixed",
+  "other"
+];
+var retentionModuleKinds = [
+  "concept-ladder",
+  "distinction-drill",
+  "corruption-detection",
+  "teach-back",
+  "transfer-scenario",
+  "confidence-reflection",
+  "review-queue"
+];
 var challengeLevels = [
   "orient",
   "build",
@@ -4247,6 +4262,61 @@ var NeuralForgeSchema = external_exports.object({
   ambientPrimers: external_exports.array(external_exports.string()).min(1),
   phases: external_exports.array(NeuralForgePhaseSchema).length(5)
 });
+var SourceCoverageSchema = external_exports.object({
+  canvasItemCount: external_exports.number().int().nonnegative(),
+  textbookItemCount: external_exports.number().int().nonnegative(),
+  assignmentCount: external_exports.number().int().nonnegative(),
+  discussionCount: external_exports.number().int().nonnegative(),
+  quizCount: external_exports.number().int().nonnegative(),
+  pageCount: external_exports.number().int().nonnegative(),
+  moduleCount: external_exports.number().int().nonnegative(),
+  documentCount: external_exports.number().int().nonnegative()
+});
+var FocusThemeSchema = external_exports.object({
+  id: external_exports.string(),
+  label: external_exports.string(),
+  score: external_exports.number(),
+  summary: external_exports.string(),
+  verbs: external_exports.array(external_exports.string()).default([]),
+  sourceFamily: external_exports.enum(sourceFamilies),
+  conceptIds: external_exports.array(external_exports.string()).default([]),
+  sourceItemIds: external_exports.array(external_exports.string()).default([]),
+  assignmentItemIds: external_exports.array(external_exports.string()).default([]),
+  evidence: external_exports.array(EvidenceFragmentSchema).min(1)
+});
+var AssignmentIntelligenceSchema = external_exports.object({
+  id: external_exports.string(),
+  sourceItemId: external_exports.string(),
+  title: external_exports.string(),
+  kind: external_exports.enum(captureItemKinds),
+  url: external_exports.string().url(),
+  summary: external_exports.string(),
+  likelySkills: external_exports.array(external_exports.string()).default([]),
+  conceptIds: external_exports.array(external_exports.string()).default([]),
+  focusThemeIds: external_exports.array(external_exports.string()).default([]),
+  likelyPitfalls: external_exports.array(external_exports.string()).default([]),
+  checklist: external_exports.array(external_exports.string()).default([]),
+  evidence: external_exports.array(EvidenceFragmentSchema).min(1)
+});
+var RetentionModuleSchema = external_exports.object({
+  id: external_exports.string(),
+  kind: external_exports.enum(retentionModuleKinds),
+  title: external_exports.string(),
+  summary: external_exports.string(),
+  conceptIds: external_exports.array(external_exports.string()).default([]),
+  prompts: external_exports.array(external_exports.string()).min(1),
+  evidence: external_exports.array(EvidenceFragmentSchema).min(1)
+});
+var LearningSynthesisSchema = external_exports.object({
+  pipelineStages: external_exports.array(external_exports.string()).min(1),
+  sourceCoverage: SourceCoverageSchema,
+  stableConceptIds: external_exports.array(external_exports.string()).min(1),
+  likelyAssessedSkills: external_exports.array(external_exports.string()).default([]),
+  focusThemes: external_exports.array(FocusThemeSchema).default([]),
+  assignmentMappings: external_exports.array(AssignmentIntelligenceSchema).default([]),
+  retentionModules: external_exports.array(RetentionModuleSchema).default([]),
+  deterministicHash: external_exports.string()
+});
 var LearningBundleSchema = external_exports.object({
   schemaVersion: external_exports.string(),
   generatedAt: external_exports.string(),
@@ -4255,7 +4325,25 @@ var LearningBundleSchema = external_exports.object({
   relations: external_exports.array(ConceptRelationSchema).default([]),
   engineProfiles: external_exports.array(EngineProfileSchema).length(4),
   protocol: LearningProtocolSchema,
-  neuralForge: NeuralForgeSchema
+  neuralForge: NeuralForgeSchema,
+  synthesis: LearningSynthesisSchema
+});
+var AppProgressSchema = external_exports.object({
+  conceptMastery: external_exports.record(external_exports.number()).default({}),
+  chapterCompletion: external_exports.record(external_exports.number()).default({}),
+  goalCompletion: external_exports.record(external_exports.boolean()).default({}),
+  practiceMode: external_exports.boolean().default(false)
+});
+var OfflineSiteBundleSchema = external_exports.object({
+  schemaVersion: external_exports.string(),
+  exportedAt: external_exports.string(),
+  title: external_exports.string(),
+  canvasBundle: CaptureBundleSchema,
+  textbookBundle: CaptureBundleSchema,
+  mergedBundle: CaptureBundleSchema,
+  learningBundle: LearningBundleSchema,
+  progress: AppProgressSchema,
+  deterministicHash: external_exports.string()
 });
 var CourseKnowledgePackSchema = CaptureBundleSchema;
 var BridgeEnvelopeSchema = external_exports.object({
@@ -4327,9 +4415,10 @@ function createEmptyBundle(title = "Untitled capture") {
   };
 }
 function mergeCaptureBundle(bundle, item, resources) {
-  const nextItems = bundle.items.some((existing) => existing.contentHash === item.contentHash) ? bundle.items.map(
-    (existing) => existing.canonicalUrl === item.canonicalUrl ? item : existing
-  ) : [...bundle.items, item];
+  const existingIndex = bundle.items.findIndex(
+    (existing) => existing.id === item.id || existing.canonicalUrl === item.canonicalUrl
+  );
+  const nextItems = existingIndex >= 0 ? bundle.items.map((existing, index) => index === existingIndex ? item : existing) : [...bundle.items, item];
   const nextResources = [...bundle.resources];
   for (const resource of resources) {
     if (!nextResources.some((existing) => existing.id === resource.id)) {

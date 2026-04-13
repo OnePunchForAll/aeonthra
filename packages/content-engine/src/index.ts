@@ -1,8 +1,11 @@
 import { LearningBundleSchema, type EngineProfile, type CaptureBundle, type LearningBundle } from "@learning/schema";
+export { assessSourceQuality, qualityBannerText } from "./source-quality.ts";
+export type { SourceQualityReport, SynthesisMode } from "./source-quality.ts";
 import { SCHEMA_VERSION } from "@learning/schema";
 import { buildBlocks, buildConcepts, buildRelations } from "./pipeline.ts";
 import { buildProtocol } from "./protocol.ts";
 import { buildNeuralForge } from "./neural-forge.ts";
+import { buildSynthesisReport, crystallizeConceptIds } from "./synthesis.ts";
 
 function buildEngineProfiles(topLabel: string): EngineProfile[] {
   return [
@@ -14,32 +17,40 @@ function buildEngineProfiles(topLabel: string): EngineProfile[] {
 }
 
 export type LearningBuildStage =
-  | "cleaning-source"
-  | "building-blocks"
-  | "mining-concepts"
-  | "mapping-relations"
-  | "forging-protocol"
+  | "normalizing-sources"
+  | "segmenting-evidence"
+  | "extracting-candidates"
+  | "ranking-instructor-focus"
+  | "fusing-sources"
+  | "crystallizing-knowledge"
+  | "generating-learning-artifacts"
   | "finalizing-bundle";
 
 export function buildLearningBundleWithProgress(
   bundle: CaptureBundle,
   onProgress?: (stage: LearningBuildStage, progress: number) => void
 ): LearningBundle {
-  onProgress?.("cleaning-source", 4);
+  onProgress?.("normalizing-sources", 4);
   const blocks = buildBlocks(bundle);
-  onProgress?.("building-blocks", 18);
-  const concepts = buildConcepts(bundle, blocks);
-  onProgress?.("mining-concepts", 46);
+  onProgress?.("segmenting-evidence", 16);
+  const candidateConcepts = buildConcepts(bundle, blocks);
+  onProgress?.("extracting-candidates", 34);
+  const candidateRelations = buildRelations(candidateConcepts);
+  onProgress?.("ranking-instructor-focus", 50);
+  const stableConceptIds = crystallizeConceptIds(bundle, candidateConcepts, candidateRelations);
+  onProgress?.("fusing-sources", 64);
+  const concepts = candidateConcepts.filter((concept) => stableConceptIds.includes(concept.id));
   const relations = buildRelations(concepts);
-  onProgress?.("mapping-relations", 62);
+  onProgress?.("crystallizing-knowledge", 78);
+  const synthesis = buildSynthesisReport(bundle, blocks, concepts, relations, stableConceptIds);
+  onProgress?.("generating-learning-artifacts", 88);
   const protocol = buildProtocol(blocks, concepts, relations);
-  onProgress?.("forging-protocol", 82);
   const neuralForge = buildNeuralForge(blocks, concepts, relations);
   onProgress?.("finalizing-bundle", 96);
   const topLabel = concepts[0]?.label ?? "the source thread";
   const learningBundle = LearningBundleSchema.parse({
     schemaVersion: SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt: bundle.capturedAt,
     sourceBundleTitle: bundle.title,
     concepts,
     relations,
@@ -48,7 +59,8 @@ export function buildLearningBundleWithProgress(
       totalMinutes: protocol.reduce((sum, phase) => sum + phase.totalMinutes, 0),
       phases: protocol
     },
-    neuralForge
+    neuralForge,
+    synthesis
   });
   onProgress?.("finalizing-bundle", 100);
   return learningBundle;
