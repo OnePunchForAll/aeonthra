@@ -319,7 +319,6 @@ function conceptPageText(seed: DemoConceptSeed): string {
     .flatMap((entry) => entry.passages.slice(0, 2).map((passage) => `${entry.thinker} wrote, "${passage.text}" on p. ${passage.page}.`));
 
   return [
-    `${seed.label} is introduced in Module ${seed.module} as a major ethical framework students must be able to define, compare, and apply.`,
     seed.definition,
     seed.detail,
     seed.commonConfusion,

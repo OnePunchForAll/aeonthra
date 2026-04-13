@@ -695,7 +695,13 @@ const mergeCandidates = (candidates: ConceptCandidate[]): Seed[] => {
   for (const candidate of candidates) {
     const normalized = normalizePhrase(candidate.name);
     if (!normalized || blockedLabel(candidate.name)) continue;
-    const aliasKey = normalized.replace(/\b(kant'?s|john|jeremy|student|online)\b/g, "").trim() || normalized;
+    const aliasKey = normalized
+      .replace(/\b(kant'?s|john|jeremy|student|online)\b/g, "")
+      // Collapse "Doctrine/Theory/Principle of the X" → "X" to merge variants
+      // e.g. "Doctrine Of The Mean" and "Mean" should deduplicate
+      .replace(/\b(doctrine|theory|principle|concept)\s+of\s+the\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim() || normalized;
     const existing = seeds.get(aliasKey);
     const score = candidate.confidence * 100 + candidate.evidence.length * 10 + candidate.keywords.length * 2 + (candidate.extractionMethod === "explicit-definition" ? 30 : 0) + (candidate.extractionMethod === "bold-term" ? 20 : 0);
     if (!existing) { seeds.set(aliasKey, { name: candidate.name, score, category: candidate.category, sourceItemIds: new Set([candidate.sourceItemId]), definition: candidate.definition, detail: candidate.detail, evidence: candidate.evidence.filter(isValidSentence), keywords: new Set(candidate.keywords) }); continue; }
@@ -728,10 +734,37 @@ const conceptPrimer = (label: string, definition: string): string => {
   return "";
 };
 
+// Words that should never appear in a mnemonic — internal tokens, generic scaffolds,
+// and single-character noise that make hooks meaningless or leak implementation details.
+const MNEMONIC_BLOCKED_TOKENS = new Set([
+  "aeonthra", "demo", "module", "chapter", "course", "source", "content",
+  "canvas", "textbook", "student", "students", "context", "framework",
+  "activity", "discussion", "assignment", "quiz", "page", "item", "section",
+  "overview", "introduction", "lecture", "matters", "shows", "explain",
+  "learning", "canvas", "bundle", "import", "export", "local", "system"
+]);
+
 const conceptMnemonic = (label: string, keywords: string[], confusion: string | null, category: string): string => {
-  const [first, second, third] = keywords;
   void category;
+  // Strip internal tokens, possessives, label words, and short/weak keywords.
+  // Require ≥ 8 chars so single-syllable generic words (moral, rule, good, evil,
+  // states, virtue, excess, middle) and 2–6 letter noise never appear in templates.
+  const labelTokens = new Set(label.toLowerCase().split(/\s+/));
+  const clean = keywords.filter(
+    (k) => k.length >= 8
+      && !MNEMONIC_BLOCKED_TOKENS.has(k.toLowerCase())
+      && !labelTokens.has(k.toLowerCase())
+      && !k.endsWith("'s")   // no possessives (e.g. "aristotle's")
+      && !k.endsWith("'")
+      && !/^\d/.test(k)      // no numeric tokens
+  );
+  // Need at least 2 substantive keywords for any template — otherwise return ""
+  // so conceptHookText falls back to transferHook ("Use X to explain...")
+  if (clean.length < 2) return "";
+  const [first, second, third] = clean;
   const candidates = [
+    // Only use the two-lanes template when we have at least two substantive keywords
+    // and a real contrast concept — avoids "handles aristotle's" type failures
     confusion && first && second
       ? `Picture two lanes: ${label} handles ${first}, while ${confusion} handles ${second}. Stay in the ${label.toLowerCase()} lane.`
       : "",
@@ -766,6 +799,10 @@ const sanitizeConceptMnemonic = (mnemonic: string): string => {
     return "";
   }
   if (!/picture|imagine|think of|remember|like|not|rhymes|glowing|meter|guitar|string|matrix|compass/i.test(mnemonic)) {
+    return "";
+  }
+  // Reject mnemonics that still contain internal/generic implementation tokens
+  if (/\b(aeonthra|demo|module|chapter|course|source|textbook|student|canvas|bundle|import|export)\b/i.test(mnemonic)) {
     return "";
   }
   return mnemonic;

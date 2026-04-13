@@ -2,6 +2,45 @@
 
 ## 2026-04-13
 
+### Wave-3 UI/UX coherence audit fixes
+
+**Files changed**: `packages/content-engine/src/pipeline.ts`, `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/lib/forge-session.ts`, `apps/web/src/lib/demo.ts`, `apps/web/src/AeonthraShell.tsx`
+
+**Memory hook cleanup (pipeline.ts)**
+- `conceptMnemonic`: Raised keyword length threshold to `>= 8`, blocked possessives (`k.endsWith("'s")`), blocked internal tokens (`aeonthra`, `demo`, `module`, etc.), returns `""` if fewer than 2 qualifying keywords to force fallback to `transferHook`.
+- `sanitizeConceptMnemonic`: Rejects mnemonics containing internal tokens via `/\b(aeonthra|demo|module|chapter|course|source|textbook|student|canvas|bundle|import|export)\b/i`.
+- `mergeCandidates` aliasKey: Collapses "Doctrine/Theory/Principle/Concept of the X" → "X" with `.replace(/\b(doctrine|theory|principle|concept)\s+of\s+the\b/gi, "")`.
+
+**Oracle philosopher extraction (shell-mapper.ts)**
+- Expanded `NON_PERSON_TOKENS` with 18 philosophical/ethical terms (Virtue, Trolley, Moral, Categorical, Felicific, Doctrine, Problem, Machine, Ethics, Theory, etc.).
+- `mapKeyFigures`: Now scans only `bundle.items` (not concept definitions). Cross-checks extracted names against `conceptLabelSet` and `conceptLabelWords` to block concept labels from being treated as philosophers.
+
+**Atlas module descriptions (shell-mapper.ts)**
+- Added `sanitizeModuleDesc()`: Strips "is introduced in Module N", "students must be able to", and "a major ethical framework" boilerplate sentences from chapter summaries before use as module descriptions.
+- Applied to `desc` field in `mapModulesFromChapters`.
+
+**KEY DISTINCTION circular text (shell-mapper.ts)**
+- Added `isNegationOnlyText()`: Detects and rejects "X is not Y. Keep their main moves separate." scaffold patterns.
+- `conceptDistinctionText`: Moved `relationDistinction` before `commonConfusion` in candidate list; added `isNegationOnlyText` filter — concept falls through to `summary` or `transferHook` instead of showing negation-only text.
+
+**Distinction (Gym) trap/twins/enemy text (shell-mapper.ts)**
+- `mapDistinctions` trap: Replaced circular `a.commonConfusion.slice(0,60)` with `"Test yourself: state each one's core move without borrowing the other's language."`.
+- twins: Replaced with `"Both ${a.label} and ${b.label} address related ethical territory, which makes them easy to swap in explanations."`.
+- enemy: Uses `rel.label` directly (already a complete contrast statement like "Utilitarianism stands in contrast to Deontology.").
+
+**Prove distractor options (forge-session.ts)**
+- `classificationOptions`: Changed distractor from broken `firstSentence("${related.label} belongs where the source is dealing with ${related.summary.toLowerCase()}")` to `truncate(related.definition || related.summary, 140)`.
+
+**Apply fallback scenarios (forge-session.ts)**
+- `buildGenesisDilemmas`: Replaced concept-definition-as-scenario fallback with `FALLBACK_SCENARIOS` array of 5 real ethical dilemmas (academic dishonesty, research integrity, colleague vs family, worker rights, leaked exam).
+
+**Stats display (AeonthraShell.tsx)**
+- Fixed "0/0 Correct" showing at session start: now displays "—" when `totalAnswered === 0`.
+
+**Why**: UI/UX audit revealed 8 categories of incoherent output: internal tokens leaking into memory hooks, philosophers contaminated by concept names, Atlas boilerplate, circular distinction text, negation-only KEY DISTINCTION, malformed Prove distractors, context-as-scenario in Apply fallback, and misleading 0/0 stats.
+
+**Downstream effects**: All concept-facing text is now self-contained and coherent without requiring Canvas course content to be meaningful. Demo mode produces honest, non-scaffolded output for all views.
+
 ### Source quality gate (source-quality.ts)
 
 **Files changed**: `packages/content-engine/src/source-quality.ts` (new), `packages/content-engine/src/index.ts`, `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/AeonthraShell.tsx`

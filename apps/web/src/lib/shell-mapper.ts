@@ -326,6 +326,12 @@ function conceptDepthText(concept: LearningConcept): string {
   return "";
 }
 
+function isNegationOnlyText(text: string | null | undefined): boolean {
+  if (!text) return false;
+  // Reject scaffold "X is not Y. Keep their main moves separate." patterns
+  return /\bis not\b[^.]+\.\s*Keep their main moves\b/i.test(text);
+}
+
 function conceptDistinctionText(
   concept: LearningConcept,
   allConcepts: LearningConcept[],
@@ -345,9 +351,11 @@ function conceptDistinctionText(
   const relationDistinction = contrast && otherConcept
     ? `${concept.label} differs from ${otherConcept.label}: ${normalizeShellText(contrast.label)}.`
     : "";
-  const candidates = [concept.commonConfusion, relationDistinction, concept.summary, concept.excerpt, concept.transferHook];
+  // Prefer relation-based distinction over commonConfusion (which can be negation-only scaffolding)
+  const candidates = [relationDistinction, concept.commonConfusion, concept.summary, concept.excerpt, concept.transferHook];
   for (const candidate of candidates) {
     if (!isRenderableConceptText(candidate)) continue;
+    if (isNegationOnlyText(candidate)) continue;
     if (!isDistinctFrom(core, candidate)) continue;
     if (depth && !isDistinctFrom(depth, candidate)) continue;
     return normalizeShellText(candidate);
@@ -688,6 +696,14 @@ function mapReadingFromTasks(tasks: CourseTask[]): ShellReading[] {
   });
 }
 
+function sanitizeModuleDesc(raw: string): string {
+  return raw
+    .replace(/[^.!?]*\b(?:is introduced in|is covered in)\s+Module\s+\d+[^.!?]*[.!?]\s*/gi, "")
+    .replace(/[^.!?]*\bstudents must be able to\b[^.!?]*[.!?]\s*/gi, "")
+    .replace(/[^.!?]*\ba major ethical framework\b[^.!?]*[.!?]\s*/gi, "")
+    .trim();
+}
+
 function mapModulesFromChapters(chapters: ForgeChapter[]): ShellModule[] {
   const groups = new Map<string, { chapters: ForgeChapter[]; idx: number }>();
   chapters.forEach((ch) => {
@@ -712,7 +728,7 @@ function mapModulesFromChapters(chapters: ForgeChapter[]): ShellModule[] {
       title: chs[0]?.title ?? `Module ${idx}`,
       ch: chs.length === 1 ? `Chapter ${idx}` : `Chapters ${idx}.1-${idx}.${chs.length}`,
       pages: `Module ${idx}`,
-      desc: chs[0]?.summary ?? "",
+      desc: sanitizeModuleDesc(chs[0]?.summary ?? ""),
       concepts: allConceptIds,
       textbook
     };
@@ -829,9 +845,9 @@ function mapDistinctions(relations: ConceptRelation[], concepts: LearningConcept
       b: rel.toId,
       label: rel.label || `${a.label} vs ${b.label}`,
       border: `${a.label}: ${a.definition.slice(0, 80)}. ${b.label}: ${b.definition.slice(0, 80)}.`,
-      trap: `Students confuse ${a.label} and ${b.label} because ${a.commonConfusion.slice(0, 60)} while ${b.commonConfusion.slice(0, 60)}.`,
-      twins: `Both ${a.label} and ${b.label} appear in similar contexts and are easy to conflate.`,
-      enemy: `They conflict directly on: ${rel.label}.`
+      trap: `${a.label} and ${b.label} appear in the same discussions. Test yourself: state each one's core move without borrowing the other's language.`,
+      twins: `Both ${a.label} and ${b.label} address related ethical territory, which makes them easy to swap in explanations.`,
+      enemy: rel.label || `${a.label} and ${b.label} point in opposite ethical directions.`
     });
 
     if (result.length >= 6) break; // cap for shell layout
@@ -868,6 +884,13 @@ const NON_PERSON_TOKENS = new Set([
   "Personal","Social","Physical","Mental","Academic","General","Special",
   "Note","Example","Figure","Result","Study","Research","Theory",
   "Important","Essential","Critical","Primary","Secondary","Key",
+  // Philosophical/ethical terms that form two-word phrases but are not person names
+  "Virtue","Trolley","Moral","Cultural","Experience","Doctrine","Categorical",
+  "Felicific","Formula","Calculus","Imperative","Relativism","Natural","Divine",
+  "Command","Justice","Rational","Normative","Descriptive","Applied","Teleological",
+  "Hedonism","Intrinsic","Extrinsic","Deontological","Utilitarian","Contractarian",
+  "Free","Rule","Act","Good","Evil","Wrong","Right","Ethical","Ethics","Problem",
+  "Machine","Theory","Principle","Argument","Critique","Paradox","Dilemma",
 ]);
 
 function isLikelyPersonName(candidate: string): boolean {
@@ -908,10 +931,19 @@ function mapKeyFigures(bundle: CaptureBundle, learning: LearningBundle): ShellPh
   const counts = new Map<string, number>();
   const passages = new Map<string, Set<string>>();
 
-  const allText = [
-    ...bundle.items.map(item => `${item.title}. ${item.plainText}`),
-    ...learning.concepts.map(c => `${c.label}. ${c.definition} ${c.summary} ${c.excerpt}`),
-  ];
+  // Build a set of concept labels (lowercased) so we can filter out concept names
+  // that the regex incorrectly classifies as person names (e.g. "Trolley Problem",
+  // "Virtue Ethics", "Experience Machine").
+  const conceptLabelSet = new Set(learning.concepts.map(c => c.label.toLowerCase()));
+  // Also collect individual words in concept labels so we can detect two-word phrases
+  // where BOTH words are concept-label components (e.g. "Trolley Problem").
+  const conceptLabelWords = new Set(
+    learning.concepts.flatMap(c => c.label.split(/\s+/).filter(w => w.length > 3))
+  );
+
+  // Scan only bundle items — NOT concept definitions, to avoid concept labels appearing
+  // in their own definitions and being mistakenly counted as person names.
+  const allText = bundle.items.map(item => `${item.title}. ${item.plainText}`);
 
   for (const source of allText) {
     const sentences = source
@@ -925,6 +957,11 @@ function mapKeyFigures(bundle: CaptureBundle, learning: LearningBundle): ShellPh
       while ((m = PERSON_RE.exec(sentence)) !== null) {
         const name = m[1]!;
         if (!isLikelyPersonName(name)) continue;
+        // Reject if the full name is a known concept label
+        if (conceptLabelSet.has(name.toLowerCase())) continue;
+        // Reject if every word in the name is a component of some concept label
+        const nameParts = name.split(/\s+/);
+        if (nameParts.every(w => conceptLabelWords.has(w))) continue;
         counts.set(name, (counts.get(name) ?? 0) + 1);
         const set = passages.get(name) ?? new Set<string>();
         if (set.size < 5) set.add(sentence.slice(0, 220));

@@ -1760,7 +1760,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:CY}}>{mastered}/{cc.length}</div><div style={{color:MU,fontSize:".82rem"}}>Mastered</div></div>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:TL}}>{P(avg)}</div><div style={{color:MU,fontSize:".82rem"}}>Average</div></div>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalCorrect}/{totalAnswered}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
+<div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalAnswered>0?`${totalCorrect}/${totalAnswered}`:"—"}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
 </div></div>
 {cc.map(c=><div key={c.id} style={{...card,padding:"16px 20px",marginTop:8,display:"flex",alignItems:"center",gap:12}}><span>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1,fontWeight:600}}>{c.name}</span><span style={{color:mc2(c.mastery),fontWeight:700}}>{P(c.mastery)}</span></div>)}
 </div>}

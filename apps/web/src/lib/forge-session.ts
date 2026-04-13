@@ -254,7 +254,7 @@ function classificationOptions(concept: PreparedConcept, pool: PreparedConcept[]
   const options = [
     concept.definition,
     ...distortions.slice(0, 2),
-    related ? firstSentence(`${related.label} belongs where the source is dealing with ${related.summary.toLowerCase()}`) : distortions[2] ?? ""
+    related ? truncate(related.definition || related.summary, 140) : distortions[2] ?? ""
   ].filter(Boolean);
   return Array.from(new Set(options)).slice(0, 4);
 }
@@ -341,15 +341,34 @@ function buildGenesisDilemmas(pool: PreparedConcept[]): ForgeDilemma[] {
     }));
   }
 
+  // Generic ethical scenarios for when the framework trio isn't available.
+  // These are real dilemmas so students have something concrete to apply the concept to.
+  const FALLBACK_SCENARIOS = [
+    "A student discovers their best friend has been submitting someone else's work. Reporting them could end the friendship; staying silent means the dishonesty continues.",
+    "A researcher finds a small but significant error in a published study. Retracting it would damage reputations; staying silent lets a false result stand in the literature.",
+    "You can stay late to help a struggling colleague meet an important deadline, but doing so means missing a family event you promised to attend.",
+    "A manager learns a cost-cutting measure will save the company money but will make conditions harder for lower-paid workers who have no voice in the decision.",
+    "A student is offered access to a leaked exam. Declining puts them at a disadvantage; accepting means benefiting from unfairness toward peers who didn't get the same access."
+  ];
+
   return pool.slice(0, 3).map((concept, index) => {
-    const evidence = concept.primer || concept.definition || concept.summary;
+    const scenario = FALLBACK_SCENARIOS[index % FALLBACK_SCENARIOS.length]!;
     return {
       id: `${concept.id}:dilemma:${index}`,
-      scenario: `Apply ${concept.label} to this situation: ${truncate(evidence, 180)}`,
+      scenario,
       options: [
-        { label: `Choose the path that best fits ${concept.label}.`, reveal: `${concept.label} becomes visible here because ${concept.summary.toLowerCase()}` },
-        { label: "Focus on the immediate outcome and move on without deeper reflection.", reveal: "Short-term relief is not the same as genuine understanding or skill." },
-        { label: "Delay engaging with the material until the pressure forces a response.", reveal: "Waiting rarely produces better learning — active engagement with the concept is what builds mastery." }
+        {
+          label: `Apply ${concept.label}: ${truncate(concept.summary, 80)}`,
+          reveal: `${concept.label} frames this situation as: ${concept.definition}`
+        },
+        {
+          label: "Do what produces the best outcome for the most people, regardless of rules.",
+          reveal: "That's a consequentialist move — useful, but it may not capture what the source is emphasizing."
+        },
+        {
+          label: "Avoid making a hard call and wait to see how things resolve on their own.",
+          reveal: `Avoidance sidesteps the question the source raises about ${concept.label}.`
+        }
       ],
       conceptId: concept.id
     };
