@@ -138,11 +138,15 @@ export function GravityFieldBoard(props: {
         {inspectorAssignment ? (
           <div className="trail-panel">
             <div className="issue__title">{inspectorAssignment.title}</div>
-            {inspectorAssignment.dependencyStrengths.map((dependency) => (
-              <div key={dependency.conceptId} className="mono subtle">
-                {dependency.conceptId} | {Math.round(dependency.strength * 100)}%
-              </div>
-            ))}
+            {inspectorAssignment.dependencyStrengths.map((dependency) => {
+              const label = props.concepts.find((c) => c.id === dependency.conceptId)?.label
+                ?? dependency.conceptId.replace(/-/g, " ");
+              return (
+                <div key={dependency.conceptId} className="mono subtle">
+                  {label} | {Math.round(dependency.strength * 100)}%
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </Card>
