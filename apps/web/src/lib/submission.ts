@@ -193,5 +193,5 @@ export async function exportSubmissionDocx(input: {
   anchor.href = url;
   anchor.download = `${tokenKey(input.assignmentTitle)}.docx`;
   anchor.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

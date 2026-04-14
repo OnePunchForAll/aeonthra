@@ -114,6 +114,8 @@ export function buildOfflineSiteHtml(bundle: OfflineSiteBundle): string {
   const assignmentMappings = bundle.learningBundle.synthesis.assignmentMappings;
   const retentionModules = bundle.learningBundle.synthesis.retentionModules;
   const concepts = bundle.learningBundle.concepts;
+  const conceptLabel = (id: string): string =>
+    concepts.find((c) => c.id === id)?.label ?? id.replace(/-/g, " ");
   const exportDate = bundle.exportedAt.slice(0, 10);
 
   return `<!DOCTYPE html>
@@ -220,7 +222,7 @@ export function buildOfflineSiteHtml(bundle: OfflineSiteBundle): string {
           <div class="card">
             <h3>${escapeHtml(chapter.title)}</h3>
             <p>${escapeHtml(chapter.summary)}</p>
-            <div class="small">Concepts: ${escapeHtml(chapter.conceptIds.join(", ") || "none")}</div>
+            <div class="small">Concepts: ${escapeHtml(chapter.conceptIds.map(conceptLabel).join(", ") || "none")}</div>
           </div>
         `).join("") || "<p>No chapters were derived from the imported sources.</p>"}
       </section>
