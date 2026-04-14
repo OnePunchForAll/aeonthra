@@ -161,7 +161,7 @@ function rubricForTask(task: CourseTask): RubricCriterion[] {
     { id: `${task.id}:citations`, label: "Citations", description: "Uses APA-style source support when needed." }
   ];
   if (task.requirementLines.some((line) => /compare|contrast/i.test(line))) {
-    criteria.splice(3, 0, { id: `${task.id}:comparison`, label: "Analysis", description: "Keeps both sides of the comparison explicit." });
+    criteria.splice(3, 0, { id: `${task.id}:comparison`, label: "Comparison", description: "Keeps both sides of the comparison explicit." });
   }
   return criteria;
 }
@@ -280,10 +280,9 @@ export function createInteractionRuntime(bundle: CaptureBundle, learning: Learni
       if (concepts.length === 0) {
         return [];
       }
-      const atlasPool = concepts.length > 0 ? concepts : renderableConcepts(learning).slice(0, 4);
       return rubricForTask(task).map((criterion) => ({
         criterion,
-        examples: failures.generateFailureExamples(criterion, atlasPool)
+        examples: failures.generateFailureExamples(criterion, concepts)
       })).filter((group) => group.examples.length > 0);
     },
     oracle(question: string) {
