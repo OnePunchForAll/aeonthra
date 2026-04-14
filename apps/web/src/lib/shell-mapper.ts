@@ -1011,7 +1011,7 @@ function mapKeyFigures(bundle: CaptureBundle, learning: LearningBundle): ShellPh
         t: inferArea(namePassages),
         q: [...namePassages].map((text) => ({
           x: text,
-          p: 0,  // no reliable page numbers from Canvas content; UI hides when 0
+          p: Number(text.match(/\bon\s+p\.\s*(\d+)/i)?.[1] ?? "0"),  // extract page when embedded (e.g. "on p. 44"); 0 = UI hides it
           tg: text.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length > 3).slice(0, 8),
         })),
       };
