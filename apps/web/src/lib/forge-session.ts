@@ -172,7 +172,12 @@ function conceptWindow(learning: LearningBundle, chapter: ForgeChapter): Learnin
     return direct;
   }
 
-  return learning.concepts.slice(0, 6);
+  // Supplement with global concepts to reach at least 4 — always preserve chapter-specific ones first
+  const directIds = new Set(direct.map((c) => c.id));
+  const supplement = learning.concepts
+    .filter((c) => !directIds.has(c.id))
+    .slice(0, Math.max(4, 6) - direct.length);
+  return [...direct, ...supplement];
 }
 
 function prepareConcept(concept: LearningConcept, pool: LearningConcept[]): PreparedConcept {
@@ -282,7 +287,7 @@ function drillQuestion(concept: PreparedConcept, pool: PreparedConcept[], index:
     prompt: stem(DRILL_STEMS, concept, index),
     options,
     correctIndex: options.findIndex((option) => normalize(option) === normalize(concept.definition)),
-    explanation: `Keep this sentence in view: ${concept.definition} ${concept.commonConfusion}`,
+    explanation: `Keep this in view: ${concept.definition}${concept.transferHook ? ` — ${concept.transferHook}` : ""}`,
     conceptId: concept.id
   };
   return question.correctIndex >= 0 && validateQuestionCoherence(question, concept, pool, concept.relatedLabel ? [concept.relatedLabel] : []) ? question : null;
@@ -290,12 +295,17 @@ function drillQuestion(concept: PreparedConcept, pool: PreparedConcept[], index:
 
 function bossQuestion(concept: PreparedConcept, pool: PreparedConcept[], index: number): ForgeQuestion | null {
   const related = relatedPool(concept, pool)[0];
+  // Always produce exactly 4 options — no empty-string slots regardless of whether related exists
   const options = Array.from(new Set([
-    `Use ${concept.label} when ${concept.summary.replace(/\.$/, "").toLowerCase()}.`,
-    related ? `Use ${concept.label} and ${related.label} as if they make the same move.` : "",
+    `Use ${concept.label} when ${truncate(concept.summary.replace(/\.$/, "").toLowerCase(), 100)}.`,
+    related
+      ? `Use ${concept.label} and ${related.label} as if they make the same move.`
+      : `Apply ${concept.label} to any moral question that comes up, without checking what the source actually claims.`,
     `Treat ${concept.label} as a loose page label instead of the claim the source makes.`,
-    related ? `Switch to ${related.label} whenever ${concept.label} starts to require evidence.` : `Only remember the title of ${concept.label} and ignore the supporting sentence.`
-  ].filter(Boolean))).slice(0, 4);
+    related
+      ? `Switch to ${related.label} whenever ${concept.label} starts to require evidence.`
+      : `Only remember the title of ${concept.label} and ignore the supporting sentence.`
+  ])).slice(0, 4);
   const question: ForgeQuestion = {
     id: `${concept.id}:boss:${index}`,
     prompt: stem(BOSS_STEMS, concept, index),
@@ -392,7 +402,9 @@ function crossExamFor(concept: PreparedConcept, index: number): ForgeChallenge {
     prompt: related
       ? `Someone argues that ${concept.label} is just ${related} with different wording. What would you say back?`
       : `Someone says ${concept.label} is only a heading, not a real idea. How would you push back?`,
-    reveal: concept.commonConfusion,
+    reveal: related
+      ? `${concept.label} has a specific claim that ${related} doesn't make: ${concept.definition}`
+      : `${concept.label} is more than a label — it makes a concrete claim: ${concept.definition}`,
     conceptId: concept.id
   };
 }

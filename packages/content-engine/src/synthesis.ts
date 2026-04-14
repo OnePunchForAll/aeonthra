@@ -275,8 +275,9 @@ function buildFocusThemes(
   supportByConceptId: Map<string, ConceptSupport>
 ): FocusTheme[] {
   const itemLookup = itemById(bundle);
-  return concepts.map((concept) => {
-    const support = supportByConceptId.get(concept.id)!;
+  return concepts.flatMap((concept) => {
+    const support = supportByConceptId.get(concept.id);
+    if (!support) return [];
     const sourceItems = concept.sourceItemIds
       .map((sourceId) => itemLookup.get(sourceId))
       .filter((item): item is CaptureItem => Boolean(item));

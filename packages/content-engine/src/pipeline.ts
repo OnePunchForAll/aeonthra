@@ -766,7 +766,7 @@ const conceptMnemonic = (label: string, keywords: string[], confusion: string | 
     // Only use the two-lanes template when we have at least two substantive keywords
     // and a real contrast concept — avoids "handles aristotle's" type failures
     confusion && first && second
-      ? `Picture two lanes: ${label} handles ${first}, while ${confusion} handles ${second}. Stay in the ${label.toLowerCase()} lane.`
+      ? `Picture two lanes: ${label} is where ${first} and ${second} belong. Anything pulling toward ${confusion} is the wrong lane.`
       : "",
     first && second && third
       ? `Picture ${first}, ${second}, and ${third} on the same desk. That cluster is ${label}.`
@@ -907,7 +907,9 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     const evidence = evidenceSnippets(label, definition, detail, seed.evidence);
     const keywords = [...seed.keywords].slice(0, 8);
     const category = seed.category || titleCase(cleanTitle(bundle.title));
-    const relatedConceptIds = related.filter((candidate) => [...candidate.keywords].some((keyword) => seed.keywords.has(keyword))).slice(0, 3).map((candidate) => candidate.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+    // Must use the same ID derivation as concept.id (dedupeAdjacentPhraseRepeats → slug)
+    // to avoid relatedConceptId mismatches that silently break relatedPool() lookups.
+    const relatedConceptIds = related.filter((candidate) => [...candidate.keywords].some((keyword) => seed.keywords.has(keyword))).slice(0, 3).map((candidate) => dedupeAdjacentPhraseRepeats(candidate.name).toLowerCase().replace(/[^a-z0-9]+/g, "-"));
     const primer = conceptPrimer(label, definition);
     const mnemonic = sanitizeConceptMnemonic(conceptMnemonic(label, keywords, confusion, category));
     return {

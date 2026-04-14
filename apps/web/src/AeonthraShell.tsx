@@ -75,8 +75,6 @@ const MARGIN_TYPES={
 
 export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,onDownloadOfflineSite,onSaveReplayBundle,isDemoMode}:AeonthraShellProps){
 const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE,synthesis:SYNTHESIS}=data;
-const DISCUSSIONS=[];
-const QUALITY_META={};
 const[cc,setCC]=useState(()=>CD.map(c=>({...c,mastery:initialProgress.conceptMastery[c.id]??0})));
 const[v,setV]=useState("home");
 const[selC,setSC]=useState(null);
@@ -156,10 +154,12 @@ const recordMemory=(conceptId,correct)=>{
     }
   }
   // Trigger delayed recall on a stable cadence so identical sessions behave the same way.
+  // Use stableHash(conceptId) — not conceptId.length — to avoid coupling cadence to string length.
   if(correct&&totalAnswered>5){
     const earlier=cc.filter(c=>c.id!==conceptId&&c.mastery>0&&c.mastery<.8);
-    if(earlier.length&&((totalAnswered+conceptId.length)%7===0)){
-      const pick=earlier[(totalAnswered+conceptId.length)%earlier.length];
+    const seed=stableHash(conceptId);
+    if(earlier.length&&((totalAnswered+seed)%7===0)){
+      const pick=earlier[(totalAnswered+seed)%earlier.length];
       setDelayedRecall({concept:pick,ts:Date.now()});
     }
   }
@@ -378,7 +378,7 @@ const generateQuestions=(conceptId,count,type)=>{
   }
   if(type==="mc"){
     others.slice(0,4).forEach(o=>{
-      pool.push({question:`What is the key difference between ${c.name} and ${o.name}?`,options:[safeDist.split(".")[0],normalizePanelText(o.dist||o.core).split(".")[0],"They are essentially identical","Neither has practical applications"],correctIndex:0,explanation:`${c.name}: ${c.core} vs ${o.name}: ${o.core}`,source:"gen"});
+      pool.push({question:`What is the key difference between ${c.name} and ${o.name}?`,options:[safeDist.split(".")[0]||`${c.name} has a distinct primary claim in this source`,normalizePanelText(o.dist||o.core).split(".")[0]||`${o.name} focuses on a different aspect of this topic`,"They are essentially identical","Neither has practical applications"],correctIndex:0,explanation:`${c.name}: ${c.core} vs ${o.name}: ${o.core}`,source:"gen"});
     });
     pool.push({question:`Which memory hook best captures ${c.name}?`,options:[safeHook,...others.slice(0,3).map(o=>normalizePanelText(o.hook||o.core))],correctIndex:0,explanation:`The correct hook for ${c.name}: ${safeHook}`,source:"gen"});
   }

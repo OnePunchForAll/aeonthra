@@ -405,11 +405,18 @@ function generateTF(c: LearningConcept): ShellTFQuestion[] {
     explanation: definition
   }];
 
-  if (isRenderableConceptText(c.commonConfusion)) {
+  // commonConfusion "X is not Y" is actually TRUE — don't code it as FALSE.
+  // Instead generate a genuinely false distortion from the definition.
+  const defWords = definition.toLowerCase().split(/\s+/);
+  const hasHelps = defWords.includes("helps");
+  const hasFocuses = defWords.includes("focuses");
+  if (hasHelps || hasFocuses) {
     items.push({
-      statement: normalizeShellText(c.commonConfusion),
+      statement: hasHelps
+        ? normalizeShellText(c.definition.replace(/\bhelps\b/i, "ignores"))
+        : normalizeShellText(c.definition.replace(/\bfocuses\b/i, "avoids")),
       answer: false,
-      explanation: conceptHookText(c)
+      explanation: definition
     });
   }
 
@@ -421,9 +428,10 @@ function generateTF(c: LearningConcept): ShellTFQuestion[] {
     });
   }
 
-  if (c.keywords.length > 0) {
+  // Only include keyword swap if ≥ 2 distinct keywords exist — avoids "X rather than X" loops.
+  if (c.keywords.length >= 2 && c.keywords[0] !== c.keywords[c.keywords.length - 1]) {
     items.push({
-      statement: `${label} is primarily concerned with ${c.keywords[c.keywords.length - 1] ?? "rules"} rather than ${c.keywords[0] ?? "outcomes"}.`,
+      statement: `${label} is primarily concerned with ${c.keywords[c.keywords.length - 1]} rather than ${c.keywords[0]}.`,
       answer: false,
       explanation: definition
     });
@@ -445,7 +453,10 @@ function generateMC(c: LearningConcept, allConcepts: LearningConcept[]): ShellMC
     options: [
       normalizeShellText(c.definition),
       normalizeShellText(others[0]?.definition) || `The general study of ${c.keywords[1] ?? "this topic"}.`,
-      normalizeShellText(c.commonConfusion) || `A vague guideline rather than a specific concept.`,
+      // Use a distorted definition rather than commonConfusion "X is not Y" — that reads as correct
+      c.definition.replace(/\bhelps\b/i, "ignores").replace(/\bfocuses on\b/i, "avoids") !== c.definition
+        ? normalizeShellText(c.definition.replace(/\bhelps\b/i, "ignores").replace(/\bfocuses on\b/i, "avoids"))
+        : `A vague guideline rather than a concept with a specific claim.`,
       normalizeShellText(others[1]?.definition) || `A rule that applies without considering context.`
     ],
     correctIndex: 0,
@@ -464,16 +475,22 @@ function generateMC(c: LearningConcept, allConcepts: LearningConcept[]): ShellMC
     explanation: normalizeShellText(c.transferHook || c.primer || c.definition)
   };
 
+  // q3: the correct answer must be a genuine misconception (what students incorrectly believe),
+  // NOT the commonConfusion correction ("X is not Y") which is a true statement.
+  const relatedLabel = others[0]?.label ? normalizeShellText(others[0].label) : null;
+  const misconception = relatedLabel
+    ? `That ${label} and ${relatedLabel} mean the same thing and can be swapped in an explanation.`
+    : `That ${label} is a general heading rather than a concept with a precise claim.`;
   const q3: ShellMCQuestion = {
     question: `A common misunderstanding about ${label} is:`,
     options: [
-      normalizeShellText(c.commonConfusion) || `That ${label} is interchangeable with a neighboring framework.`,
+      misconception,
       normalizeShellText(c.definition),
       conceptHookText(c),
       `That ${label} can be fully mastered through a single exposure without practice`
     ],
     correctIndex: 0,
-    explanation: `This is the trap: ${normalizeShellText(c.commonConfusion) || `students flatten ${label} into a generic prompt`}. The correct understanding is: ${normalizeShellText(c.definition)}`
+    explanation: `The misconception is: ${misconception} The actual claim: ${normalizeShellText(c.definition)}`
   };
 
   return [q1, q2, q3];
@@ -634,6 +651,7 @@ function mapAssignment(task: CourseTask): ShellAssignment {
 function moduleLabel(moduleKey: string, idx: number): string {
   if (moduleKey.startsWith("week-")) return `Week ${moduleKey.slice(5)}`;
   if (moduleKey.startsWith("module-")) return `Module ${moduleKey.slice(7)}`;
+  if (moduleKey.startsWith("sequence-")) return `Section ${moduleKey.slice(9)}`;
   return `Unit ${idx}`;
 }
 

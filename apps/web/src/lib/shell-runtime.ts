@@ -174,12 +174,24 @@ function toShellMCQuestion(question: ForgeQuestion): ShellMCQuestion {
   };
 }
 
+function frameworkLabelFromOption(label: string, conceptName: string): string {
+  // Extract the perspective name from the option label.
+  // Options often start with "Apply X: ...", "Do what produces ...", or "Avoid ..."
+  const beforeColon = label.split(/[:—]/)[0]?.trim() ?? "";
+  if (beforeColon.length >= 4 && beforeColon.length <= 40) return beforeColon;
+  if (/consequenti|utilitarian|best outcome/i.test(label)) return "Consequentialist";
+  if (/duty|obligation|deontolog|categorical/i.test(label)) return "Deontological";
+  if (/virtue|character|wise|compassion|courageous/i.test(label)) return "Virtue Ethics";
+  if (/avoid|wait|passive|sidestep/i.test(label)) return "Avoidance";
+  return conceptName;
+}
+
 function toShellDilemma(dilemma: ForgeDilemma, concept: ShellConcept, runtime: ForgeConceptRuntime): ShellDilemma {
   return {
     text: normalizeText(dilemma.scenario),
     options: dilemma.options.map((option) => ({
       text: normalizeText(option.label),
-      framework: concept.name || runtime.chapterTitle,
+      framework: frameworkLabelFromOption(option.label, concept.name || runtime.chapterTitle),
       why: normalizeText(option.reveal)
     }))
   };
@@ -205,16 +217,14 @@ function fallbackTfFromRuntime(concept: ShellConcept, runtime: ForgeConceptRunti
 }
 
 function fallbackMcFromRuntime(concept: ShellConcept, runtime: ForgeConceptRuntime): ShellMCQuestion[] {
-  const options = Array.from(
-    new Set(
-      [
-        normalizeText(concept.core),
-        normalizeText(concept.trap),
-        normalizeText(concept.hook),
-        normalizeText(concept.dist)
-      ].filter((entry) => entry.length >= 20)
-    )
-  );
+  const correctOption = normalizeText(concept.core);
+  if (correctOption.length < 20) {
+    return [];
+  }
+  // Distractors: trap, hook, dist — filtered to >= 20 chars and distinct from correctOption
+  const distractors = [normalizeText(concept.trap), normalizeText(concept.hook), normalizeText(concept.dist)]
+    .filter((entry) => entry.length >= 20 && entry !== correctOption);
+  const options = [correctOption, ...distractors]; // correctIndex is always 0
   if (options.length < 2) {
     return [];
   }

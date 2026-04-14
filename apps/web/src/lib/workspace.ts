@@ -437,7 +437,9 @@ function extractModuleKey(item: CaptureItem, index: number): string {
   const weekInBody = body.match(/\bweek\s+(\d+)\b/i);
   if (weekInBody) return `week-${weekInBody[1]}`;
 
-  return `item-${index + 1}`;
+  // Group orphan items into estimated modules of 5 so unstructured courses still produce
+  // coherent workspace chapters instead of N isolated single-item modules.
+  return `sequence-${Math.ceil((index + 1) / 5)}`;
 }
 
 function estimateMinutes(item: CaptureItem, kind: TaskKind): number {
