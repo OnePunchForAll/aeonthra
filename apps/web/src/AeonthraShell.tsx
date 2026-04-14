@@ -371,8 +371,8 @@ const generateQuestions=(conceptId,count,type)=>{
   if(type==="tf"){
     others.forEach(o=>{
       pool.push({statement:`${c.name} and ${o.name} are both part of the ${c.cat} tradition.`,answer:c.cat===o.cat,explanation:c.cat===o.cat?`Correct — both fall under ${c.cat}.`:`False — ${c.name} is ${c.cat} while ${o.name} is ${o.cat}.`,source:"gen"});
-      pool.push({statement:`${c.name} focuses primarily on ${primaryKeyword}.`,answer:true,explanation:`Correct — ${primaryKeyword} is central to ${c.name}.`,source:"gen"});
     });
+    pool.push({statement:`${c.name} focuses primarily on ${primaryKeyword}.`,answer:true,explanation:`Correct — ${primaryKeyword} is central to ${c.name}.`,source:"gen"});
     pool.push({statement:`A key pitfall when studying ${c.name} is: ${safeTrap.split(".")[0]}.`,answer:true,explanation:`Correct — ${safeTrap}`,source:"gen"});
     pool.push({statement:`${c.name} applies only in academic writing contexts.`,answer:false,explanation:`Not specifically — ${safeDepth.split(".")[0]}.`,source:"gen"});
   }
@@ -1340,7 +1340,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
   return(<>
     <div style={{padding:"40px 36px",borderRadius:20,background:innr,border:`1px solid ${BD}`,marginBottom:32,textAlign:"center"}}>
       <p style={{fontSize:"1.2rem",lineHeight:1.9,color:T2,fontStyle:"italic",margin:0}}>"{q2.x}"</p>
-      <div style={{marginTop:14,fontSize:".85rem",color:MU}}>p. {q2.p}</div>
+      {q2.p>0&&<div style={{marginTop:14,fontSize:".85rem",color:MU}}>p. {q2.p}</div>}
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
       {opts.map(nm=>(<button key={nm} onClick={()=>{

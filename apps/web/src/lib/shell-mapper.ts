@@ -275,6 +275,15 @@ function normalizeShellText(text: string | null | undefined): string {
     .trim();
 }
 
+// Truncate at a word boundary so we never slice mid-word.
+// Returns text with "…" appended when truncation occurs.
+function wordTruncate(text: string, max: number): string {
+  const clean = normalizeShellText(text);
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max).replace(/\s+\S*$/, "");
+  return `${cut}…`;
+}
+
 function normalizeComparisonText(text: string | null | undefined): string {
   return normalizeShellText(text)
     .toLowerCase()
@@ -770,8 +779,8 @@ function mapReadingFromChapters(chapters: ForgeChapter[], tasks: CourseTask[]): 
       sentences.length >= 3
         ? [
             { heading: "Overview", body: sentences.slice(0, 2).join(" ") },
-            { heading: "Key Ideas", body: (sentences.slice(2, 4).join(" ") || sentences[2]) ?? ch.summary },
-            { heading: "Application", body: sentences.slice(4).join(" ") || `This chapter connects to ${ch.conceptIds.join(", ")}.` }
+            { heading: "Key Ideas", body: sentences.slice(2, 4).join(" ") },
+            { heading: "Application", body: sentences.slice(4).join(" ") || "Use these ideas to explain what the chapter argues and why it matters." }
           ]
         : [{ heading: ch.title, body: ch.summary }];
 
@@ -807,12 +816,15 @@ function generateMargins(reading: ShellReading[], learning: LearningBundle): Rec
       // Find related concepts for this reading
       const relatedConcept = learning.concepts.find((c) => r.concepts.includes(c.id));
       if (relatedConcept && sIdx < 2) {
-        annotations.push({
-          type: "plain",
-          text: `Plain English: ${relatedConcept.mnemonic}`,
-          color: "#06d6a0"
-        });
-        if (relatedConcept.commonConfusion) {
+        const hookText = relatedConcept.mnemonic || relatedConcept.transferHook;
+        if (hookText) {
+          annotations.push({
+            type: "plain",
+            text: `Plain English: ${hookText}`,
+            color: "#06d6a0"
+          });
+        }
+        if (relatedConcept.commonConfusion && !isNegationOnlyText(relatedConcept.commonConfusion)) {
           annotations.push({
             type: "confusion",
             text: `⚠ Common trap: ${relatedConcept.commonConfusion}`,
@@ -862,7 +874,7 @@ function mapDistinctions(relations: ConceptRelation[], concepts: LearningConcept
       a: rel.fromId,
       b: rel.toId,
       label: rel.label || `${a.label} vs ${b.label}`,
-      border: `${a.label}: ${a.definition.slice(0, 80)}. ${b.label}: ${b.definition.slice(0, 80)}.`,
+      border: `${a.label}: ${wordTruncate(a.definition, 80)} ${b.label}: ${wordTruncate(b.definition, 80)}`,
       trap: `${a.label} and ${b.label} appear in the same discussions. Test yourself: state each one's core move without borrowing the other's language.`,
       twins: `Both ${a.label} and ${b.label} address related ethical territory, which makes them easy to swap in explanations.`,
       enemy: rel.label || `${a.label} and ${b.label} point in opposite ethical directions.`
@@ -997,9 +1009,9 @@ function mapKeyFigures(bundle: CaptureBundle, learning: LearningBundle): ShellPh
       return {
         n: name,
         t: inferArea(namePassages),
-        q: [...namePassages].map((text, qi) => ({
+        q: [...namePassages].map((text) => ({
           x: text,
-          p: qi,
+          p: 0,  // no reliable page numbers from Canvas content; UI hides when 0
           tg: text.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length > 3).slice(0, 8),
         })),
       };

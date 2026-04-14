@@ -532,7 +532,7 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
       };
     });
 
-  const _seenTitles = new Set<string>();
+  const seenTitles = new Set<string>();
   const tasks = entries
     .filter((task) => {
       const item = bundle.items.find((entry) => entry.id === task.id);
@@ -544,8 +544,8 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
     .sort((left, right) => (left.dueDate ?? left.plannedDate) - (right.dueDate ?? right.plannedDate))
     .filter((task) => {
       const key = task.title.toLowerCase().replace(/\s+/g, " ").trim();
-      if (_seenTitles.has(key)) return false;
-      _seenTitles.add(key);
+      if (seenTitles.has(key)) return false;
+      seenTitles.add(key);
       return true;
     });
 

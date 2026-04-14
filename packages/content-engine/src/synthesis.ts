@@ -405,7 +405,11 @@ function buildRetentionModules(
       title: "Distinction Drill",
       summary: "Separate the near-neighbors most likely to collapse under quiz or discussion pressure.",
       conceptIds: distinctionPairs.flatMap((pair) => [pair.fromId, pair.toId]),
-      prompts: distinctionPairs.map((pair) => `State how ${pair.fromId} differs from ${pair.toId} without using filler words.`),
+      prompts: distinctionPairs.map((pair) => {
+        const fromLabel = concepts.find((c) => c.id === pair.fromId)?.label ?? pair.fromId.replace(/-/g, " ");
+        const toLabel = concepts.find((c) => c.id === pair.toId)?.label ?? pair.toId.replace(/-/g, " ");
+        return `State how ${fromLabel} differs from ${toLabel} without using filler words.`;
+      }),
       evidence: distinctionPairs.length > 0 ? distinctionPairs.map((pair) => ({
         label: "Contrast edge",
         excerpt: truncateReadable(pair.label, 160),

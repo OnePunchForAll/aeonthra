@@ -172,11 +172,11 @@ function conceptWindow(learning: LearningBundle, chapter: ForgeChapter): Learnin
     return direct;
   }
 
-  // Supplement with global concepts to reach at least 4 — always preserve chapter-specific ones first
+  // Supplement with global concepts to reach exactly 6 — always preserve chapter-specific ones first
   const directIds = new Set(direct.map((c) => c.id));
   const supplement = learning.concepts
     .filter((c) => !directIds.has(c.id))
-    .slice(0, Math.max(4, 6) - direct.length);
+    .slice(0, 6 - direct.length);
   return [...direct, ...supplement];
 }
 
@@ -413,7 +413,7 @@ function transferFor(concept: PreparedConcept, index: number): ForgeChallenge {
   return {
     id: `${concept.id}:transfer:${index}`,
     prompt: `Where would ${concept.label} matter in a real assignment, discussion post, or explanation task?`,
-    reveal: concept.transferHook,
+    reveal: concept.transferHook || concept.definition,
     conceptId: concept.id
   };
 }
