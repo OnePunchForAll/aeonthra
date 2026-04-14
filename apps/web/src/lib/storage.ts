@@ -82,12 +82,12 @@ export function loadProgress(scope?: string): AppProgress {
   }
 }
 
-export function storeProgress(progress: AppProgress): void {
-  window.localStorage.setItem(scopedKey(progressKey), JSON.stringify(progress));
+export function storeProgress(progress: AppProgress, scope?: string): void {
+  window.localStorage.setItem(scopedKey(progressKey, scope), JSON.stringify(progress));
 }
 
 export function storeScopedProgress(progress: AppProgress, scope: string): void {
-  window.localStorage.setItem(scopedKey(progressKey, scope), JSON.stringify(progress));
+  storeProgress(progress, scope);
 }
 
 export function loadDrafts(): Record<string, string> {

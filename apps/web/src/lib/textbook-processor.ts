@@ -33,6 +33,8 @@ class TextbookProcessor {
 
   private pending = new Map<string, PendingRequest>();
 
+  private requestId = 0;
+
   constructor() {
     this.worker = new Worker(new URL("../workers/content-engine.worker.ts", import.meta.url), {
       type: "module"
@@ -41,7 +43,7 @@ class TextbookProcessor {
   }
 
   process(bundle: CaptureBundle, onProgress: (stage: LearningBuildStage, progress: number) => void): Promise<LearningBundle> {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = `${Date.now()}-${++this.requestId}`;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress });
       this.worker.postMessage({

@@ -75,7 +75,7 @@ export function splitLegacyBundle(bundle: CaptureBundle | null): SourceWorkspace
   const canvasItems = bundle.items.filter((item) => !isTextbookItem(item));
 
   return {
-    canvasBundle: canonicalizeBundle(bundle, canvasItems) ?? (bundle.source === "extension-capture" ? bundle : null),
+    canvasBundle: canonicalizeBundle(bundle, canvasItems),
     textbookBundle: canonicalizeBundle(
       {
         ...bundle,
