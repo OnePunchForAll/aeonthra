@@ -262,7 +262,7 @@ function enrichConcept(concept: ShellConcept, runtime: ForgeConceptRuntime | und
 
   return {
     ...concept,
-    depth: concept.depth || teachBackPrompt || concept.depth,
+    depth: teachBackPrompt || concept.depth,
     dil: liveDilemma ?? concept.dil,
     tf: liveTf.length > 0 ? liveTf : concept.tf,
     mc: liveMc.length > 0 ? liveMc : concept.mc
