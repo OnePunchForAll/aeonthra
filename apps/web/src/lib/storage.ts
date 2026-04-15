@@ -1,26 +1,16 @@
 import { CaptureBundleSchema, type CaptureBundle } from "@learning/schema";
 import type { AppProgress } from "./workspace";
 import { parseStoredSourceState, type SourceWorkspaceState } from "./source-workspace";
+import { createEmptyProgress } from "./shell-runtime";
 
 const bundleKey = "learning-freedom:capture-bundle";
 const sourceStateKey = "learning-freedom:source-workspace";
 const notesKey = "learning-freedom:notes";
 const progressKey = "learning-freedom:progress";
-const draftKey = "learning-freedom:drafts";
-const forgeKey = "learning-freedom:forge-session";
 
 function scopedKey(baseKey: string, scope?: string): string {
   return scope ? `${baseKey}:${scope}` : baseKey;
 }
-
-export type ForgeSessionSnapshot = {
-  conceptId: string;
-  chapterId: string;
-  phase: "genesis" | "forge" | "crucible" | "architect" | "transcend";
-  modeIndex: number;
-  promptIndex: number;
-  startedAt: number;
-};
 
 export function loadStoredBundle(): CaptureBundle | null {
   const raw = window.localStorage.getItem(bundleKey);
@@ -68,7 +58,7 @@ export function loadProgress(scope?: string): AppProgress {
   try {
     const raw = window.localStorage.getItem(scopedKey(progressKey, scope));
     if (!raw) {
-      return { conceptMastery: {}, chapterCompletion: {}, goalCompletion: {}, practiceMode: false };
+      return createEmptyProgress();
     }
     const parsed = JSON.parse(raw) as AppProgress;
     return {
@@ -78,44 +68,14 @@ export function loadProgress(scope?: string): AppProgress {
       practiceMode: Boolean(parsed.practiceMode)
     };
   } catch {
-    return { conceptMastery: {}, chapterCompletion: {}, goalCompletion: {}, practiceMode: false };
+    return createEmptyProgress();
   }
 }
 
-export function storeProgress(progress: AppProgress, scope?: string): void {
+function storeProgress(progress: AppProgress, scope?: string): void {
   window.localStorage.setItem(scopedKey(progressKey, scope), JSON.stringify(progress));
 }
 
 export function storeScopedProgress(progress: AppProgress, scope: string): void {
   storeProgress(progress, scope);
-}
-
-export function loadDrafts(): Record<string, string> {
-  try {
-    return JSON.parse(window.localStorage.getItem(draftKey) ?? "{}") as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
-
-export function storeDrafts(drafts: Record<string, string>): void {
-  window.localStorage.setItem(draftKey, JSON.stringify(drafts));
-}
-
-export function loadForgeSession(scope?: string): ForgeSessionSnapshot | null {
-  try {
-    const raw = window.localStorage.getItem(scopedKey(forgeKey, scope));
-    return raw ? JSON.parse(raw) as ForgeSessionSnapshot : null;
-  } catch {
-    return null;
-  }
-}
-
-export function storeForgeSession(snapshot: ForgeSessionSnapshot | null, scope?: string): void {
-  const key = scopedKey(forgeKey, scope);
-  if (!snapshot) {
-    window.localStorage.removeItem(key);
-    return;
-  }
-  window.localStorage.setItem(key, JSON.stringify(snapshot));
 }
