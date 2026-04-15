@@ -1593,6 +1593,37 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 </div>
 
 {/* Concept deep-dive panel */}
+{cwConcept&&(()=>{const c=cc.find(x=>x.id===cwConcept);if(!c)return null;
+return(<div style={{...card,position:"sticky",top:88,padding:"28px 24px",animation:"fadeUp .35s ease"}}>
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
+    <div style={{fontSize:".7rem",fontWeight:700,letterSpacing:".14em",color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT DETAIL</div>
+    <button onClick={()=>setCWC(null)} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:"1.1rem",lineHeight:1,padding:"4px 8px",borderRadius:8}}>✕</button>
+  </div>
+  <div style={{display:"flex",alignItems:"center",gap:20,marginBottom:28}}>
+    <div style={{position:"relative",width:64,height:64,flexShrink:0}}>
+      <div style={{width:64,height:64,borderRadius:"50%",background:`${mc2(c.mastery)}12`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.2rem",fontWeight:900,color:mc2(c.mastery),fontFamily:"'Space Grotesk',sans-serif"}}>{P(c.mastery)}</div>
+      <svg style={{position:"absolute",inset:-3}} viewBox="0 0 70 70"><circle cx="35" cy="35" r="32" fill="none" stroke={DM} strokeWidth="3"/><circle cx="35" cy="35" r="32" fill="none" stroke={mc2(c.mastery)} strokeWidth="3" strokeDasharray={`${c.mastery*201} 201`} strokeLinecap="round" transform="rotate(-90 35 35)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
+    </div>
+    <div>
+      <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".12em",color:mc2(c.mastery),textTransform:"uppercase",fontFamily:"'Space Grotesk',sans-serif"}}>{c.cat}</div>
+      <h3 style={{...hd(1.2),marginTop:2}}>{c.name}</h3>
+    </div>
+  </div>
+  {buildConceptPanels(c).slice(0,4).map((panel)=>(
+    <div key={panel.id} style={{marginBottom:18,padding:"16px 20px",borderRadius:14,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${panel.color}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <span style={{fontSize:".88rem"}}>{panel.icon}</span>
+        <span style={{fontSize:".7rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:panel.color,fontFamily:"'Space Grotesk',sans-serif"}}>{panel.label}</span>
+      </div>
+      <p style={{fontSize:".9rem",lineHeight:1.75,color:T2,margin:0}}>{panel.body}</p>
+    </div>
+  ))}
+  {c.kw.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>{c.kw.slice(0,6).map(k=><span key={k} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${BD}`,fontSize:".75rem",color:MU,background:innr}}>{k}</span>)}</div>}
+  <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
+    <button onClick={()=>go("forge",{c})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>⚡ Forge this concept</button>
+    <button onClick={()=>{setSC(c);go("explore");}} style={{...bt("transparent",CY),border:`1px solid ${CY}33`}}>🔍 View in Explore</button>
+  </div>
+</div>);})()}
 
 </div>}
 
@@ -1724,6 +1755,8 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
     </div>
   </div>
 </div>);})()}
+</div>}
+
 {/* Forge empty state — shown when no concepts are available for this course */}
 {v==="forge"&&!fc&&<div style={{maxWidth:620,margin:"0 auto",textAlign:"center",padding:"80px 24px"}}>
   <div style={{fontSize:"3.5rem",marginBottom:24}}>🧠</div>
@@ -1733,7 +1766,6 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
     <button onClick={()=>go("journey")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>View Atlas →</button>
     <button onClick={()=>go("reader")} style={{...bt("transparent",TL),border:`1px solid ${TL}33`}}>Browse Reading →</button>
   </div>
-</div>}
 </div>}
 
 {/* ═══ SETTINGS ═══ */}
