@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { ShellData } from "./lib/shell-mapper";
 import type { AppProgress } from "./lib/workspace";
+import { loadNotes, storeNotes } from "./lib/storage";
 
 type AeonthraShellProps = {
   data: ShellData;
@@ -49,12 +50,12 @@ const buildConceptPanels=(concept)=>uniqueNonEmptyPanels([
 ]);
 const buildForgeSteps=(concept)=>buildConceptPanels(concept).filter((panel)=>panel.id!=="hook");
 const buildFlashCards=(concept)=>uniqueNonEmptyPanels([
-  {front:concept?.name,back:concept?.core,label:"Definition"},
-  {front:"Going Deeper",back:concept?.depth,label:"Deeper context"},
-  {front:"Key Distinction",back:concept?.dist,label:"How it differs"},
-  {front:"Common Mistake",back:concept?.trap,label:"Watch out"},
-  {front:"Memory Hook",back:concept?.hook,label:"Remember this"},
-  {front:concept?.kw?.[0]||"Key Term",back:concept?.depth||concept?.core,label:"Apply it"},
+  {front:concept?.name,body:concept?.core,label:"Definition"},
+  {front:"Going Deeper",body:concept?.depth,label:"Deeper context"},
+  {front:"Key Distinction",body:concept?.dist,label:"How it differs"},
+  {front:"Common Mistake",body:concept?.trap,label:"Watch out"},
+  {front:"Memory Hook",body:concept?.hook,label:"Remember this"},
+  {front:concept?.kw?.[0]||"Key Term",body:concept?.depth||concept?.core,label:"Apply it"},
 ]);
 const stableHash=(value)=>{let hash=0;for(let i=0;i<value.length;i++)hash=(hash*31+value.charCodeAt(i))>>>0;return hash;};
 const stableOrder=(values,seed)=>[...values].map((value,index)=>({value,index,key:stableHash(`${seed}:${index}:${JSON.stringify(value)}`)})).sort((a,b)=>a.key-b.key||a.index-b.index).map((entry)=>entry.value);
@@ -176,6 +177,8 @@ const sessionTimeRef=useRef(0);
 const sessionTimerElRef=useRef(null);
 const[draft,setDraft]=useState({});
 const[navScrolled,setNavScrolled]=useState(false);
+const[notes,setNotes]=useState(()=>loadNotes());
+useEffect(()=>{storeNotes(notes);},[notes]);
 useEffect(()=>{const h=()=>setNavScrolled(window.scrollY>30);window.addEventListener("scroll",h,{passive:true});return()=>window.removeEventListener("scroll",h);},[]);
 const atlasScrollRef=useRef(null);
 const atlasRafRef=useRef(null);
@@ -251,7 +254,6 @@ const[practiceI,setPracticeI]=useState(0);
 const[practiceA,setPracticeA]=useState(null);
 const[practiceSc,setPracticeSc]=useState({c:0,w:0});
 const[gymPair,setGymPair]=useState(null);
-const[gymMode,setGymMode]=useState("border"); // border|corruption|neighbor|lessWrong
 const[gymA,setGymA]=useState(null);
 const[gymExplained,setGymExplained]=useState(false);
 // ═══ READER OS ═══
@@ -1227,6 +1229,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
   </>);})()}
 
   {/* APPLY */}
+  {fp==="dilemma"&&!fc.dil&&<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"1.8rem",marginBottom:16}}>⚖</div><h3 style={hd(1.2)}>No scenario available</h3><p style={{color:T2,margin:"12px 0 24px"}}>This concept doesn't have a practice scenario yet. Continue to the recall questions.</p><button onClick={()=>{setFP("tf");setTI(0);setTA(null);}} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>Continue to Recall →</button></div>}
   {fp==="dilemma"&&fc.dil&&(()=>{const d=fc.dil;
   return(<>
     <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 32px"}}>{d.text}</p>
@@ -1780,6 +1783,11 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 <div style={{marginBottom:20}}>
 <div style={{fontSize:".82rem",color:T2,marginBottom:8}}>Learning mode</div>
 <div style={{display:"flex",gap:8}}>{["learn","test","adaptive"].map(m=><button key={m} onClick={()=>setMode(m)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${mode===m?CY:BD}`,background:mode===m?`${CY}15`:"transparent",color:mode===m?CY:MU,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>)}</div></div>
+<div style={{marginBottom:20}}>
+<div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📝 SESSION NOTES</div>
+<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Jot anything — key insights, reminders, questions for office hours…" rows={5} style={{width:"100%",padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:".92rem",lineHeight:1.7,resize:"vertical",outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+<div style={{fontSize:".72rem",color:MU,marginTop:6,textAlign:"right"}}>{notes.length} chars · saved automatically</div>
+</div>
 <div style={{padding:"20px 24px",borderRadius:16,background:`${CY}06`,border:`1px solid ${CY}18`}}>
 <div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>OFFLINE EXPORT</div>
 <p style={{color:T2,fontSize:".92rem",lineHeight:1.7,marginBottom:16}}>Download this exact workspace for offline replay, or save the replay bundle for later restore without regenerating.</p>

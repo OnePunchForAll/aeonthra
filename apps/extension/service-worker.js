@@ -4894,8 +4894,9 @@ async function appendPartialRawHtml(url, html) {
 async function clearPartialState() {
   await storageLocalRemove([PARTIAL_BUNDLE_KEY, PARTIAL_WARNINGS_KEY, PARTIAL_RAW_HTML_KEY]);
 }
+var jobCounter = 0;
 function randomJobId() {
-  return `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
 }
 function parseCourseContextFromUrl(urlValue, title = "Canvas Course") {
   if (!urlValue) {
