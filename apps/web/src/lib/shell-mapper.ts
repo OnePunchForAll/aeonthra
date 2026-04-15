@@ -552,7 +552,7 @@ function generateDilemma(c: LearningConcept): ShellDilemma {
 
 function mapCourse(bundle: CaptureBundle): ShellCourse {
   const courseName = bundle.captureMeta?.courseName ?? bundle.title;
-  // Try to extract a course code from the title (e.g. "PHI 208", "ETHICS301", "ORIENT100")
+  // Try to extract a course code from the title (e.g. "PHIL 101", "ETHICS301", "ORIENT100")
   const codeMatch = courseName.match(/\b([A-Z]{2,8})\s*(\d{3,4})\b/);
   // Fallback: first uppercase word token, or generic "COURSE" — never show raw numeric IDs
   const code = codeMatch

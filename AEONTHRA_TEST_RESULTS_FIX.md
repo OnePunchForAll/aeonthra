@@ -11,7 +11,7 @@
 The test confirmed these features work correctly:
 
 - ✅ **AEONTHRA wordmark** glows cyan, background is near-black, fonts load correctly
-- ✅ **Demo mode** loads with 12 concepts, 6 tasks, "PHI 208: Ethics and Moral Reasoning" as course title
+- ✅ **Demo mode** loads with 12 concepts, 6 tasks, "PHIL 101: Introduction to Ethics" as course title
 - ✅ **Concept Map** shows 12 nodes with differentiated mastery colors (gold for Utilitarianism at 82%, teal for Deontology at 74%, dim for unpracticed). Clicking nodes updates the detail panel with concept-specific content.
 - ✅ **Concept detail panel** shows real definitions, real detail text, real mnemonics ("picture a glowing utility meter"), and a READ ALOUD button
 - ✅ **Neural Forge Genesis** shows a REAL ethical dilemma ("A hospital has one dose of a life-saving drug...") with three genuinely different framework-specific choices (utilitarian, deontological, virtue ethics). This is exactly what we wanted.
@@ -466,7 +466,7 @@ No error messages. No "Loading extension state..." that never resolves. Just a c
 │  CAPTURE INTELLIGENCE                  │
 │                                        │
 │  COURSE DETECTED                       │
-│  PHI 208 · Ethics and Moral Reasoning  │
+│  PHIL 101 · Introduction to Ethics  │
 │  canvas.example.edu                    │
 │                                        │
 │  ┌──────────────────────────────────┐  │

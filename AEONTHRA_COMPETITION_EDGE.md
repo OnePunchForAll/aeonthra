@@ -84,7 +84,7 @@ function DemoButton() {
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ ⚡ DEMO MODE — Exploring PHI 208: Ethics. Import your own       │
+│ ⚡ DEMO MODE — Exploring PHIL 101: Ethics. Import your own       │
 │   course to replace this data.                      [ DISMISS ] │
 └──────────────────────────────────────────────────────────────────┘
 ```

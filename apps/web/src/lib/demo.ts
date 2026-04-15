@@ -344,8 +344,8 @@ function buildDemoItems(): CaptureItem[] {
   const conceptPages = DEMO_CONCEPTS.map((seed) => createItem({
     kind: "page",
     title: seed.sourceTitle,
-    canonicalUrl: `https://demo.learning.local/courses/phi-208/modules/${seed.module}/pages/${slugify(seed.label)}`,
-    headingTrail: ["PHI 208", `Module ${seed.module}`, seed.sourceTitle],
+    canonicalUrl: `https://demo.learning.local/courses/phil-101/modules/${seed.module}/pages/${slugify(seed.label)}`,
+    headingTrail: ["PHIL 101", `Module ${seed.module}`, seed.sourceTitle],
     plainText: conceptPageText(seed),
     html: conceptPageHtml(seed),
     tags: [slugify(seed.label), "concept-page"]
@@ -355,8 +355,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "assignment",
       title: "Module 1 - Ethics Position Paper 1: Utilitarianism in Practice",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/assignments/paper-1",
-      headingTrail: ["PHI 208", "Assignments", "Module 1 - Ethics Position Paper 1: Utilitarianism in Practice"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/assignments/paper-1",
+      headingTrail: ["PHIL 101", "Assignments", "Module 1 - Ethics Position Paper 1: Utilitarianism in Practice"],
       plainText: [
         "Due April 17, 2026. Write a 1500-word paper analyzing a real-world ethical dilemma through the lens of utilitarianism.",
         "You must include both Bentham and Mill's perspectives, address at least one major objection, and cite 4 scholarly sources in APA format.",
@@ -371,8 +371,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "discussion",
       title: "Module 2 - Week 3 Discussion: The Trolley Problem",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/discussion_topics/trolley-problem",
-      headingTrail: ["PHI 208", "Discussions", "Module 2 - Week 3 Discussion: The Trolley Problem"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/discussion_topics/trolley-problem",
+      headingTrail: ["PHIL 101", "Discussions", "Module 2 - Week 3 Discussion: The Trolley Problem"],
       plainText: [
         "Due April 24, 2026. In 300 words minimum, explain what you would do in the classic trolley problem and why.",
         "Compare the utilitarian and deontological perspectives.",
@@ -388,8 +388,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "assignment",
       title: "Module 3 - Kantian Ethics Analysis",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/assignments/kantian-analysis",
-      headingTrail: ["PHI 208", "Assignments", "Module 3 - Kantian Ethics Analysis"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/assignments/kantian-analysis",
+      headingTrail: ["PHIL 101", "Assignments", "Module 3 - Kantian Ethics Analysis"],
       plainText: [
         "Due May 1, 2026. Apply Kant's categorical imperative to a contemporary ethical issue.",
         "Explain both formulations and show how they lead to the same conclusion.",
@@ -405,8 +405,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "discussion",
       title: "Module 4 - Week 5 Discussion: Cultural Relativism",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/discussion_topics/relativism",
-      headingTrail: ["PHI 208", "Discussions", "Module 4 - Week 5 Discussion: Cultural Relativism"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/discussion_topics/relativism",
+      headingTrail: ["PHIL 101", "Discussions", "Module 4 - Week 5 Discussion: Cultural Relativism"],
       plainText: [
         "Due May 8, 2026. Is moral relativism a defensible position? Argue for or against using at least two examples.",
         "Consider the strongest objection to your position.",
@@ -420,8 +420,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "quiz",
       title: "Module 5 - Midterm Quiz",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/quizzes/midterm",
-      headingTrail: ["PHI 208", "Quizzes", "Module 5 - Midterm Quiz"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/quizzes/midterm",
+      headingTrail: ["PHIL 101", "Quizzes", "Module 5 - Midterm Quiz"],
       plainText: [
         "Due May 15, 2026. 25 multiple choice questions covering Chapters 1-5. 60 minutes. One attempt.",
         `Relevant course concepts: ${assignmentConceptList(["Utilitarianism", "Deontology", "Virtue Ethics", "Categorical Imperative", "Social Contract Theory", "Moral Relativism"])}.`
@@ -434,8 +434,8 @@ function buildDemoItems(): CaptureItem[] {
     createItem({
       kind: "assignment",
       title: "Module 6 - Final Paper: Applied Ethics Case Study",
-      canonicalUrl: "https://demo.learning.local/courses/phi-208/assignments/final-paper",
-      headingTrail: ["PHI 208", "Assignments", "Module 6 - Final Paper: Applied Ethics Case Study"],
+      canonicalUrl: "https://demo.learning.local/courses/phil-101/assignments/final-paper",
+      headingTrail: ["PHIL 101", "Assignments", "Module 6 - Final Paper: Applied Ethics Case Study"],
       plainText: [
         "Due May 22, 2026. Choose a real-world ethical controversy and analyze it using at least three different ethical frameworks from the course.",
         "Your analysis must show genuine engagement with the strengths and limitations of each framework.",
@@ -848,7 +848,7 @@ export function createDemoBundle(): CaptureBundle {
   return {
     schemaVersion: SCHEMA_VERSION,
     source: "demo",
-    title: "PHI 208: Ethics and Moral Reasoning",
+    title: "PHIL 101: Introduction to Ethics",
     capturedAt: DEMO_CAPTURED_AT,
     items,
     resources: [],

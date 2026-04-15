@@ -235,7 +235,7 @@ It should feel like looking through a train window at the semester rushing past.
 
 ```
 ┌─ TOP BAR (64px) ───────────────────────────────────────────────────────┐
-│  AEONTHRA  ● ● ● ● ●  PHI 208  │  Timeline  │  00:00  │  RESET      │
+│  AEONTHRA  ● ● ● ● ●  PHIL 101  │  Timeline  │  00:00  │  RESET      │
 ├────────────────────────────────────────────────────────────────────────┤
 │                                                                        │
 │  ┌─ CONTROLS BAR ─────────────────────────────────────────────────┐    │
@@ -974,7 +974,7 @@ Students take multiple courses. The app should support switching between capture
 ```
 ┌─ COURSE SWITCHER (top bar dropdown) ──────────────────┐
 │                                                        │
-│  PHI 208 · Ethics and Moral Reasoning  ← ACTIVE       │
+│  PHIL 101 · Introduction to Ethics  ← ACTIVE       │
 │  PSY 101 · Intro Psychology                            │
 │  ENG 201 · English Composition                         │
 │                                                        │
@@ -1250,7 +1250,7 @@ The dashboard is the first thing the student sees after import. It needs to feel
 
 ```
 ┌─ TOP BAR ──────────────────────────────────────────────────────────┐
-│  AEONTHRA ● ● ● ●  PHI 208  │  [course switcher ▾]  │  🔍  │ ⚙  │
+│  AEONTHRA ● ● ● ●  PHIL 101  │  [course switcher ▾]  │  🔍  │ ⚙  │
 ├────────────────────────────────────────────────────────────────────┤
 │                                                                    │
 │  ┌─ HERO ZONE ────────────────────────────────────────────────┐    │

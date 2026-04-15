@@ -538,7 +538,7 @@ After discovery (which takes 2-5 seconds), the extension shows the student what 
 ```
 ┌────────────────────────────────────────────┐
 │                                            │
-│       DETECTED: PHI 208 · Ethics           │
+│       DETECTED: PHIL 101 · Ethics           │
 │                                            │
 │  Found in this course:                     │
 │                                            │
@@ -1283,9 +1283,9 @@ Shows immediately when the extension detects a Canvas URL. Confirms course name 
 │                                            │
 │  COURSE DETECTED                           │
 │  ┌──────────────────────────────────────┐  │
-│  │  PHI 208                             │  │
-│  │  Ethics and Moral Reasoning          │  │
-│  │  Dr. Jane Naughton · Spring 2026     │  │
+│  │  PHIL 101                             │  │
+│  │  Introduction to Ethics          │  │
+│  │  Dr. Alex Morgan · Spring Term     │  │
 │  │  canvas.example.edu                 │  │
 │  └──────────────────────────────────────┘  │
 │                                            │
@@ -1317,7 +1317,7 @@ Shows the discovery summary table with all counts, estimated time/size, and the 
 │                                            │
 │  ◀ Back                                    │
 │                                            │
-│  DETECTED: PHI 208 · Ethics                │
+│  DETECTED: PHIL 101 · Ethics                │
 │                                            │
 │  Scanning course structure...              │
 │  ┌──────────────────────────────────────┐  │
@@ -1401,7 +1401,7 @@ This is the most important view. When capture finishes, the student sees this:
 │            ✓  CAPTURE COMPLETE             │
 │                                            │
 │  ┌──────────────────────────────────────┐  │
-│  │  PHI 208 · Ethics and Moral Reasoning│  │
+│  │  PHIL 101 · Introduction to Ethics│  │
 │  │  Learning Content Only               │  │
 │  │  Captured in 6m 42s                  │  │
 │  └──────────────────────────────────────┘  │
@@ -1515,7 +1515,7 @@ Previous captures, with actions per entry:
 ├────────────────────────────────────────────┤
 │                                            │
 │  ┌──────────────────────────────────────┐  │
-│  │ PHI 208 · Ethics                     │  │
+│  │ PHIL 101 · Ethics                     │  │
 │  │ Learning Content · 612 KB            │  │
 │  │ Apr 9, 2026 · 11:43 PM               │  │
 │  │                                      │  │
@@ -1531,7 +1531,7 @@ Previous captures, with actions per entry:
 │  └──────────────────────────────────────┘  │
 │                                            │
 │  ┌──────────────────────────────────────┐  │
-│  │ PHI 208 · Ethics                     │  │
+│  │ PHIL 101 · Ethics                     │  │
 │  │ Full Snapshot · 8.2 MB               │  │
 │  │ Mar 28, 2026 · 7:30 PM               │  │
 │  │                                      │  │
@@ -1731,8 +1731,8 @@ interface CapturePayload {
   
   // Course identity
   courseId: string;
-  courseCode: string;     // "PHI 208"
-  courseName: string;     // "Ethics and Moral Reasoning"
+  courseCode: string;     // "PHIL 101"
+  courseName: string;     // "Introduction to Ethics"
   instructor?: string;
   term?: string;
 origin: string;         // "canvas.example.edu"
