@@ -157,20 +157,29 @@ function renderOverlay(runtime: {
     return;
   }
 
+  // Use innerHTML only for static markup; set user-controlled title via textContent to prevent XSS
+  const pct = Math.round(runtime.progressPct);
+  const barWidth = Math.max(0, Math.min(100, runtime.progressPct));
   node.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;">
       <div>
         <div style="font-family:Orbitron, sans-serif;font-size:11px;letter-spacing:0.18em;color:#00f0ff;">AEONTHRA CAPTURE</div>
-        <div style="font-size:14px;font-weight:700;margin-top:4px;">${runtime.phaseLabel}</div>
+        <div style="font-size:14px;font-weight:700;margin-top:4px;" data-phase></div>
       </div>
-      <div style="font-family:JetBrains Mono, monospace;font-size:12px;color:#b0b0d0;">${Math.round(runtime.progressPct)}%</div>
+      <div style="font-family:JetBrains Mono, monospace;font-size:12px;color:#b0b0d0;">${pct}%</div>
     </div>
     <div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;margin-bottom:10px;">
-      <div style="height:100%;width:${Math.max(0, Math.min(100, runtime.progressPct))}%;background:linear-gradient(90deg,#00f0ff,#06d6a0);box-shadow:0 0 18px rgba(0,240,255,0.28);"></div>
+      <div style="height:100%;width:${barWidth}%;background:linear-gradient(90deg,#00f0ff,#06d6a0);box-shadow:0 0 18px rgba(0,240,255,0.28);"></div>
     </div>
-    <div style="font-size:12px;line-height:1.5;color:#b0b0d0;">${runtime.currentTitle || "Preparing course capture..."}</div>
-    <div style="margin-top:8px;font-size:11px;color:#6a6a9a;">${runtime.completedCount}/${runtime.totalQueued || "?"} items processed</div>
+    <div style="font-size:12px;line-height:1.5;color:#b0b0d0;" data-title></div>
+    <div style="margin-top:8px;font-size:11px;color:#6a6a9a;" data-count></div>
   `;
+  const phaseEl = node.querySelector<HTMLElement>("[data-phase]");
+  const titleEl = node.querySelector<HTMLElement>("[data-title]");
+  const countEl = node.querySelector<HTMLElement>("[data-count]");
+  if (phaseEl) phaseEl.textContent = runtime.phaseLabel;
+  if (titleEl) titleEl.textContent = runtime.currentTitle || "Preparing course capture...";
+  if (countEl) countEl.textContent = `${runtime.completedCount}/${runtime.totalQueued || "?"} items processed`;
 }
 
 async function sleep(ms: number): Promise<void> {

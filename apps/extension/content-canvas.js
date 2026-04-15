@@ -4,7 +4,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../../../node_modules/zod/v3/external.js
+// ../../node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -116,7 +116,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../../../../node_modules/zod/v3/helpers/util.js
+// ../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -250,7 +250,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../../../../node_modules/zod/v3/ZodError.js
+// ../../node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -368,7 +368,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../../../../node_modules/zod/v3/locales/en.js
+// ../../node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -471,7 +471,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../../../../node_modules/zod/v3/errors.js
+// ../../node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -480,7 +480,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../../../../node_modules/zod/v3/helpers/parseUtil.js
+// ../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -590,14 +590,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../../../../node_modules/zod/v3/helpers/errorUtil.js
+// ../../node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../../../../node_modules/zod/v3/types.js
+// ../../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -4489,20 +4489,28 @@ function renderOverlay(runtime) {
     overlayNode = null;
     return;
   }
+  const pct = Math.round(runtime.progressPct);
+  const barWidth = Math.max(0, Math.min(100, runtime.progressPct));
   node.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;">
       <div>
         <div style="font-family:Orbitron, sans-serif;font-size:11px;letter-spacing:0.18em;color:#00f0ff;">AEONTHRA CAPTURE</div>
-        <div style="font-size:14px;font-weight:700;margin-top:4px;">${runtime.phaseLabel}</div>
+        <div style="font-size:14px;font-weight:700;margin-top:4px;" data-phase></div>
       </div>
-      <div style="font-family:JetBrains Mono, monospace;font-size:12px;color:#b0b0d0;">${Math.round(runtime.progressPct)}%</div>
+      <div style="font-family:JetBrains Mono, monospace;font-size:12px;color:#b0b0d0;">${pct}%</div>
     </div>
     <div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;margin-bottom:10px;">
-      <div style="height:100%;width:${Math.max(0, Math.min(100, runtime.progressPct))}%;background:linear-gradient(90deg,#00f0ff,#06d6a0);box-shadow:0 0 18px rgba(0,240,255,0.28);"></div>
+      <div style="height:100%;width:${barWidth}%;background:linear-gradient(90deg,#00f0ff,#06d6a0);box-shadow:0 0 18px rgba(0,240,255,0.28);"></div>
     </div>
-    <div style="font-size:12px;line-height:1.5;color:#b0b0d0;">${runtime.currentTitle || "Preparing course capture..."}</div>
-    <div style="margin-top:8px;font-size:11px;color:#6a6a9a;">${runtime.completedCount}/${runtime.totalQueued || "?"} items processed</div>
+    <div style="font-size:12px;line-height:1.5;color:#b0b0d0;" data-title></div>
+    <div style="margin-top:8px;font-size:11px;color:#6a6a9a;" data-count></div>
   `;
+  const phaseEl = node.querySelector("[data-phase]");
+  const titleEl = node.querySelector("[data-title]");
+  const countEl = node.querySelector("[data-count]");
+  if (phaseEl) phaseEl.textContent = runtime.phaseLabel;
+  if (titleEl) titleEl.textContent = runtime.currentTitle || "Preparing course capture...";
+  if (countEl) countEl.textContent = `${runtime.completedCount}/${runtime.totalQueued || "?"} items processed`;
 }
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
