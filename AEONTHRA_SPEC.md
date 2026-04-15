@@ -1895,10 +1895,10 @@ export interface AppSettings {
 ```json
 {
   "id": "course_445201",
-  "name": "PHI 208: Ethics and Moral Reasoning",
+  "name": "PHIL 101: Introduction to Ethics",
   "code": "PHI208",
-  "term": "Spring 2026",
-  "instructor": "Dr. Jane Naughton",
+  "term": "Spring Term",
+  "instructor": "Dr. Alex Morgan",
   "assignments": [
     { "id": "assign_7829341", "type": "assignment", "title": "Ethics Paper 1: Utilitarianism in Practice", "dueDate": 1713128400000, "pointsPossible": 100 },
     { "id": "assign_7829342", "type": "assignment", "title": "Ethics Paper 2: Kantian Analysis", "dueDate": 1714338000000, "pointsPossible": 100 },

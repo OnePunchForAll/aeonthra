@@ -103,7 +103,10 @@ export class RefractionEngine {
     const applicable = ANGLES.filter((angle) => angle.applicabilityCheck(analysis));
     return applicable
       .slice(0, 5)
-      .map((angle, index) => this.instantiateAngle(angle, concepts, concepts[index + 1] ?? concepts[0]))
+      .map((angle, index) => {
+        const other = concepts.length > 1 ? concepts[(index + 1) % concepts.length] : concepts[0];
+        return this.instantiateAngle(angle, concepts, other);
+      })
       .filter((angle, index, array) => array.findIndex((entry) => entry.id === angle.id) === index);
   }
 

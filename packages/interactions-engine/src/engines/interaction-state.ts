@@ -1,6 +1,8 @@
 import type { InteractionState } from "../types";
 import { stableId } from "../utils";
 
+let sessionCounter = 0;
+
 type FocusEvent = {
   modeId: string;
   entityType: string;
@@ -17,7 +19,7 @@ export class InteractionStateEngine {
   private readonly listeners = new Set<Listener>();
 
   startSession<T extends Record<string, unknown>>(modeId: string, initialData?: T): string {
-    const sessionId = stableId(`${modeId}:${Date.now()}:${Math.random()}`);
+    const sessionId = stableId(`${modeId}:${Date.now()}:${++sessionCounter}`);
     const state: InteractionState<T> = {
       modeId,
       sessionId,

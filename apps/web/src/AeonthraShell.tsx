@@ -1,18 +1,72 @@
 // @ts-nocheck
+// TODO(typing): This file is a single-pass minified JSX shell (~1938 lines).
+// Full TypeScript typing requires splitting into per-view components first.
+// Tracked: all prop types live in shell-mapper.ts and workspace.ts (typed).
+// The component contract (props in/out) is fully typed via the ShellData /
+// AppProgress interfaces; only the internal view state is untyped here.
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { ShellData } from "./lib/shell-mapper";
 import type { AppProgress } from "./lib/workspace";
+import { loadNotes, storeNotes } from "./lib/storage";
 
 type AeonthraShellProps = {
   data: ShellData;
   progress: AppProgress;
   onProgressUpdate: (update: Partial<AppProgress>) => void;
   onReset: () => void;
+  onDownloadOfflineSite: () => void;
+  onSaveReplayBundle: () => void;
   isDemoMode: boolean;
 };
 
 const mc2=m=>m>=.8?"#ffd700":m>=.5?"#06d6a0":m>=.2?"#00f0ff":m>0?"#4a5a8a":"#2a2a48";
 const P=v=>Math.round(v*100)+'%';
+const INVALID_CONCEPT_LABELS=new Set([
+  "common confusion",
+  "common mistake",
+  "core idea",
+  "going deeper",
+  "initial post",
+  "key distinction",
+  "memory hook",
+  "real world application",
+]);
+
+const normalizePanelText=(value)=>(value??"").replace(/\s+/g," ").trim();
+const isBadConceptLabel=(label)=>{const normalized=normalizePanelText(label).toLowerCase();return normalized.length<4||INVALID_CONCEPT_LABELS.has(normalized);};
+const isRenderablePanelText=(value)=>normalizePanelText(value).length>=20;
+const uniqueNonEmptyPanels=(panels)=>{
+  const seen=new Set();
+  return panels.filter((panel)=>{
+    const body=normalizePanelText(panel.body);
+    if(!isRenderablePanelText(body))return false;
+    const key=body.toLowerCase();
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).map((panel)=>({...panel,body:normalizePanelText(panel.body)}));
+};
+const buildConceptPanels=(concept)=>uniqueNonEmptyPanels([
+  {id:"core",label:"Core Idea",body:concept?.core,color:"#00f0ff",icon:"📌"},
+  {id:"depth",label:"Going Deeper",body:concept?.depth,color:"#00f0ff",icon:"🔍"},
+  {id:"dist",label:"Key Distinction",body:concept?.dist,color:"#a78bfa",icon:"⚖"},
+  {id:"trap",label:"Common Mistake",body:concept?.trap,color:"#ff667a",icon:"🚫"},
+  {id:"hook",label:"Memory Hook",body:concept?.hook,color:"#06d6a0",icon:"🔗"},
+]);
+const buildForgeSteps=(concept)=>buildConceptPanels(concept).filter((panel)=>panel.id!=="hook");
+const buildFlashCards=(concept)=>uniqueNonEmptyPanels([
+  {front:concept?.name,body:concept?.core,label:"Definition"},
+  {front:"Going Deeper",body:concept?.depth,label:"Deeper context"},
+  {front:"Key Distinction",body:concept?.dist,label:"How it differs"},
+  {front:"Common Mistake",body:concept?.trap,label:"Watch out"},
+  {front:"Memory Hook",body:concept?.hook,label:"Remember this"},
+  {front:concept?.kw?.[0]||"Key Term",body:concept?.depth||concept?.core,label:"Apply it"},
+]);
+const stableHash=(value)=>{let hash=0;for(let i=0;i<value.length;i++)hash=(hash*31+value.charCodeAt(i))>>>0;return hash;};
+const stableOrder=(values,seed)=>[...values].map((value,index)=>({value,index,key:stableHash(`${seed}:${index}:${JSON.stringify(value)}`)})).sort((a,b)=>a.key-b.key||a.index-b.index).map((entry)=>entry.value);
+const takeStableSubset=(values,count,seed)=>stableOrder(values,seed).slice(0,Math.min(count,values.length));
+const isRenderableConcept=(concept)=>Boolean(concept)&&!isBadConceptLabel(concept?.name||concept?.label||"")&&normalizePanelText(concept?.core||concept?.definition||"").length>=12;
+const completedConceptSet=(concepts,progress)=>new Set(concepts.filter((concept)=>(progress?.conceptMastery?.[concept.id]??0)>=.8).map((concept)=>concept.id));
 
 const MARGIN_TYPES={
   hook:{icon:"★",label:"Key Insight"},
@@ -25,10 +79,8 @@ const MARGIN_TYPES={
   memory:{icon:"🔗",label:"Memory Hook"},
 };
 
-export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,isDemoMode}:AeonthraShellProps){
-const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE}=data;
-const DISCUSSIONS=[];
-const QUALITY_META={};
+export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,onDownloadOfflineSite,onSaveReplayBundle,isDemoMode}:AeonthraShellProps){
+const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE,synthesis:SYNTHESIS}=data;
 const[cc,setCC]=useState(()=>CD.map(c=>({...c,mastery:initialProgress.conceptMastery[c.id]??0})));
 const[v,setV]=useState("home");
 const[selC,setSC]=useState(null);
@@ -46,7 +98,7 @@ const[ff,setFF]=useState(false);
 const[ws,setWS]=useState(null);
 const[wd,setWD]=useState(new Set());
 const[sc,setSCO]=useState({c:0,w:0});
-const[done,setDone]=useState(new Set());
+const[done,setDone]=useState(()=>completedConceptSet(CD,initialProgress));
 const[qn,setQN]=useState(10);
 const[diff,setDiff]=useState("mixed");
 const[mode,setMode]=useState("learn");
@@ -107,11 +159,13 @@ const recordMemory=(conceptId,correct)=>{
       setGhosts(p=>[...p,{conceptId,conceptName:concept.name,missedAt:Date.now(),text:concept.trap}].slice(-20));
     }
   }
-  // Trigger delayed recall from a random earlier concept (10% chance)
-  if(correct&&totalAnswered>5&&Math.random()<.1){
+  // Trigger delayed recall on a stable cadence so identical sessions behave the same way.
+  // Use stableHash(conceptId) — not conceptId.length — to avoid coupling cadence to string length.
+  if(correct&&totalAnswered>5){
     const earlier=cc.filter(c=>c.id!==conceptId&&c.mastery>0&&c.mastery<.8);
-    if(earlier.length){
-      const pick=earlier[Math.floor(Math.random()*earlier.length)];
+    const seed=stableHash(conceptId);
+    if(earlier.length&&((totalAnswered+seed)%7===0)){
+      const pick=earlier[(totalAnswered+seed)%earlier.length];
       setDelayedRecall({concept:pick,ts:Date.now()});
     }
   }
@@ -124,8 +178,24 @@ const getGhost=(conceptId)=>{
   return g;
 };
 const[launched,setLaunched]=useState(false);
-const[sessionTime,setSessionTime]=useState(0);
+const sessionTimeRef=useRef(0);
+const sessionTimerElRef=useRef(null);
 const[draft,setDraft]=useState({});
+const[navScrolled,setNavScrolled]=useState(false);
+const[notes,setNotes]=useState(()=>loadNotes());
+useEffect(()=>{storeNotes(notes);},[notes]);
+useEffect(()=>{const h=()=>setNavScrolled(window.scrollY>30);window.addEventListener("scroll",h,{passive:true});return()=>window.removeEventListener("scroll",h);},[]);
+const atlasScrollRef=useRef(null);
+const atlasRafRef=useRef(null);
+useEffect(()=>{
+  if(v!=="journey"){if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}return;}
+  let spd=0;
+  const onMove=(e)=>{const w=window.innerWidth;const z=w*.28;if(e.clientX<z){spd=-(z-e.clientX)/z*14;}else if(e.clientX>w-z){spd=(e.clientX-(w-z))/z*14;}else{spd=0;}};
+  const tick=()=>{if(atlasScrollRef.current&&spd!==0)atlasScrollRef.current.scrollLeft+=spd;atlasRafRef.current=requestAnimationFrame(tick);};
+  window.addEventListener("mousemove",onMove,{passive:true});
+  atlasRafRef.current=requestAnimationFrame(tick);
+  return()=>{window.removeEventListener("mousemove",onMove);if(atlasRafRef.current)cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;};
+},[v]);
 // ═══ ARGUMENT FORGE ═══
 const[argStage,setArgStage]=useState("thesis"); // thesis|outline|draft
 const[thesis,setThesis]=useState({});
@@ -189,7 +259,6 @@ const[practiceI,setPracticeI]=useState(0);
 const[practiceA,setPracticeA]=useState(null);
 const[practiceSc,setPracticeSc]=useState({c:0,w:0});
 const[gymPair,setGymPair]=useState(null);
-const[gymMode,setGymMode]=useState("border"); // border|corruption|neighbor|lessWrong
 const[gymA,setGymA]=useState(null);
 const[gymExplained,setGymExplained]=useState(false);
 // ═══ READER OS ═══
@@ -294,46 +363,98 @@ const MODULES=data.modules;
 // QUESTION GENERATION ENGINE — generates up to 100 per concept from templates
 const generateQuestions=(conceptId,count,type)=>{
   const c=cc.find(x=>x.id===conceptId);if(!c)return[];
+  if(!isRenderableConcept(c))return[];
   const pool=[];
+  const primaryKeyword=normalizePanelText(c.kw[0]||c.name.toLowerCase());
+  const safeTrap=normalizePanelText(c.trap||`Students often flatten ${c.name} into a generic course prompt.`);
+  const safeDepth=normalizePanelText(c.depth||c.core);
+  const safeDist=normalizePanelText(c.dist||c.core);
+  const safeHook=normalizePanelText(c.hook||`Use ${c.name} as the lens for explaining what the source is trying to show.`);
   // Original hand-crafted questions
   if(type==="tf")c.tf.forEach(q=>pool.push({...q,source:"hand"}));
   if(type==="mc")c.mc.forEach(q=>pool.push({...q,source:"hand"}));
   // Generated cross-concept comparisons
-  const others=cc.filter(x=>x.id!==c.id);
+  const others=cc.filter(x=>x.id!==c.id&&isRenderableConcept(x));
   if(type==="tf"){
     others.forEach(o=>{
-      pool.push({c:`${c.name} and ${o.name} are both part of the ${c.cat} tradition.`,a:c.cat===o.cat,e:c.cat===o.cat?`Correct — both fall under ${c.cat}.`:`False — ${c.name} is ${c.cat} while ${o.name} is ${o.cat}.`,source:"gen"});
-      pool.push({c:`${c.name} focuses primarily on ${c.kw[0]}.`,a:true,e:`Correct — ${c.kw[0]} is central to ${c.name}.`,source:"gen"});
+      pool.push({statement:`${c.name} and ${o.name} are both part of the ${c.cat} tradition.`,answer:c.cat===o.cat,explanation:c.cat===o.cat?`Correct — both fall under ${c.cat}.`:`False — ${c.name} is ${c.cat} while ${o.name} is ${o.cat}.`,source:"gen"});
     });
-    pool.push({c:`A key pitfall when studying ${c.name} is: ${c.trap.split(".")[0]}.`,a:true,e:`Correct — ${c.trap}`,source:"gen"});
-    pool.push({c:`${c.name} was developed as a response to virtue ethics.`,a:false,e:`Not specifically — ${c.depth.split(".")[0]}.`,source:"gen"});
+    pool.push({statement:`${c.name} focuses primarily on ${primaryKeyword}.`,answer:true,explanation:`Correct — ${primaryKeyword} is central to ${c.name}.`,source:"gen"});
+    pool.push({statement:`A key pitfall when studying ${c.name} is: ${safeTrap.split(".")[0]}.`,answer:true,explanation:`Correct — ${safeTrap}`,source:"gen"});
+    pool.push({statement:`${c.name} applies only in academic writing contexts.`,answer:false,explanation:`Not specifically — ${safeDepth.split(".")[0]}.`,source:"gen"});
   }
   if(type==="mc"){
     others.slice(0,4).forEach(o=>{
-      pool.push({q:`What is the key difference between ${c.name} and ${o.name}?`,o:[c.dist.split(".")[0],o.dist.split(".")[0],"They are essentially identical","Neither has practical applications"],c:0,e:`${c.name}: ${c.core} vs ${o.name}: ${o.core}`,source:"gen"});
+      pool.push({question:`What is the key difference between ${c.name} and ${o.name}?`,options:[safeDist.split(".")[0]||`${c.name} has a distinct primary claim in this source`,normalizePanelText(o.dist||o.core).split(".")[0]||`${o.name} focuses on a different aspect of this topic`,"They are essentially identical","Neither has practical applications"],correctIndex:0,explanation:`${c.name}: ${c.core} vs ${o.name}: ${o.core}`,source:"gen"});
     });
-    pool.push({q:`Which memory hook best captures ${c.name}?`,o:[c.hook,...others.slice(0,3).map(o=>o.hook)],c:0,e:`The correct hook for ${c.name}: ${c.hook}`,source:"gen"});
+    pool.push({question:`Which memory hook best captures ${c.name}?`,options:[safeHook,...others.slice(0,3).map(o=>normalizePanelText(o.hook||o.core))],correctIndex:0,explanation:`The correct hook for ${c.name}: ${safeHook}`,source:"gen"});
   }
-  // Shuffle and limit
-  const shuffled=pool.sort(()=>Math.random()-.5);
-  return shuffled.slice(0,Math.min(count,pool.length));
+  return takeStableSubset(pool,count,`${c.id}:${type}`);
 };
 
-useEffect(()=>{if(!launched)return;const t=setInterval(()=>setSessionTime(s=>s+1),1000);return()=>clearInterval(t);},[launched]);
+useEffect(()=>{if(!launched)return;const t=setInterval(()=>{sessionTimeRef.current+=1;if(sessionTimerElRef.current){const s=sessionTimeRef.current;sessionTimerElRef.current.textContent=`⏱ ${Math.floor(s/60)}m ${s%60}s`;}},1000);return()=>clearInterval(t);},[launched]);
+useEffect(()=>{
+  setCC((current)=>{
+    const currentMastery=new Map(current.map((c)=>[c.id,c.mastery]));
+    const getNext=(id)=>Math.max(initialProgress.conceptMastery?.[id]??0,currentMastery.get(id)??0);
+    const anyChange=CD.some((c)=>getNext(c.id)!==(currentMastery.get(c.id)??0));
+    if(!anyChange)return current; // stable ref — no downstream re-render
+    const currentMap=new Map(current.map((c)=>[c.id,c]));
+    return CD.map((c)=>({...c,mastery:getNext(c.id)??currentMap.get(c.id)?.mastery??0}));
+  });
+  setDone((prev)=>{
+    const next=completedConceptSet(CD,initialProgress);
+    if(next.size===prev.size&&[...next].every((id)=>prev.has(id)))return prev;
+    return next;
+  });
+},[CD,initialProgress]);
+useEffect(()=>{
+  const restoredSections={};
+  const restoredPositions={};
+  READING.forEach((reading)=>{
+    const completion=initialProgress.chapterCompletion?.[reading.module]??initialProgress.chapterCompletion?.[reading.id]??0;
+    const restoredCount=Math.max(0,Math.min(reading.sections.length,Math.round(completion*reading.sections.length)));
+    for(let idx=0;idx<restoredCount;idx+=1){
+      restoredSections[`${reading.id}:${idx}`]=true;
+    }
+    if(restoredCount>0){
+      restoredPositions[reading.id]=restoredCount-1;
+    }
+  });
+  setSectionsRead(restoredSections);
+  setReadingPositions(restoredPositions);
+},[READING,initialProgress]);
 // Sync mastery back to parent for persistence
+const prevProgressKeyRef=useRef(null);
 useEffect(()=>{
   const mastery=Object.fromEntries(cc.map(c=>[c.id,c.mastery]));
-  onProgressUpdate({conceptMastery:mastery});
+  const key=JSON.stringify(mastery)+String(practiceMode);
+  if(prevProgressKeyRef.current===key)return; // identical — skip to break render loop
+  prevProgressKeyRef.current=key;
+  onProgressUpdate({conceptMastery:mastery,practiceMode:Boolean(practiceMode)});
 // eslint-disable-next-line react-hooks/exhaustive-deps
-},[cc]);
+},[cc,practiceMode]);
+const prevChapterKeyRef=useRef(null);
+useEffect(()=>{
+  const chapterCompletion=Object.fromEntries(
+    READING
+      .map((reading)=>[reading.module||reading.id,getReadingProgress(reading.id,reading.sections.length)/100])
+      .sort((left,right)=>String(left[0]).localeCompare(String(right[0])))
+  );
+  const key=JSON.stringify(chapterCompletion);
+  if(prevChapterKeyRef.current===key)return; // identical — skip to break render loop
+  prevChapterKeyRef.current=key;
+  onProgressUpdate({chapterCompletion});
+// eslint-disable-next-line react-hooks/exhaustive-deps
+},[READING,sectionsRead]);
 
 // Keyboard shortcuts
 useEffect(()=>{
   const handler=(e)=>{
     if(v!=="forge"||!fc)return;
     if(fp==="tf"&&ta===null){
-      if(e.key==="t"||e.key==="T"){const ok=fc.tf[ti2]?.a;setTA(true);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));recordAnswerFlow(ok,fc.id,fc.tf[ti2]);if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id);flash("✗ Not quite",false);}}
-      if(e.key==="f"||e.key==="F"){const q2=fc.tf[ti2];if(!q2)return;const ok=!q2.a;setTA(false);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));recordAnswerFlow(ok,fc.id,q2);if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id);flash("✗ Not quite",false);}}
+      if(e.key==="t"||e.key==="T"){const q2=fc.tf[ti2];if(!q2)return;const ok=q2.answer;setTA(true);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));recordAnswerFlow(ok,fc.id,q2);if(ok){bump(fc.id,.03);flash("✓ Correct!",true);}else{flash("✗ Not quite",false);}}
+      if(e.key==="f"||e.key==="F"){const q2=fc.tf[ti2];if(!q2)return;const ok=!q2.answer;setTA(false);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));recordAnswerFlow(ok,fc.id,q2);if(ok){bump(fc.id,.03);flash("✓ Correct!",true);}else{flash("✗ Not quite",false);}}
     }
     if(e.key===" "||e.key==="Enter"){
       if(fp==="intro"&&is2<3){e.preventDefault();setIS(p=>p+1);}
@@ -349,6 +470,10 @@ const go=useCallback((to,d)=>{
   setFade(false);
   setTimeout(()=>{
     setV(to);if(d?.c)setSC(d.c);if(d?.a)setSA(d.a);
+    if(to==="explore"&&!d?.c){
+      const pick=cc.filter(c=>!done.has(c.id)).sort((a,b)=>a.mastery-b.mastery)[0]||cc[0]||null;
+      setSC(pick);
+    }
     if(to==="forge"){
       const t=d?.c||cc.filter(c=>!done.has(c.id)&&c.mastery<.8).sort((a,b)=>a.mastery-b.mastery)[0]||cc[0];
       setFC(t);setFP("intro");setIS(0);setDC(null);setTI(0);setTA(null);setMI(0);setMA(null);setFI(0);setFF(false);setWS(null);setWD(new Set());setSCO({c:0,w:0});
@@ -368,11 +493,11 @@ const formatTime=(s)=>{const m=Math.floor(s/60);const sec=Math.floor(s%60);retur
 // Simulated playback timer
 useEffect(()=>{if(!txPlaying||!transcript)return;const t=setInterval(()=>{setTxTime(p=>{if(p>=transcript.duration){setTxPlaying(false);return transcript.duration;}return p+1;});},1000);return()=>clearInterval(t);},[txPlaying,transcript]);
 const mastered=cc.filter(c=>c.mastery>=.8).length;
-const avg=cc.reduce((s,c)=>s+c.mastery,0)/cc.length;
+const avg=cc.length>0?cc.reduce((s,c)=>s+c.mastery,0)/cc.length:0;
 const nextA=[...ASSIGNMENTS].sort((a,b)=>a.due-b.due)[0];
 
 const askO=()=>{if(!oq.trim())return;const w=oq.toLowerCase().split(/\s+/).filter(x=>x.length>2);
-  setOR(PH.map(p=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b)b=p.q[Math.floor(Math.random()*p.q.length)];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r));};
+  setOR(PH.map((p,pi)=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b&&p.q.length)b=p.q[stableHash(`${p.n}:${pi}:${oq}`)%p.q.length];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r||a.n.localeCompare(b.n)));};
 
 // STYLES
 const B="#020208",CD2="rgba(16,16,36,0.94)",BD="rgba(50,50,100,0.55)",CY="#00f0ff",TL="#06d6a0",GD="#ffd700",RD="#ff4466",TX="#e0e0ff",T2="#b8b8d8",MU="#6a6a9a",DM="#2a2a4a";
@@ -422,13 +547,13 @@ const paraTypes=[
   {id:"close",label:"Conclusion",icon:"🏁",desc:"Tie together and reaffirm thesis",color:TL},
 ];
 
-return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradient(ellipse at 50% 0%,#0c0c2a 0%,#060614 40%,#020208 65%)",color:TX,fontFamily:"'Inter',system-ui,sans-serif",fontSize:"18px",position:"relative",overflow:"hidden"}}>
+return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-gradient(ellipse at 50% 0%,#0c0c2a 0%,#060614 40%,#020208 65%)",color:TX,fontFamily:"'Inter',system-ui,sans-serif",fontSize:"18px",position:"relative",overflow:"clip"}}>
 {/* Ambient glow orbs */}
 <div style={{position:"fixed",top:"-20%",left:"-10%",width:"50vw",height:"50vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(0,240,255,.03) 0%,transparent 70%)",pointerEvents:"none",zIndex:0,animation:"gradientMove 20s ease infinite"}}/>
 <div style={{position:"fixed",bottom:"-30%",right:"-10%",width:"60vw",height:"60vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(6,214,160,.02) 0%,transparent 70%)",pointerEvents:"none",zIndex:0,animation:"gradientMove 25s ease infinite reverse"}}/>
 
 {/* WELCOME — immersive quadrant entry with material ripple */}
-{!launched&&<div style={{minHeight:"100vh",position:"relative",zIndex:10,overflow:"hidden"}}>
+{!launched&&<div style={{minHeight:"100dvh",position:"relative",zIndex:10,overflow:"hidden"}}>
   {/* Four large quadrant cards as background */}
   <div style={{position:"absolute",inset:0,display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"1fr 1fr",gap:2,zIndex:1}}>
     {[
@@ -465,16 +590,17 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
 </div>}
 
 {launched&&<>
-<nav style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 48px",borderBottom:`1px solid rgba(0,240,255,.1)`,position:"sticky",top:0,zIndex:100,background:"rgba(8,8,20,.96)",backdropFilter:"blur(24px)",position:"relative",zIndex:50}}>
+<nav style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 48px",borderBottom:`1px solid ${navScrolled?"rgba(0,240,255,.18)":"rgba(0,240,255,.07)"}`,position:"sticky",top:0,zIndex:100,background:navScrolled?"rgba(6,6,18,.98)":"rgba(8,8,20,.92)",backdropFilter:"blur(24px)",boxShadow:navScrolled?"0 4px 32px rgba(0,0,0,.7)":"none",transition:"background 300ms ease, box-shadow 300ms ease, border-color 300ms ease"}}>
   <div style={{display:"flex",alignItems:"center",gap:20}}>
     <span style={{fontWeight:900,fontSize:"1.6rem",letterSpacing:".16em",color:CY,textShadow:`0 0 36px rgba(0,240,255,.35)`,fontFamily:"'Space Grotesk',sans-serif"}}>AEONTHRA</span>
     <span style={{fontSize:".78rem",letterSpacing:".14em",color:MU,border:"1px solid #222255",padding:"5px 14px",borderRadius:20}}>{COURSE.code}</span>
-    {sessionTime>0&&<span style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ {Math.floor(sessionTime/60)}m {sessionTime%60}s</span>}
+    {launched&&<span ref={sessionTimerElRef} style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ 0m 0s</span>}
   </div>
   <div style={{display:"flex",gap:4}}>
-    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"],["courseware","Library"],["stats","Stats"],["settings","⚙"]].map(([id,lb])=>(
+    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
       <button key={id} onClick={()=>go(id)} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
+    <button onClick={()=>go("settings")} title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
   </div>
 </nav>
 
@@ -487,7 +613,7 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
 {/* CELEBRATION OVERLAY */}
 {showCelebration&&<div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(2,2,8,.9)",animation:"fadeUp .5s ease",overflow:"hidden"}}>
   {/* Floating particles */}
-  {[...Array(20)].map((_,i)=>(<div key={i} style={{position:"absolute",fontSize:["🔥","⭐","✨","💫","🏆"][i%5],left:`${Math.random()*100}%`,bottom:"-10%",animation:`floatParticle ${2+Math.random()*3}s ease ${Math.random()*2}s infinite`,opacity:.8}}>{["🔥","⭐","✨","💫","🏆"][i%5]}</div>))}
+  {[...Array(20)].map((_,i)=>(<div key={i} style={{position:"absolute",fontSize:["🔥","⭐","✨","💫","🏆"][i%5],left:`${(i*17)%100}%`,bottom:"-10%",animation:`floatParticle ${2+(i%4)}s ease ${(i%3)*.35}s infinite`,opacity:.8}}>{["🔥","⭐","✨","💫","🏆"][i%5]}</div>))}
   <div style={{textAlign:"center",position:"relative",zIndex:1}}>
     <div style={{fontSize:"5rem",marginBottom:24,animation:"float 1.5s ease infinite"}}>🏆</div>
     <h2 style={{fontSize:"2.8rem",fontWeight:900,background:`linear-gradient(135deg,${CY},${TL},${GD})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontFamily:"'Space Grotesk',sans-serif",marginBottom:16,animation:"completionBloom .8s ease, celebrate 1.2s ease"}}>CONCEPT MASTERED</h2>
@@ -500,10 +626,15 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
   </div>
 </div>}
 
-<main style={{maxWidth:1320,margin:"0 auto",padding:"48px 44px 140px",opacity:fade?1:0,transition:"opacity 180ms ease"}}>
+<main style={{maxWidth:1440,margin:"0 auto",padding:"44px 48px 140px",opacity:fade?1:0,transition:"opacity 180ms ease"}}>
 
 {/* HOME */}
 {v==="home"&&<>
+
+{/* Source quality banner — only shown when synthesis quality is degraded */}
+{SYNTHESIS?.qualityBanner&&<div style={{background:"rgba(251,146,60,.12)",border:"1px solid rgba(251,146,60,.35)",borderRadius:10,padding:"12px 18px",marginBottom:24,fontSize:".9rem",color:"#fb923c",lineHeight:1.6}}>
+  {SYNTHESIS.qualityBanner}
+</div>}
 
 {/* Supportive greeting */}
 <div style={{textAlign:"center",marginBottom:36,animation:"fadeUp .4s ease"}}>
@@ -547,6 +678,7 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
     ["📝","Assignment prep",()=>{if(nextA)go("assignment",{a:nextA});}],
     ["🗺","Journey map",()=>go("journey")],
     ["🧠","Explore concepts",()=>go("explore")],
+    ["📚","Library",()=>go("courseware")],
     ["📊","My stats",()=>go("stats")],
   ].map(([ic,lb,fn])=>(
     <button key={lb} onClick={fn} style={{padding:"14px 22px",borderRadius:16,border:`1px solid ${BD}`,background:CD2,cursor:"pointer",color:TX,fontSize:".88rem",fontWeight:500,transition:"all 250ms",display:"flex",alignItems:"center",gap:8}}>
@@ -654,20 +786,21 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
   <div style={{padding:"28px 48px",background:"rgba(8,8,20,.85)",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:68,zIndex:40,backdropFilter:"blur(16px)"}}>
     <div><h2 style={{...hd(1.5),marginBottom:4}}>Course Atlas</h2><p style={{color:MU,fontSize:".88rem"}}>Each module climbs higher — scroll right and upward toward mastery</p></div>
     <div style={{display:"flex",gap:24,alignItems:"center"}}>
+      <button onClick={()=>go("courseware")} style={{padding:"8px 18px",borderRadius:12,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>📚 Library</button>
       <div style={{fontSize:"1.4rem",fontWeight:800,color:avg>=.8?GD:avg>=.5?TL:CY,fontFamily:"'Space Grotesk',sans-serif"}}>{P(avg)}</div>
       <div style={{width:160,height:10,borderRadius:5,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:5,background:`linear-gradient(90deg,${CY},${TL},${GD})`,width:P(avg),transition:"width 800ms ease"}}/></div>
       <span style={{fontSize:".88rem",color:MU}}>{done.size}/{cc.length}</span>
     </div>
   </div>
-  <div style={{overflowX:"auto",overflowY:"hidden",padding:"48px 48px 60px",minHeight:"calc(100vh - 140px)"}}>
-    <div style={{display:"flex",gap:36,minWidth:"max-content",alignItems:"flex-end",paddingTop:300}}>
+  <div ref={atlasScrollRef} style={{overflowX:"auto",overflowY:"auto",padding:"40px 56px 80px",minHeight:"calc(100dvh - 132px)",scrollbarWidth:"thin",scrollbarColor:`${BD} transparent`}}>
+    <div style={{display:"flex",gap:28,minWidth:"max-content",alignItems:"flex-end",paddingTop:"max(160px,calc(100dvh - 640px))"}}>
       {MODULES.map((m,mi)=>{
         const mC=m.concepts.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
         const mA=mC.length?mC.reduce((s,c)=>s+c.mastery,0)/mC.length:0;
         const aD=mC.every(c=>done.has(c.id));
         const mAs=ASSIGNMENTS.filter(a=>a.con.some(id=>m.concepts.includes(id)));
-        const climb=mi*70;
-        return(<div key={m.id} style={{width:400,flexShrink:0,transform:`translateY(-${climb}px)`,transition:"transform 800ms cubic-bezier(.22,1,.36,1)",position:"relative"}}>
+        const climb=mi*60;
+        return(<div key={m.id} style={{width:500,flexShrink:0,transform:`translateY(-${climb}px)`,transition:"transform 800ms cubic-bezier(.22,1,.36,1)",position:"relative"}}>
           {/* Ascending connector line */}
           {mi>0&&<svg style={{position:"absolute",top:-35-70,left:-36,width:72,height:105,overflow:"visible",zIndex:0}} viewBox="0 0 72 105">
             <path d={`M 72 105 Q 36 52 0 0`} fill="none" stroke={MODULES[mi-1]&&cc.filter(c=>MODULES[mi-1].concepts.includes(c.id)).every(c=>done.has(c.id))?GD:`${MU}44`} strokeWidth="3" strokeDasharray={MODULES[mi-1]&&cc.filter(c=>MODULES[mi-1].concepts.includes(c.id)).every(c=>done.has(c.id))?"":"8 6"} strokeLinecap="round"/>
@@ -728,7 +861,7 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
 {v==="explore"&&<div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:28,alignItems:"start",animation:"fadeUp .5s ease"}}>
 <div style={{...card,position:"sticky",top:88,padding:"28px 24px"}}>
   <div style={{...ey,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT LIBRARY</div>
-  <p style={{fontSize:".82rem",color:MU,marginBottom:20,marginTop:-12}}>8 concepts · {mastered} mastered</p>
+  <p style={{fontSize:".82rem",color:MU,marginBottom:20,marginTop:-12}}>{cc.length} concept{cc.length!==1?"s":""} · {mastered} mastered</p>
   {cc.map(c=>{const act=selC?.id===c.id;const dn=done.has(c.id);const stage=getMemoryStage(c.id);
     return(<button key={c.id} onClick={()=>setSC(c)} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",borderRadius:14,background:act?`${CY}0c`:"transparent",border:act?`1px solid ${CY}28`:"1px solid transparent",cursor:"pointer",width:"100%",color:TX,fontSize:".92rem",transition:"all 200ms",marginBottom:4}}>
     <span style={{fontSize:".75rem",width:18,textAlign:"center"}}>{memoryStageIcon(stage)}</span>
@@ -768,20 +901,15 @@ return(<div style={{minHeight:"100vh",background:B,backgroundImage:"radial-gradi
     </div>;})()}
 
     {/* Content sections with distinct styling */}
-    {[["Core Idea",selC.core,CY,"📌"],["Going Deeper",selC.depth,CY,"🔍"],["Key Distinction",selC.dist,"#a78bfa","⚖"],["⚠ Common Mistake",selC.trap,RD,"🚫"]].map(([lb,txt,clr,ic])=>(
-      <div key={lb} style={{marginBottom:28,padding:"22px 26px",borderRadius:16,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${clr}`}}>
+    {buildConceptPanels(selC).map((panel)=>(
+      <div key={panel.id} style={{marginBottom:28,padding:"22px 26px",borderRadius:16,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${panel.color}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-          <span style={{fontSize:".95rem"}}>{ic}</span>
-          <span style={{fontSize:".78rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:clr,fontFamily:"'Space Grotesk',sans-serif"}}>{lb}</span>
+          <span style={{fontSize:".95rem"}}>{panel.icon}</span>
+          <span style={{fontSize:".78rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:panel.color,fontFamily:"'Space Grotesk',sans-serif"}}>{panel.label}</span>
         </div>
-        <p style={{fontSize:"1.02rem",lineHeight:1.9,color:T2,margin:0}}>{txt}</p>
+        <p style={{fontSize:"1.02rem",lineHeight:1.9,color:T2,margin:0}}>{panel.body}</p>
       </div>
     ))}
-
-    <div style={{marginBottom:28,padding:"22px 26px",borderRadius:16,background:`${TL}06`,border:`1px solid ${TL}18`,borderLeft:`3px solid ${TL}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span>🔗</span><span style={{fontSize:".78rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:TL,fontFamily:"'Space Grotesk',sans-serif"}}>Memory Hook</span></div>
-      <p style={{fontSize:"1.05rem",lineHeight:1.75,color:TL,fontStyle:"italic",margin:0}}>{selC.hook}</p>
-    </div>
 
     <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:28}}>{selC.kw.map(k=><span key={k} style={{padding:"7px 16px",borderRadius:20,border:`1px solid ${BD}`,fontSize:".82rem",color:MU,background:innr}}>{k}</span>)}</div>
 
@@ -1017,27 +1145,28 @@ return(<div style={{maxWidth:880}}>
 {v==="forge"&&fc&&(()=>{
 const phases=[
   {id:"intro",icon:"🧠",name:"Orient",color:CY,desc:"Ground yourself in the core idea before anything else."},
-  {id:"dilemma",icon:"⚖",name:"Apply",color:"#a78bfa",desc:"Face a real ethical scenario using this concept."},
+  {id:"dilemma",icon:"⚖",name:"Apply",color:"#a78bfa",desc:"Face a real scenario that tests this concept in practice."},
   {id:"tf",icon:"⚡",name:"Recall",color:TL,desc:"Quick-fire recall — do you know the fundamentals?"},
   {id:"mc",icon:"🎯",name:"Prove",color:GD,desc:"Scenario-based questions that test deep understanding."},
   {id:"flash",icon:"🃏",name:"Reinforce",color:"#f472b6",desc:"Flip through key ideas to cement your memory."},
-  {id:"whois",icon:"🗣",name:"Attribute",color:"#fb923c",desc:"Match quotes to the philosophers who said them."},
+  ...(PH.length>0?[{id:"whois",icon:"🗣",name:"Attribute",color:"#fb923c",desc:"Match quotes to the course figures who said them."}]:[]),
 ];
 const pi=phases.findIndex(p=>p.id===fp);
 const pc=phases[pi]?.color||CY;
+const fcMastery=cc.find(c=>c.id===fc.id)?.mastery??fc.mastery??0;
 
 return(<div style={{maxWidth:860,margin:"0 auto"}}>
   {/* ─── FORGE HEADER ─── */}
   <div style={{textAlign:"center",marginBottom:40}}>
     <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:100,height:100,borderRadius:"50%",background:`linear-gradient(135deg,${pc}18,${pc}08)`,border:`3px solid ${pc}44`,boxShadow:`0 0 48px ${pc}22, 0 0 96px ${pc}0a`,marginBottom:20,position:"relative"}}>
       <span style={{fontSize:"2.4rem"}}>{phases[pi]?.icon||"🧠"}</span>
-      {/* mastery ring */}
-      <svg style={{position:"absolute",inset:-4}} viewBox="0 0 108 108"><circle cx="54" cy="54" r="50" fill="none" stroke={DM} strokeWidth="3"/><circle cx="54" cy="54" r="50" fill="none" stroke={mc2(fc.mastery)} strokeWidth="3" strokeDasharray={`${fc.mastery*314} 314`} strokeLinecap="round" transform="rotate(-90 54 54)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
+      {/* mastery ring — uses live cc mastery, not stale fc snapshot */}
+      <svg style={{position:"absolute",inset:-4}} viewBox="0 0 108 108"><circle cx="54" cy="54" r="50" fill="none" stroke={DM} strokeWidth="3"/><circle cx="54" cy="54" r="50" fill="none" stroke={mc2(fcMastery)} strokeWidth="3" strokeDasharray={`${fcMastery*314} 314`} strokeLinecap="round" transform="rotate(-90 54 54)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
     </div>
     <h2 style={{...hd(1.7),marginBottom:6}}>{fc.name}</h2>
     <p style={{color:pc,fontSize:".92rem",fontWeight:600,fontFamily:"'Space Grotesk',sans-serif",letterSpacing:".06em"}}>{phases[pi]?.desc}</p>
     <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",marginTop:6}}>
-      <span style={{color:mc2(fc.mastery),fontSize:".88rem",fontWeight:700}}>{P(fc.mastery)} mastery</span>
+      <span style={{color:mc2(fcMastery),fontSize:".88rem",fontWeight:700}}>{P(fcMastery)} mastery</span>
       <span style={{color:MU}}>·</span>
       <span style={{color:TL,fontWeight:700}}>✓{sc.c}</span>
       <span style={{color:RD,fontWeight:700}}>✗{sc.w}</span>
@@ -1090,30 +1219,31 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
   <div style={{...card,borderTop:`3px solid ${pc}`,boxShadow:`0 8px 40px rgba(0,0,0,.5), ${flowCardGlow}`,borderColor:flowBorderColor,animation:"fadeUp .4s ease",transition:"box-shadow 800ms ease, border-color 800ms ease"}}>
 
   {/* ORIENT */}
-  {fp==="intro"&&(()=>{const steps=["core","depth","dist","trap"];const s=steps[is2];
+  {fp==="intro"&&(()=>{const steps=buildForgeSteps(fc);const step=steps[is2]??steps[0];
+  if(!step)return(<div style={{textAlign:"center",padding:"24px 0"}}><h3 style={hd(1.2)}>{fc.name}</h3><p style={{fontSize:"1.02rem",lineHeight:1.8,color:T2,marginTop:12}}>{normalizePanelText(fc.core||fc.hook||"This concept is ready for practice.")}</p><div style={{marginTop:32}}><button onClick={()=>{bump(fc.id,.06);flash("Orientation complete!",true);setFP("dilemma");setDC(null);}} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>Start Practice →</button></div></div>);
   return(<>
     <div style={{display:"flex",gap:8,margin:"0 0 36px"}}>{steps.map((_,i)=><div key={i} style={{flex:1,height:6,borderRadius:3,background:i<=is2?CY:DM,transition:"background 400ms ease"}}/>)}</div>
-    {s==="core"&&<><div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>CORE IDEA</div><p style={{fontSize:"1.2rem",lineHeight:1.95,color:TX}}>{fc.core}</p></>}
-    {s==="depth"&&<><div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>GOING DEEPER</div><p style={{fontSize:"1.1rem",lineHeight:1.95,color:T2}}>{fc.depth}</p></>}
-    {s==="dist"&&<><div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>KEY DISTINCTION</div><p style={{fontSize:"1.1rem",lineHeight:1.95,color:T2}}>{fc.dist}</p></>}
-    {s==="trap"&&<><div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:RD,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>⚠ COMMON MISTAKE</div><p style={{fontSize:"1.1rem",lineHeight:1.95,color:T2}}>{fc.trap}</p><div style={{marginTop:24,padding:"20px 24px",borderRadius:16,background:`${TL}08`,border:`1px solid ${TL}22`}}><p style={{fontSize:"1.05rem",color:TL,fontStyle:"italic",margin:0,lineHeight:1.7}}>🔗 {fc.hook}</p></div></>}
+    <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:step.color,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{step.label.toUpperCase()}</div>
+    <p style={{fontSize:step.id==="core"?"1.2rem":"1.1rem",lineHeight:1.95,color:step.id==="core"?TX:T2}}>{step.body}</p>
+    {step.id==="trap"&&isRenderablePanelText(fc.hook)&&<div style={{marginTop:24,padding:"20px 24px",borderRadius:16,background:`${TL}08`,border:`1px solid ${TL}22`}}><p style={{fontSize:"1.05rem",color:TL,fontStyle:"italic",margin:0,lineHeight:1.7}}>🔗 {normalizePanelText(fc.hook)}</p></div>}
     <div style={{display:"flex",justifyContent:"space-between",marginTop:44}}>
       {is2>0?<button onClick={()=>setIS(p=>p-1)} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>← Back</button>:<div/>}
-      {is2<3?<button onClick={()=>setIS(p=>p+1)} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Continue →</button>:
+      {is2<steps.length-1?<button onClick={()=>setIS(p=>p+1)} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Continue →</button>:
         <button onClick={()=>{bump(fc.id,.06);flash("✨ Orientation complete!",true);setFP("dilemma");setDC(null);}} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>✓ I understand — test me →</button>}
     </div>
   </>);})()}
 
   {/* APPLY */}
+  {fp==="dilemma"&&!fc.dil&&<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"1.8rem",marginBottom:16}}>⚖</div><h3 style={hd(1.2)}>No scenario available</h3><p style={{color:T2,margin:"12px 0 24px"}}>This concept doesn't have a practice scenario yet. Continue to the recall questions.</p><button onClick={()=>{setFP("tf");setTI(0);setTA(null);}} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>Continue to Recall →</button></div>}
   {fp==="dilemma"&&fc.dil&&(()=>{const d=fc.dil;
   return(<>
-    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 32px"}}>{d.t}</p>
+    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 32px"}}>{d.text}</p>
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {d.o.map((o,i)=>(<button key={i} onClick={()=>{if(dc===null)setDC(i);}} style={{textAlign:"left",padding:"24px 28px",borderRadius:18,border:`2px solid ${dc===i?"#a78bfa":BD}`,background:dc===i?"rgba(167,139,250,.06)":innr,cursor:dc!==null?"default":"pointer",color:TX,width:"100%",opacity:dc!==null&&dc!==i?.25:1,transition:"all 300ms"}}>
-        <div style={{fontSize:"1.02rem",lineHeight:1.75}}>{o.t}</div>
+      {d.options.map((o,i)=>(<button key={i} onClick={()=>{if(dc===null)setDC(i);}} style={{textAlign:"left",padding:"24px 28px",borderRadius:18,border:`2px solid ${dc===i?"#a78bfa":BD}`,background:dc===i?"rgba(167,139,250,.06)":innr,cursor:dc!==null?"default":"pointer",color:TX,width:"100%",opacity:dc!==null&&dc!==i?.25:1,transition:"all 300ms"}}>
+        <div style={{fontSize:"1.02rem",lineHeight:1.75}}>{o.text}</div>
         {dc===i&&<div style={{marginTop:16,padding:"20px 24px",borderRadius:16,background:"rgba(167,139,250,.06)",border:"1px solid rgba(167,139,250,.18)"}}>
-          <div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".12em",color:"#a78bfa",marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>{o.f}</div>
-          <p style={{fontSize:".98rem",lineHeight:1.75,color:T2,margin:0}}>{o.w}</p>
+          <div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".12em",color:"#a78bfa",marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>{o.framework}</div>
+          <p style={{fontSize:".98rem",lineHeight:1.75,color:T2,margin:0}}>{o.why}</p>
         </div>}
       </button>))}
     </div>
@@ -1135,16 +1265,16 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
         <p style={{fontSize:".85rem",color:"#ff8800",margin:0}}>👻 <span style={{fontStyle:"italic"}}>This concept tripped you up before.</span> <span style={{color:T2}}>Watch for: {g.text.split(".")[0]}.</span></p>
       </div>:null;
     })()}
-    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 32px"}}>{q.c}</p>
+    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 32px"}}>{q.statement}</p>
     {ta===null?<div style={{display:"flex",gap:18}}>
-      <button onClick={()=>{const ok=q.a;setTA(true);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id);flash("✗ Not quite",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${TL}12`,color:TL,border:`2px solid ${TL}44`,transition:"all 250ms"}}> TRUE</button>
-      <button onClick={()=>{const ok=!q.a;setTA(false);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id);flash("✗ Not quite",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${RD}12`,color:RD,border:`2px solid ${RD}44`,transition:"all 250ms"}}>FALSE</button>
+      <button onClick={()=>{const ok=q.answer;setTA(true);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id,q);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id,q);flash("✗ Not quite",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${TL}12`,color:TL,border:`2px solid ${TL}44`,transition:"all 250ms"}}> TRUE</button>
+      <button onClick={()=>{const ok=!q.answer;setTA(false);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.03);recordAnswerFlow(true,fc.id,q);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id,q);flash("✗ Not quite",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${RD}12`,color:RD,border:`2px solid ${RD}44`,transition:"all 250ms"}}>FALSE</button>
     </div>:<>
-      <div style={{padding:"20px 24px",borderRadius:16,background:ta===q.a?`${TL}12`:`${RD}12`,border:`2px solid ${ta===q.a?TL:RD}`,marginBottom:20,fontSize:"1.05rem",animation:"fadeUp .3s ease"}}>
-        <strong>{ta===q.a?(flowFeedbackIntensity==="vivid"?"🔥 Yes!":"✓ Correct"):(flowFeedbackIntensity==="gentle"?"Not quite — that's okay":"✗ Incorrect")}</strong> — The answer is {q.a?"True":"False"}
+      <div style={{padding:"20px 24px",borderRadius:16,background:ta===q.answer?`${TL}12`:`${RD}12`,border:`2px solid ${ta===q.answer?TL:RD}`,marginBottom:20,fontSize:"1.05rem",animation:"fadeUp .3s ease"}}>
+        <strong>{ta===q.answer?(flowFeedbackIntensity==="vivid"?"🔥 Yes!":"✓ Correct"):(flowFeedbackIntensity==="gentle"?"Not quite — that's okay":"✗ Incorrect")}</strong> — The answer is {q.answer?"True":"False"}
       </div>
-      {(flowExplanationDensity!=="minimal"||!ta===q.a)&&<p style={{fontSize:"1.02rem",lineHeight:1.85,color:T2}}>{q.e}</p>}
-      {flowState==="struggling"&&!ta===q.a&&<p style={{fontSize:".92rem",color:"#60a5fa",marginTop:12,fontStyle:"italic"}}>Don't worry — getting it wrong is how you learn what sticks and what doesn't.</p>}
+      {(flowExplanationDensity!=="minimal"||ta!==q.answer)&&<p style={{fontSize:"1.02rem",lineHeight:1.85,color:T2}}>{q.explanation}</p>}
+      {flowState==="struggling"&&ta!==q.answer&&<p style={{fontSize:".92rem",color:"#60a5fa",marginTop:12,fontStyle:"italic"}}>Don't worry — getting it wrong is how you learn what sticks and what doesn't.</p>}
       <button onClick={()=>{setTI(p=>p+1);setTA(null);}} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:24}}>Next →</button>
     </>}
   </>);})()}
@@ -1159,7 +1289,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
       <div style={{textAlign:"center"}}><div style={{fontSize:"1.8rem",fontWeight:800,color:TL}}>{sc.c}</div><div style={{fontSize:".72rem",color:MU}}>CORRECT</div></div>
       <div style={{textAlign:"center"}}><div style={{fontSize:"1.8rem",fontWeight:800,color:RD}}>{sc.w}</div><div style={{fontSize:".72rem",color:MU}}>WRONG</div></div>
       <div style={{textAlign:"center"}}><div style={{fontSize:"1.8rem",fontWeight:800,color:GD}}>{streak>0?streak+"x":"—"}</div><div style={{fontSize:".72rem",color:MU}}>STREAK</div></div>
-      <div style={{textAlign:"center"}}><div style={{fontSize:"1.8rem",fontWeight:800,color:CY}}>{P(fc.mastery)}</div><div style={{fontSize:".72rem",color:MU}}>MASTERY</div></div>
+      <div style={{textAlign:"center"}}><div style={{fontSize:"1.8rem",fontWeight:800,color:CY}}>{P(fcMastery)}</div><div style={{fontSize:".72rem",color:MU}}>MASTERY</div></div>
     </div>
     {sc.c>=4&&<div style={{padding:"14px 28px",borderRadius:16,background:`${GD}12`,border:`2px solid ${GD}44`,display:"inline-block",margin:"8px 0 24px"}}><span style={{color:GD,fontSize:"1.15rem",fontWeight:800}}>🔥 CONCEPT MASTERED 🔥</span></div>}
     {totalAnswered>0&&<p style={{color:MU,fontSize:".88rem"}}>Session accuracy: {Math.round(totalCorrect/totalAnswered*100)}% · Best streak: {bestStreak}x</p>}
@@ -1183,17 +1313,17 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
   </div>);
   return(<>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}><span style={{fontSize:".82rem",fontWeight:700,color:GD,fontFamily:"'Space Grotesk',sans-serif"}}>SCENARIO {mi2+1} OF {qs.length}</span><span style={{fontSize:".82rem",color:MU}}>{fc.name}</span></div>
-    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 28px"}}>{q.q}</p>
+    <p style={{fontSize:"1.15rem",lineHeight:1.95,color:T2,margin:"0 0 28px"}}>{q.question}</p>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {q.o.map((o,i)=>(<button key={i} onClick={()=>{if(ma!==null)return;const ok=i===q.c;setMA(i);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.06);recordAnswerFlow(true,fc.id);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id);flash("✗ Not quite",false);}}} style={{textAlign:"left",padding:"22px 26px",borderRadius:16,border:`2px solid ${ma!==null&&i===q.c?TL:ma===i&&i!==q.c?RD:BD}`,background:ma!==null&&i===q.c?`${TL}0a`:ma===i&&i!==q.c?`${RD}0a`:innr,cursor:ma!==null?"default":"pointer",color:TX,fontSize:"1.02rem",lineHeight:1.75,width:"100%",opacity:ma!==null&&ma!==i&&i!==q.c?.2:1,transition:"all 300ms"}}>{o}</button>))}
+      {q.options.map((o,i)=>(<button key={i} onClick={()=>{if(ma!==null)return;const ok=i===q.correctIndex;setMA(i);setSCO(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(fc.id,.06);recordAnswerFlow(true,fc.id,q);flash("✓ Correct!",true);}else{recordAnswerFlow(false,fc.id,q);flash("✗ Not quite",false);}}} style={{textAlign:"left",padding:"22px 26px",borderRadius:16,border:`2px solid ${ma!==null&&i===q.correctIndex?TL:ma===i&&i!==q.correctIndex?RD:BD}`,background:ma!==null&&i===q.correctIndex?`${TL}0a`:ma===i&&i!==q.correctIndex?`${RD}0a`:innr,cursor:ma!==null?"default":"pointer",color:TX,fontSize:"1.02rem",lineHeight:1.75,width:"100%",opacity:ma!==null&&ma!==i&&i!==q.correctIndex?.2:1,transition:"all 300ms"}}>{o}</button>))}
     </div>
-    {ma!==null&&<><p style={{fontSize:"1.02rem",lineHeight:1.85,color:T2,marginTop:24,animation:"fadeUp .3s ease"}}>{q.e}</p>
+    {ma!==null&&<><p style={{fontSize:"1.02rem",lineHeight:1.85,color:T2,marginTop:24,animation:"fadeUp .3s ease"}}>{q.explanation}</p>
       <button onClick={()=>{setMI(p=>p+1);setMA(null);}} style={{...bt(`linear-gradient(135deg,${GD},#cc8800)`,"#000"),marginTop:24}}>Next →</button></>}
   </>);})()}
 
   {/* REINFORCE */}
   {fp==="flash"&&(()=>{
-  const cards=[{f:fc.name,b:fc.core,l:"Definition"},{f:"Key Distinction",b:fc.dist,l:"How it differs"},{f:"Common Mistake",b:fc.trap,l:"Watch out"},{f:"Memory Hook",b:fc.hook,l:"Remember this"},{f:fc.kw[0]||"Key Term",b:fc.depth,l:"Deeper context"},{f:fc.kw[1]||"Application",b:fc.dist,l:"In practice"}];
+  const cards=buildFlashCards(fc);
   const c2=cards[fi];
   if(!c2)return(<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"1.8rem",marginBottom:16}}>🃏</div><h3 style={hd(1.2)}>Cards Complete!</h3><p style={{color:T2,margin:"12px 0 24px"}}>Reviewed {cards.length} cards</p><button onClick={()=>{setFI(0);setFF(false);}} style={bt(`linear-gradient(135deg,#f472b6,#ec4899)`,"#000")}>Review Again</button></div>);
   return(<>
@@ -1202,8 +1332,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
       background:ff?`linear-gradient(135deg,rgba(244,114,182,.08),rgba(0,240,255,.04))`:innr,
       border:`2px solid ${ff?"#f472b6":BD}`,boxShadow:ff?`0 0 40px rgba(244,114,182,.12)`:"0 6px 32px rgba(0,0,0,.35)",transition:"all 500ms cubic-bezier(.22,1,.36,1)",color:TX}}>
       <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".18em",color:ff?"#f472b6":MU,textTransform:"uppercase",marginBottom:24,fontFamily:"'Space Grotesk',sans-serif"}}>{ff?"ANSWER":"TAP TO REVEAL"}</div>
-      <div style={{fontSize:ff?"1.1rem":"1.6rem",fontWeight:ff?400:700,lineHeight:1.85,color:ff?T2:TX,transition:"all 400ms"}}>{ff?c2.b:c2.f}</div>
-      <div style={{fontSize:".82rem",color:MU,marginTop:24}}>{c2.l}</div>
+      <div style={{fontSize:ff?"1.1rem":"1.6rem",fontWeight:ff?400:700,lineHeight:1.85,color:ff?T2:TX,transition:"all 400ms"}}>{ff?c2.body:c2.front}</div>
+      <div style={{fontSize:".82rem",color:MU,marginTop:24}}>{c2.label}</div>
     </button>
     <div style={{display:"flex",gap:14,marginTop:28,justifyContent:"center"}}>
       <button onClick={()=>{setFI(p=>p+1);setFF(false);}} style={bt(`linear-gradient(135deg,#f472b6,#ec4899)`,"#000")}>{fi<cards.length-1?"Next Card →":"Finish"}</button>
@@ -1212,15 +1342,16 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
   {/* ATTRIBUTE */}
   {fp==="whois"&&(()=>{
+  if(PH.length===0)return(<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"2rem",marginBottom:16}}>🗣</div><h3 style={hd(1.2)}>No figures found yet</h3><p style={{color:T2,margin:"12px 0"}}>Upload your textbook PDF to unlock this activity.</p></div>);
   const allQ=PH.flatMap(p=>p.q.map(q=>({x:q.x,n:p.n,t:p.t,p:q.p})));
   const avail=allQ.filter(q=>!wd.has(q.x));
   if(avail.length===0)return(<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"1.8rem",marginBottom:16}}>🎯</div><h3 style={hd(1.2)}>Attribution Complete!</h3><p style={{color:T2,margin:"12px 0 24px"}}>Score: {sc.c} correct, {sc.w} wrong</p><button onClick={()=>{setWD(new Set());setSCO({c:0,w:0});}} style={bt(`linear-gradient(135deg,#fb923c,#f97316)`,"#000")}>Play Again</button></div>);
   const q2=avail[0];
-  const opts=[q2.n,...PH.filter(p=>p.n!==q2.n).sort(()=>Math.random()-.5).slice(0,3).map(p=>p.n)].sort(()=>Math.random()-.5);
+  const opts=stableOrder([q2.n,...takeStableSubset(PH.filter(p=>p.n!==q2.n),3,`oracle:${q2.n}`).map(p=>p.n)],`oracle-options:${q2.n}`);
   return(<>
     <div style={{padding:"40px 36px",borderRadius:20,background:innr,border:`1px solid ${BD}`,marginBottom:32,textAlign:"center"}}>
       <p style={{fontSize:"1.2rem",lineHeight:1.9,color:T2,fontStyle:"italic",margin:0}}>"{q2.x}"</p>
-      <div style={{marginTop:14,fontSize:".85rem",color:MU}}>p. {q2.p}</div>
+      {q2.p>0&&<div style={{marginTop:14,fontSize:".85rem",color:MU}}>p. {q2.p}</div>}
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
       {opts.map(nm=>(<button key={nm} onClick={()=>{
@@ -1272,8 +1403,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 {/* Chamber header */}
 <div style={{textAlign:"center",marginBottom:32}}>
   <div style={{fontSize:"2rem",marginBottom:12}}>🏛</div>
-  <h2 style={{...hd(1.6),marginBottom:8}}>The Oracle Tribunal</h2>
-  <p style={{color:T2,fontSize:"1rem"}}>Bring a question, thesis, or confusion. Six philosophical minds will respond.</p>
+  <h2 style={{...hd(1.6),marginBottom:8}}>The Oracle</h2>
+  <p style={{color:T2,fontSize:"1rem"}}>{PH.length>0?`Bring a question, thesis, or confusion. ${PH.length} course figure${PH.length!==1?"s":""} will respond.`:"Bring a question or confusion. Upload your textbook to unlock course-specific responses."}</p>
 </div>
 
 {/* Mode selector */}
@@ -1285,21 +1416,25 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
 {/* Input */}
 <div style={{display:"flex",gap:14,marginBottom:32}}>
-  <input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Ask a specific philosopher...":"Ask an ethical question..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",outline:"none"}}/>
+  <input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a figure from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",outline:"none"}}/>
   <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>{oracleMode==="thesis"?"Challenge":"Ask"}</button>
 </div>
 
 {/* Philosopher grid when no results */}
-{!or2&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
+{!or2&&(PH.length>0?<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
   {PH.map((p,i)=>{const colors=[CY,GD,"#a78bfa",TL,"#fb923c","#f472b6"];const c2=colors[i%colors.length];
-    return(<button key={p.n} onClick={()=>{if(oracleMode==="single"){setOQ(p.q[0].tg[0]);askO();}}} style={{...card,padding:"28px 24px",cursor:oracleMode==="single"?"pointer":"default",borderTop:`3px solid ${c2}`,transition:"all 300ms"}}>
+    return(<button key={p.n} onClick={()=>{if(oracleMode==="single"){setOQ(p.n);askO();}}} style={{...card,padding:"28px 24px",cursor:oracleMode==="single"?"pointer":"default",borderTop:`3px solid ${c2}`,transition:"all 300ms"}}>
       <div style={{fontSize:"1.2rem",fontWeight:700,marginBottom:4}}>{p.n}</div>
       <div style={{fontSize:".82rem",color:c2,fontWeight:600,marginBottom:10}}>{p.t}</div>
-      <div style={{fontSize:".82rem",color:MU}}>{p.q.length} positions</div>
-      <div style={{fontSize:".78rem",color:T2,fontStyle:"italic",marginTop:12,lineHeight:1.5}}>"{p.q[0].x.slice(0,80)}..."</div>
+      <div style={{fontSize:".82rem",color:MU}}>{p.q.length} passage{p.q.length!==1?"s":""}</div>
+      <div style={{fontSize:".78rem",color:T2,fontStyle:"italic",marginTop:12,lineHeight:1.5}}>"{(p.q[0].x.slice(0,80).replace(/\s+\S*$/,""))}…"</div>
     </button>);
   })}
-</div>}
+</div>:<div style={{textAlign:"center",padding:"60px 0",color:MU}}>
+  <div style={{fontSize:"2.5rem",marginBottom:16}}>📚</div>
+  <p style={{fontSize:"1rem",marginBottom:8}}>No course figures found yet.</p>
+  <p style={{fontSize:".88rem"}}>Upload your textbook PDF to populate this section with researchers and authors cited in the course.</p>
+</div>)}
 
 {/* Results */}
 {or2&&<>
@@ -1325,32 +1460,46 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             <div style={{fontSize:".82rem",color:c2,fontWeight:600}}>{r.t}</div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:".78rem",color:MU}}>Textbook p.{r.sq.p}</div>
+            {r.sq.p>0&&<div style={{fontSize:".78rem",color:MU}}>Textbook p.{r.sq.p}</div>}
             <div style={{display:"flex",gap:2,marginTop:4,justifyContent:"flex-end"}}>{[...Array(5)].map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:"50%",background:j<r.r?c2:`${MU}44`,transition:"all 300ms"}}/>)}</div>
           </div>
         </div>
         <div style={{padding:"20px 24px",borderRadius:16,background:innr,border:`1px solid ${BD}`,marginBottom:16}}>
           <p style={{fontSize:"1.1rem",lineHeight:1.9,color:T2,fontStyle:"italic",margin:0}}>"{r.sq.x}"</p>
         </div>
-        {/* Non-negotiable for this thinker */}
+        {/* Core principle for this figure's area */}
         <div style={{fontSize:".82rem",color:c2,fontWeight:600}}>
-          {r.n==="Jeremy Bentham"&&"🔒 Non-negotiable: All pleasure counts equally. Everyone's happiness matters the same."}
-          {r.n==="Immanuel Kant"&&"🔒 Non-negotiable: Never use a person merely as a means. Duty cannot be overridden by consequences."}
-          {r.n==="Aristotle"&&"🔒 Non-negotiable: Virtue is developed through practice. Character is the foundation of ethics."}
-          {r.n==="John Stuart Mill"&&"🔒 Non-negotiable: Some pleasures are qualitatively higher. Intellectual fulfillment outranks mere sensation."}
-          {r.n==="Thomas Aquinas"&&"🔒 Non-negotiable: Moral law is grounded in rational participation in eternal law."}
-          {r.n==="John Rawls"&&"🔒 Non-negotiable: Justice requires fairness. Rules must be chosen as if you don't know your position."}
+          {(()=>{const t=r.t.toLowerCase();
+            if(t.includes("memory")||t.includes("cognition"))return"🔒 Core principle: Retrieval practice strengthens memory — passive re-reading is far less effective.";
+            if(t.includes("motivat")||t.includes("mindset")||t.includes("self-efficac"))return"🔒 Core principle: Intrinsic motivation and growth mindset produce more durable learning than external rewards.";
+            if(t.includes("time")||t.includes("organiz")||t.includes("productiv"))return"🔒 Core principle: Planning and prioritization must precede execution — reactive work undermines goals.";
+            if(t.includes("health")||t.includes("wellness")||t.includes("nutrition"))return"🔒 Core principle: Physical wellbeing — sleep, nutrition, exercise — directly underpins cognitive performance.";
+            if(t.includes("stress")||t.includes("wellbeing")||t.includes("anxiet"))return"🔒 Core principle: Emotional regulation and stress management are prerequisites for academic success.";
+            if(t.includes("academic")||t.includes("reading")||t.includes("writing"))return"🔒 Core principle: Active engagement with material — not passive exposure — produces genuine comprehension.";
+            if(t.includes("social")||t.includes("peer")||t.includes("collaborat"))return"🔒 Core principle: Collaborative learning and peer feedback accelerate mastery beyond solo study.";
+            if(t.includes("career")||t.includes("profession"))return"🔒 Core principle: Self-awareness and intentional skill-building drive long-term career success.";
+            if(t.includes("neuroscience")||t.includes("brain"))return"🔒 Core principle: Neuroplasticity means learning ability is developed through practice, not fixed at birth.";
+            if(t.includes("learning science")||t.includes("instruct"))return"🔒 Core principle: Evidence-based study strategies consistently outperform intuitive but ineffective ones.";
+            return"🔒 Core principle: Critical thinking and evidence-based reasoning are foundational academic skills.";
+          })()}
         </div>
         {/* Thesis challenge mode */}
         {oracleMode==="thesis"&&<div style={{marginTop:16,padding:"16px 20px",borderRadius:14,background:`${c2}06`,border:`1px solid ${c2}18`}}>
-          <div style={{fontSize:".72rem",fontWeight:700,color:c2,marginBottom:6}}>⚔ HOW {r.n.split(" ").pop().toUpperCase()} WOULD CHALLENGE THIS</div>
+          <div style={{fontSize:".72rem",fontWeight:700,color:c2,marginBottom:6}}>⚔ HOW {r.n.split(" ").pop()!.toUpperCase()} WOULD CHALLENGE THIS</div>
           <p style={{fontSize:".92rem",color:T2,lineHeight:1.65,margin:0}}>
-            {r.n==="Jeremy Bentham"&&"Would demand: show me the calculations. Which action produces the MOST total good? Your thesis needs measurable outcomes."}
-            {r.n==="Immanuel Kant"&&"Would ask: can your thesis be universalized? If everyone acted on your principle, would it create a contradiction? And are you using anyone merely as a means?"}
-            {r.n==="Aristotle"&&"Would question: what kind of person does your thesis ask you to BE? Is this the action of someone with practical wisdom and good character?"}
-            {r.n==="John Stuart Mill"&&"Would refine: are you counting mere pleasure or genuine human flourishing? Quality matters, not just quantity."}
-            {r.n==="Thomas Aquinas"&&"Would ground it: does your thesis align with natural law and rational moral principles, or does it rely on subjective preference?"}
-            {r.n==="John Rawls"&&"Would test: would you endorse this thesis from behind the veil of ignorance, not knowing whether you'd be the beneficiary or the one harmed?"}
+            {(()=>{const t=r.t.toLowerCase();
+              if(t.includes("memory")||t.includes("cognition"))return"Would ask: does your approach incorporate active retrieval and spaced repetition? The research is clear — encoding depth determines what sticks.";
+              if(t.includes("motivat")||t.includes("mindset"))return"Would question: does your strategy build intrinsic drive or just rely on external pressure? Autonomous motivation is far more durable.";
+              if(t.includes("time")||t.includes("organiz"))return"Would challenge: have you built in buffers, priority triage, and review time? Effective planning anticipates obstacles, not just tasks.";
+              if(t.includes("health")||t.includes("wellness"))return"Would probe: have you accounted for sleep, nutrition, and physical activity? Cognitive performance is inseparable from physical wellbeing.";
+              if(t.includes("stress")||t.includes("wellbeing"))return"Would examine: is your approach sustainable alongside real emotional demands? A strategy that ignores stress will eventually break down.";
+              if(t.includes("academic")||t.includes("reading"))return"Would test: are you actively processing the material or passively exposing yourself to it? Elaboration and self-testing are what the evidence supports.";
+              if(t.includes("social")||t.includes("peer"))return"Would challenge: does your thesis leverage peer learning and feedback? Social context amplifies individual learning in ways solo study cannot replicate.";
+              if(t.includes("career"))return"Would press: does your approach develop transferable skills alongside content knowledge? Employers value applied competency, not just grades.";
+              if(t.includes("neuroscience")||t.includes("brain"))return"Would ask: is your thesis consistent with how the brain actually consolidates information? Neuroplasticity research has direct implications for how you should study.";
+              if(t.includes("learning"))return"Would demand: what empirical evidence supports your approach? Effective learning strategies must be grounded in research, not just intuition.";
+              return"Would ask: what evidence supports your position? Strong claims require documented sources and critical analysis, not just opinion.";
+            })()}
           </p>
         </div>}
         {/* Hand off to learning */}
@@ -1418,7 +1567,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             {[5,10,25,50,100].map(n=>(
               <button key={n} onClick={()=>{
                 const qs=m.concepts.flatMap(id=>generateQuestions(id,Math.ceil(n/m.concepts.length),"tf").map(q=>({...q,cid:id})));
-                setPracticeQ(qs.sort(()=>Math.random()-.5).slice(0,n));
+                setPracticeQ(takeStableSubset(qs,n,`practice:${m.id}:tf:${n}`));
                 setPracticeI(0);setPracticeA(null);setPracticeSc({c:0,w:0});setPracticeMode("tf");setV("practice");
               }} style={{padding:"8px 16px",borderRadius:12,border:`1px solid ${BD}`,background:innr,color:CY,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>
                 {n} T/F
@@ -1427,7 +1576,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             {[5,10,25].map(n=>(
               <button key={"mc"+n} onClick={()=>{
                 const qs=m.concepts.flatMap(id=>generateQuestions(id,Math.ceil(n/m.concepts.length),"mc").map(q=>({...q,cid:id})));
-                setPracticeQ(qs.sort(()=>Math.random()-.5).slice(0,n));
+                setPracticeQ(takeStableSubset(qs,n,`practice:${m.id}:mc:${n}`));
                 setPracticeI(0);setPracticeA(null);setPracticeSc({c:0,w:0});setPracticeMode("mc");setV("practice");
               }} style={{padding:"8px 16px",borderRadius:12,border:`1px solid ${BD}`,background:innr,color:GD,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>
                 {n} MC
@@ -1452,6 +1601,37 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 </div>
 
 {/* Concept deep-dive panel */}
+{cwConcept&&(()=>{const c=cc.find(x=>x.id===cwConcept);if(!c)return null;
+return(<div style={{...card,position:"sticky",top:88,padding:"28px 24px",animation:"fadeUp .35s ease"}}>
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
+    <div style={{fontSize:".7rem",fontWeight:700,letterSpacing:".14em",color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT DETAIL</div>
+    <button onClick={()=>setCWC(null)} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:"1.1rem",lineHeight:1,padding:"4px 8px",borderRadius:8}}>✕</button>
+  </div>
+  <div style={{display:"flex",alignItems:"center",gap:20,marginBottom:28}}>
+    <div style={{position:"relative",width:64,height:64,flexShrink:0}}>
+      <div style={{width:64,height:64,borderRadius:"50%",background:`${mc2(c.mastery)}12`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.2rem",fontWeight:900,color:mc2(c.mastery),fontFamily:"'Space Grotesk',sans-serif"}}>{P(c.mastery)}</div>
+      <svg style={{position:"absolute",inset:-3}} viewBox="0 0 70 70"><circle cx="35" cy="35" r="32" fill="none" stroke={DM} strokeWidth="3"/><circle cx="35" cy="35" r="32" fill="none" stroke={mc2(c.mastery)} strokeWidth="3" strokeDasharray={`${c.mastery*201} 201`} strokeLinecap="round" transform="rotate(-90 35 35)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
+    </div>
+    <div>
+      <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".12em",color:mc2(c.mastery),textTransform:"uppercase",fontFamily:"'Space Grotesk',sans-serif"}}>{c.cat}</div>
+      <h3 style={{...hd(1.2),marginTop:2}}>{c.name}</h3>
+    </div>
+  </div>
+  {buildConceptPanels(c).slice(0,4).map((panel)=>(
+    <div key={panel.id} style={{marginBottom:18,padding:"16px 20px",borderRadius:14,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${panel.color}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <span style={{fontSize:".88rem"}}>{panel.icon}</span>
+        <span style={{fontSize:".7rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:panel.color,fontFamily:"'Space Grotesk',sans-serif"}}>{panel.label}</span>
+      </div>
+      <p style={{fontSize:".9rem",lineHeight:1.75,color:T2,margin:0}}>{panel.body}</p>
+    </div>
+  ))}
+  {c.kw.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>{c.kw.slice(0,6).map(k=><span key={k} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${BD}`,fontSize:".75rem",color:MU,background:innr}}>{k}</span>)}</div>}
+  <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
+    <button onClick={()=>go("forge",{c})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>⚡ Forge this concept</button>
+    <button onClick={()=>{setSC(c);go("explore");}} style={{...bt("transparent",CY),border:`1px solid ${CY}33`}}>🔍 View in Explore</button>
+  </div>
+</div>);})()}
 
 </div>}
 
@@ -1462,7 +1642,7 @@ if(!q)return(<div style={{maxWidth:820,margin:"0 auto"}}><div style={{...card,te
   <div style={{fontSize:"2.5rem",marginBottom:20}}>🏆</div>
   <h3 style={{...hd(1.4),background:`linear-gradient(135deg,${CY},${TL},${GD})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Practice Complete!</h3>
   <p style={{fontSize:"1.2rem",color:TX,margin:"16px 0 6px"}}>{practiceSc.c} correct out of {practiceSc.c+practiceSc.w}</p>
-  <p style={{fontSize:"1rem",color:MU}}>{Math.round(practiceSc.c/(practiceSc.c+practiceSc.w)*100)}% accuracy</p>
+  <p style={{fontSize:"1rem",color:MU}}>{(practiceSc.c+practiceSc.w)>0?Math.round(practiceSc.c/(practiceSc.c+practiceSc.w)*100):0}% accuracy</p>
   <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:32}}>
     <button onClick={()=>go("courseware")} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Back to Courseware</button>
     <button onClick={()=>go("home")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Home</button>
@@ -1474,33 +1654,33 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
     <div style={{fontSize:".88rem",fontWeight:700,color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE · {practiceI+1}/{practiceQ.length}</div>
     <div style={{display:"flex",gap:16,fontSize:".95rem",fontWeight:700}}><span style={{color:TL}}>✓{practiceSc.c}</span><span style={{color:RD}}>✗{practiceSc.w}</span></div>
   </div>
-  <div style={{width:"100%",height:6,borderRadius:3,background:DM,marginBottom:28,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:`linear-gradient(90deg,${CY},${TL})`,width:`${((practiceI)/(practiceQ.length))*100}%`,transition:"width 400ms ease"}}/></div>
+  <div style={{width:"100%",height:6,borderRadius:3,background:DM,marginBottom:28,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:`linear-gradient(90deg,${CY},${TL})`,width:`${practiceQ.length>0?(practiceI/practiceQ.length)*100:0}%`,transition:"width 400ms ease"}}/></div>
 
   {practiceMode==="tf"&&<div style={{...card,borderTop:`3px solid ${TL}`}}>
-    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 32px"}}>{q.c}</p>
+    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 32px"}}>{q.statement}</p>
     {practiceA===null?<div style={{display:"flex",gap:18}}>
-      <button onClick={()=>{const ok=q.a;setPracticeA(true);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid);flash("✓",true);}else{recordAnswerFlow(false,q.cid);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${TL}12`,color:TL,border:`2px solid ${TL}44`}}>TRUE</button>
-      <button onClick={()=>{const ok=!q.a;setPracticeA(false);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid);flash("✓",true);}else{recordAnswerFlow(false,q.cid);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${RD}12`,color:RD,border:`2px solid ${RD}44`}}>FALSE</button>
+      <button onClick={()=>{const ok=q.answer;setPracticeA(true);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${TL}12`,color:TL,border:`2px solid ${TL}44`}}>TRUE</button>
+      <button onClick={()=>{const ok=!q.answer;setPracticeA(false);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${RD}12`,color:RD,border:`2px solid ${RD}44`}}>FALSE</button>
     </div>:<>
-      <div style={{padding:"18px 22px",borderRadius:16,background:practiceA===q.a?`${TL}12`:`${RD}12`,border:`2px solid ${practiceA===q.a?TL:RD}`,marginBottom:18,fontSize:"1.02rem",animation:"fadeUp .3s ease"}}><strong>{practiceA===q.a?"✓ Correct":"✗ Incorrect"}</strong></div>
-      {prefs.showExplanations&&<p style={{fontSize:"1rem",lineHeight:1.8,color:T2}}>{q.e}</p>}
+      <div style={{padding:"18px 22px",borderRadius:16,background:practiceA===q.answer?`${TL}12`:`${RD}12`,border:`2px solid ${practiceA===q.answer?TL:RD}`,marginBottom:18,fontSize:"1.02rem",animation:"fadeUp .3s ease"}}><strong>{practiceA===q.answer?"✓ Correct":"✗ Incorrect"}</strong></div>
+      {prefs.showExplanations&&<p style={{fontSize:"1rem",lineHeight:1.8,color:T2}}>{q.explanation}</p>}
       <button onClick={()=>{setPracticeI(p=>p+1);setPracticeA(null);}} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:22}}>Next →</button>
     </>}
   </div>}
 
   {practiceMode==="mc"&&<div style={{...card,borderTop:`3px solid ${GD}`}}>
-    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 28px"}}>{q.q}</p>
+    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 28px"}}>{q.question}</p>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {q.o.map((o,i)=>(<button key={i} onClick={()=>{if(practiceA!==null)return;const ok=i===q.c;setPracticeA(i);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.04);recordAnswerFlow(true,q.cid);flash("✓",true);}else{recordAnswerFlow(false,q.cid);flash("✗",false);}}} style={{textAlign:"left",padding:"20px 24px",borderRadius:16,border:`2px solid ${practiceA!==null&&i===q.c?TL:practiceA===i&&i!==q.c?RD:BD}`,background:practiceA!==null&&i===q.c?`${TL}0a`:practiceA===i&&i!==q.c?`${RD}0a`:innr,cursor:practiceA!==null?"default":"pointer",color:TX,fontSize:"1rem",width:"100%",opacity:practiceA!==null&&practiceA!==i&&i!==q.c?.2:1,transition:"all 300ms"}}>{o}</button>))}
+      {q.options.map((o,i)=>(<button key={i} onClick={()=>{if(practiceA!==null)return;const ok=i===q.correctIndex;setPracticeA(i);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.04);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{textAlign:"left",padding:"20px 24px",borderRadius:16,border:`2px solid ${practiceA!==null&&i===q.correctIndex?TL:practiceA===i&&i!==q.correctIndex?RD:BD}`,background:practiceA!==null&&i===q.correctIndex?`${TL}0a`:practiceA===i&&i!==q.correctIndex?`${RD}0a`:innr,cursor:practiceA!==null?"default":"pointer",color:TX,fontSize:"1rem",width:"100%",opacity:practiceA!==null&&practiceA!==i&&i!==q.correctIndex?.2:1,transition:"all 300ms"}}>{o}</button>))}
     </div>
-    {practiceA!==null&&<><p style={{fontSize:"1rem",lineHeight:1.8,color:T2,marginTop:22,animation:"fadeUp .3s ease"}}>{q.e}</p>
+    {practiceA!==null&&<><p style={{fontSize:"1rem",lineHeight:1.8,color:T2,marginTop:22,animation:"fadeUp .3s ease"}}>{q.explanation}</p>
       <button onClick={()=>{setPracticeI(p=>p+1);setPracticeA(null);}} style={{...bt(`linear-gradient(135deg,${GD},#cc8800)`,"#000"),marginTop:22}}>Next →</button></>}
   </div>}
 </div>);
 })()}
 
 {/* ═══ READER OS ═══ */}
-{v==="reader"&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100vh - 68px)",display:"flex",background:"#050510"}}>
+{v==="reader"&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510"}}>
   <div style={{width:readerContent?280:0,flexShrink:0,borderRight:`1px solid ${BD}`,padding:readerContent?"28px 20px":"0",overflowY:"auto",background:"rgba(6,6,16,.6)",transition:"width 300ms ease"}}>
     {readerContent&&<>
       <button onClick={()=>{setReadingPositions(p=>({...p,[readerContent.id]:readerSection}));setReaderContent(null);}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Library</button>
@@ -1546,7 +1726,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 </div>}
 
 {/* ═══ TRANSCRIPT MODE ═══ */}
-{v==="transcript"&&transcript&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100vh - 68px)",display:"flex",background:"#050510"}}>
+{v==="transcript"&&transcript&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510"}}>
   <div style={{width:260,flexShrink:0,borderRight:`1px solid ${BD}`,padding:"28px 20px",overflowY:"auto",background:"rgba(6,6,16,.6)"}}>
     <button onClick={()=>{setTranscript(null);go("reader");}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Reader</button>
     <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12}}>🎧 TRANSCRIPT</div>
@@ -1568,7 +1748,8 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 {/* ═══ DISTINCTION GYM ═══ */}
 {v==="gym"&&<div style={{maxWidth:920,margin:"0 auto"}}>
 {!gymPair?<><div style={{...card,textAlign:"center",marginBottom:24}}><div style={ey}>DISTINCTION GYM</div><h2 style={hd(1.4)}>Sharpen Your Concept Boundaries</h2><p style={{color:T2,fontSize:"1rem",marginTop:10}}>Master the differences between concepts that students commonly confuse.</p></div>
-  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{DISTS.map((d,i)=>{const cA=cc.find(c=>c.id===d.a);const cB=cc.find(c=>c.id===d.b);if(!cA||!cB)return null;return(<button key={i} onClick={()=>{setGymPair(d);setGymA(null);setGymExplained(false);}} style={{...card,padding:"28px",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:".72rem",fontWeight:700,color:CY,marginBottom:12}}>{d.label}</div><div style={{display:"flex",justifyContent:"center",gap:8}}><span style={{padding:"4px 12px",borderRadius:10,background:`${CY}0a`,border:`1px solid ${CY}15`,fontSize:".82rem",color:CY}}>{cA.name}</span><span style={{color:MU,fontSize:".82rem"}}>vs</span><span style={{padding:"4px 12px",borderRadius:10,background:`${TL}0a`,border:`1px solid ${TL}15`,fontSize:".82rem",color:TL}}>{cB.name}</span></div></button>);})}</div>
+  {DISTS.filter(d=>cc.find(c=>c.id===d.a)&&cc.find(c=>c.id===d.b)).length===0?<div style={{...card,textAlign:"center",padding:"60px 24px",color:MU}}><div style={{fontSize:"2.5rem",marginBottom:16}}>🥊</div><p style={{fontSize:"1rem",marginBottom:20}}>No concept pairs available yet for this course.</p><button onClick={()=>go("journey")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>Explore the Atlas →</button></div>
+  :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{DISTS.map((d,i)=>{const cA=cc.find(c=>c.id===d.a);const cB=cc.find(c=>c.id===d.b);if(!cA||!cB)return null;return(<button key={i} onClick={()=>{setGymPair(d);setGymA(null);setGymExplained(false);}} style={{...card,padding:"28px",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:".72rem",fontWeight:700,color:CY,marginBottom:12}}>{d.label}</div><div style={{display:"flex",justifyContent:"center",gap:8}}><span style={{padding:"4px 12px",borderRadius:10,background:`${CY}0a`,border:`1px solid ${CY}15`,fontSize:".82rem",color:CY}}>{cA.name}</span><span style={{color:MU,fontSize:".82rem"}}>vs</span><span style={{padding:"4px 12px",borderRadius:10,background:`${TL}0a`,border:`1px solid ${TL}15`,fontSize:".82rem",color:TL}}>{cB.name}</span></div></button>);})}</div>}
 </>:
 (()=>{const cA=cc.find(c=>c.id===gymPair.a);const cB=cc.find(c=>c.id===gymPair.b);if(!cA||!cB)return null;return(<div>
   <button onClick={()=>setGymPair(null)} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".88rem",marginBottom:20}}>← All Pairs</button>
@@ -1584,6 +1765,17 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 </div>);})()}
 </div>}
 
+{/* Forge empty state — shown when no concepts are available for this course */}
+{v==="forge"&&!fc&&<div style={{maxWidth:620,margin:"0 auto",textAlign:"center",padding:"80px 24px"}}>
+  <div style={{fontSize:"3.5rem",marginBottom:24}}>🧠</div>
+  <h2 style={{...hd(1.6),marginBottom:12}}>No Concepts to Practice Yet</h2>
+  <p style={{color:T2,fontSize:"1rem",lineHeight:1.7,marginBottom:32}}>This course focuses on skill-building activities rather than concept vocabulary. Neural Forge works best with courses that have defined concepts to master — check back after exploring the Atlas or contact your instructor about concept resources.</p>
+  <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+    <button onClick={()=>go("journey")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>View Atlas →</button>
+    <button onClick={()=>go("reader")} style={{...bt("transparent",TL),border:`1px solid ${TL}33`}}>Browse Reading →</button>
+  </div>
+</div>}
+
 {/* ═══ SETTINGS ═══ */}
 {v==="settings"&&<div style={{maxWidth:560,margin:"0 auto"}}><div style={{...card}}>
 <div style={ey}>SETTINGS</div>
@@ -1596,6 +1788,19 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 <div style={{marginBottom:20}}>
 <div style={{fontSize:".82rem",color:T2,marginBottom:8}}>Learning mode</div>
 <div style={{display:"flex",gap:8}}>{["learn","test","adaptive"].map(m=><button key={m} onClick={()=>setMode(m)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${mode===m?CY:BD}`,background:mode===m?`${CY}15`:"transparent",color:mode===m?CY:MU,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>)}</div></div>
+<div style={{marginBottom:20}}>
+<div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📝 SESSION NOTES</div>
+<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Jot anything — key insights, reminders, questions for office hours…" rows={5} style={{width:"100%",padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:".92rem",lineHeight:1.7,resize:"vertical",outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+<div style={{fontSize:".72rem",color:MU,marginTop:6,textAlign:"right"}}>{notes.length} chars · saved automatically</div>
+</div>
+<div style={{padding:"20px 24px",borderRadius:16,background:`${CY}06`,border:`1px solid ${CY}18`}}>
+<div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>OFFLINE EXPORT</div>
+<p style={{color:T2,fontSize:".92rem",lineHeight:1.7,marginBottom:16}}>Download this exact workspace for offline replay, or save the replay bundle for later restore without regenerating.</p>
+<div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+<button onClick={onDownloadOfflineSite} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Download Offline Site</button>
+<button onClick={onSaveReplayBundle} style={{...bt("transparent",TL),border:`1px solid ${TL}33`}}>Save Replay Bundle</button>
+</div>
+</div>
 </div></div>}
 
 {v==="stats"&&<div style={{maxWidth:720,margin:"0 auto"}}>
@@ -1603,7 +1808,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:CY}}>{mastered}/{cc.length}</div><div style={{color:MU,fontSize:".82rem"}}>Mastered</div></div>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:TL}}>{P(avg)}</div><div style={{color:MU,fontSize:".82rem"}}>Average</div></div>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalCorrect}/{totalAnswered}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
+<div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalAnswered>0?`${totalCorrect}/${totalAnswered}`:"—"}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
 </div></div>
 {cc.map(c=><div key={c.id} style={{...card,padding:"16px 20px",marginTop:8,display:"flex",alignItems:"center",gap:12}}><span>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1,fontWeight:600}}>{c.name}</span><span style={{color:mc2(c.mastery),fontWeight:700}}>{P(c.mastery)}</span></div>)}
 </div>}

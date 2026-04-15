@@ -14,6 +14,7 @@ export type CourseTask = {
   estimatedMinutes: number;
   conceptIds: string[];
   requirementLines: string[];
+  pts: number;
   moduleKey: string;
   url: string;
 };
@@ -76,6 +77,7 @@ export type AppProgress = {
 
 const DAY = 24 * 60 * 60 * 1000;
 const CHROME_PATTERNS = [
+  /\byou need to have javascript enabled in order to access this site\b/i,
   /\bthis tool needs to be loaded in a new browser window\b/i,
   /\breload the page to access the tool again\b/i,
   /\bscore at least\b/i,
@@ -94,16 +96,35 @@ const CHROME_PATTERNS = [
   /\bsubmitted [A-Z][a-z]{2,9}\b/i,
   /\bmultiple_choice_question\b/i,
   /\bedit this question\b/i,
-  /\bdelete this question\b/i
+  /\bdelete this question\b/i,
+  /\bsubmission types\b/i,
+  /\bthis criterion is linked to a learning outcome\b/i,
+  /\bedit criterion description\b/i,
+  /\bdelete criterion row\b/i,
+  /\bfull marks\b/i,
+  /\bcriteria ratings pts\b/i,
+  // Canvas discussion boilerplate
+  /\binitial (discussion|post) (thread )?is due\b/i,
+  /\brespond to your classmates\b/i,
+  /\bdue on day\s+\d+\s*\(/i,
+  /\bpost your (initial|first|introduction)\b/i,
+  /\breply (within|to) the (post|thread|discussion)\b/i,
+  /\bselect reply within the post\b/i,
+  // Canvas quiz header text
+  /\bstarter kit (quiz|goals|activities)\b/i,
+  /\bgood work completing\b/i
 ] as const;
 const WORKSPACE_SKIP_PATTERNS = [
   /\bcourse modules\b/i,
   /\borientation home\b/i,
   /\bstart here\b/i,
   /\bgrades for\b/i,
+  /\bfinal grade\b/i,
   /\bsyllabus\b/i,
   /\/external_tools\//i,
-  /\bwriting center & library\b/i
+  /\bwriting center & library\b/i,
+  /global campus caf/i,
+  /^\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]/
 ] as const;
 const REQUIREMENT_PATTERNS = [
   /^\s*\d+[.)]\s+(.+?)(?:\.|$)/gm,
@@ -112,6 +133,24 @@ const REQUIREMENT_PATTERNS = [
   /^(?:Write|Analyze|Discuss|Explain|Describe|Compare|Contrast|Identify|Evaluate|Assess|Cite|Include|Use|Submit|Complete|Answer|Respond to|Draft|Review|Read|Watch|Prepare) (.+?)(?:\.|$)/gim,
   /(?:at least|minimum of|no less than|a minimum)\s+(\d+\s+(?:words?|pages?|sources?|references?|paragraphs?|sentences?))/gi,
   /\byour\s+(?:paper|essay|response|discussion|post|submission)\s+(?:should|must|needs? to|will)\s+([^.]+\.)/gi
+] as const;
+const GENERIC_TASK_TITLE_PATTERNS = [
+  /^reflection activity$/i,
+  /^reflection question(?:s)?$/i,
+  /^reflection journal$/i,
+  /^reflection discussion forum$/i,
+  /^discussion(?: topic| forum)?$/i,
+  /^quiz$/i,
+  /^assignment$/i,
+  /^page$/i,
+  /^topic$/i,
+  /^final grade$/i
+] as const;
+const TASK_TEXT_SKIP_PATTERNS = [
+  /^(due|points|submission types|question count|unlock)\b/i,
+  /^\d+\s*(?:pts?|points?)\b/i,
+  /^prepare\b/i,
+  /^start\b/i
 ] as const;
 
 function eventStatus(timestamp: number): TimelineEvent["status"] {
@@ -141,14 +180,103 @@ const readable = (text: string, max = 220): string => {
   return `${slice.slice(0, boundary).trim()}...`;
 };
 
+function tagValues(item: CaptureItem, prefix: string): string[] {
+  return (item.tags ?? [])
+    .filter((entry) => entry.toLowerCase().startsWith(prefix.toLowerCase()))
+    .map((entry) => entry.slice(prefix.length).trim())
+    .filter(Boolean);
+}
+
+function firstTagValue(item: CaptureItem, prefix: string): string | null {
+  return tagValues(item, prefix)[0] ?? null;
+}
+
 function cleanTaskTitle(title: string): string {
-  return title
+  const cleaned = title
     .replace(/^Topic:\s*/i, "")
     .replace(/^Course Modules:\s*/i, "")
-    .replace(/^Module\s+\d+\s*-\s*/i, "")
     .replace(/\s*:\s*ORIENT100:.*$/i, "")
     .replace(/\s*:\s*[^:]+:\s*[^:]+$/i, "")
+    // Strip Canvas metadata appended to assignment titles: "Due M/D/YYYY ...", "Points N ...", "Submission types ..."
+    .replace(/\s+Due\s+(?:\d{1,2}\/\d{1,2}\/\d{4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})[\s\S]*/i, "")
+    .replace(/\s+Points\s+\d+\b[\s\S]*/i, "")
+    .replace(/\s+Submission\s+types?[\s\S]*/i, "")
     .replace(/\s+/g, " ")
+    .trim();
+
+  const moduleMatch = cleaned.match(/^(Module\s+\d+)\s*-\s*(.+)$/i);
+  if (!moduleMatch) {
+    return cleaned;
+  }
+
+  const moduleLabel = moduleMatch[1]!.trim();
+  const remainder = moduleMatch[2]!.trim();
+  return GENERIC_TASK_TITLE_PATTERNS.some((pattern) => pattern.test(normalize(remainder)))
+    ? `${moduleLabel} ${remainder}`
+    : remainder;
+}
+
+function isGenericTaskTitle(title: string): boolean {
+  const normalized = normalize(title);
+  return GENERIC_TASK_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function titleCandidateFromText(item: CaptureItem): string | null {
+  const baseTitle = cleanTaskTitle(item.title);
+  const lines = item.plainText
+    .split(/\n+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .filter((entry) => !hasChrome(entry))
+    .map((entry) => entry.split(/\s+\|\s+/)[0]!.trim())
+    .map((entry) => entry.split(/(?<=[.!?])\s+/)[0]!.trim())
+    .map((entry) => cleanTaskTitle(entry))
+    .filter((entry) => entry.length >= 6 && entry.length <= 90)
+    .filter((entry) => !TASK_TEXT_SKIP_PATTERNS.some((pattern) => pattern.test(entry)))
+    .filter((entry) => normalize(entry) !== normalize(baseTitle));
+
+  return lines[0] ?? null;
+}
+
+function deriveTaskTitle(item: CaptureItem): string {
+  const baseTitle = cleanTaskTitle(item.title);
+  if (!isGenericTaskTitle(baseTitle)) {
+    return baseTitle;
+  }
+
+  const textCandidate = titleCandidateFromText(item);
+  if (textCandidate) {
+    return textCandidate;
+  }
+
+  const trailCandidate = item.headingTrail
+    .map((entry) => cleanTaskTitle(entry))
+    .find((entry) => entry && !isGenericTaskTitle(entry) && !hasChrome(entry));
+
+  if (trailCandidate) {
+    return trailCandidate;
+  }
+
+  const moduleCandidate = firstTagValue(item, "module:");
+  if (moduleCandidate && !isGenericTaskTitle(moduleCandidate) && !hasChrome(moduleCandidate)) {
+    return cleanTaskTitle(moduleCandidate);
+  }
+
+  return baseTitle;
+}
+
+// Remove Canvas assignment-header metadata that appears in item.plainText:
+//   "Due 1/6/2026, 11:59:00 PM Points 9 Submission types online_quiz [WLOs: 1, 2] [CLO: 3]"
+// This block sits before the real content and contaminates summaries and rawText.
+function stripCanvasMetadata(text: string): string {
+  return text
+    .replace(/\bDue\s+\d{1,2}\/\d{1,2}\/\d{4}(?:,\s*\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)?(?:\s+Points\s+\d+)?(?:\s+Submission\s+types?\s+\S+)?/gi, "")
+    .replace(/\bPoints\s+\d+\s+Submission\s+types?\s+\S+/gi, "")
+    .replace(/\[(?:WLO|CLO)s?\s*:\s*[\d,\s]+\]/gi, "")
+    .split(/\n+/)
+    .map((entry) => entry.trim().replace(/[ \t]+/g, " "))
+    .filter(Boolean)
+    .join("\n")
     .trim();
 }
 
@@ -165,8 +293,9 @@ function isAuthoredConceptPage(item: CaptureItem): boolean {
 }
 
 function cleanSummary(item: CaptureItem): string {
-  const title = cleanTaskTitle(item.title);
-  const sentences = item.plainText
+  const title = deriveTaskTitle(item);
+  const cleanText = stripCanvasMetadata(item.plainText);
+  const sentences = cleanText
     .split(/(?<=[.!?])\s+/)
     .map((entry) => entry.trim())
     .map((entry) => entry.replace(new RegExp(`^(?:${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?:\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})?\\s*`, "i"), "").trim())
@@ -174,14 +303,15 @@ function cleanSummary(item: CaptureItem): string {
     .filter((entry) => !hasChrome(entry));
 
   const excerpt = item.excerpt.trim();
-  const fallback = excerpt && !hasChrome(excerpt) ? excerpt : cleanTaskTitle(item.title);
+  const fallback = excerpt && !hasChrome(excerpt) ? excerpt : title;
   return readable(sentences[0] ?? fallback);
 }
 
 function cleanRawText(item: CaptureItem): string {
-  const title = cleanTaskTitle(item.title);
+  const title = deriveTaskTitle(item);
+  const cleanText = stripCanvasMetadata(item.plainText);
   return readable(
-    item.plainText
+    cleanText
       .split(/\n+/)
       .map((entry) => entry.trim())
       .map((entry) => entry.replace(new RegExp(`^(?:${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?:\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})?\\s*`, "i"), "").trim())
@@ -201,7 +331,7 @@ function taskKindFor(item: CaptureItem): TaskKind {
   if (item.kind === "discussion" || normalized.includes("discussion_topics") || normalized.startsWith("topic:")) {
     return "discussion";
   }
-  if (item.kind === "quiz" || normalized.includes("/quizzes/") || /\bquestions?\b/i.test(item.plainText)) {
+  if (item.kind === "quiz" || normalized.includes("/quizzes/") || (item.kind === "page" && /\bquestions?\b/i.test(item.plainText))) {
     return "quiz";
   }
   if (item.kind === "assignment" || normalized.includes("/assignments/")) {
@@ -211,6 +341,20 @@ function taskKindFor(item: CaptureItem): TaskKind {
 }
 
 function dueDateFromText(item: CaptureItem, offsetIndex: number, capturedAt: number): number | null {
+  for (const tagDate of [
+    firstTagValue(item, "due:"),
+    firstTagValue(item, "unlock:"),
+    firstTagValue(item, "lock:")
+  ]) {
+    if (!tagDate) {
+      continue;
+    }
+    const parsed = Date.parse(tagDate);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
   const text = `${item.title} ${item.plainText}`;
   const match = text.match(/\b(?:due|available|lock)\s+(?:on\s+)?([A-Z][a-z]{2,8}\s+\d{1,2},?\s+\d{4}(?:,\s*\d{1,2}:\d{2}\s*[AP]M)?)\b/);
   if (match?.[1]) {
@@ -218,6 +362,18 @@ function dueDateFromText(item: CaptureItem, offsetIndex: number, capturedAt: num
     if (!Number.isNaN(parsed)) {
       return parsed;
     }
+  }
+  // Handle numeric date format: "Due 1/6/2026" or "Due 1/6/2026, 11:59:00 PM"
+  const numericDueMatch = text.match(/\b(?:due|available|lock)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}\/\d{4})\b/i);
+  if (numericDueMatch?.[1]) {
+    const parsed = Date.parse(numericDueMatch[1]);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  // Fallback: any standalone numeric date in the text
+  const standaloneMatch = text.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
+  if (standaloneMatch?.[1]) {
+    const parsed = Date.parse(standaloneMatch[1]);
+    if (!Number.isNaN(parsed)) return parsed;
   }
   const weekdayMatch = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
   if (weekdayMatch) {
@@ -230,10 +386,60 @@ function dueDateFromText(item: CaptureItem, offsetIndex: number, capturedAt: num
   return null;
 }
 
+function extractPointsFromItem(item: CaptureItem): number {
+  const pointsTag = firstTagValue(item, "points:");
+  if (pointsTag) {
+    const taggedPoints = parseInt(pointsTag, 10);
+    if (!Number.isNaN(taggedPoints) && taggedPoints > 0 && taggedPoints <= 1000) {
+      return taggedPoints;
+    }
+  }
+
+  const text = `${item.title} ${item.plainText.slice(0, 1000)}`;
+  const m = text.match(/\bPoints\s+(\d+)\b/i) ?? text.match(/\b(\d+)\s+points?\s+possible\b/i);
+  if (m?.[1]) {
+    const pts = parseInt(m[1], 10);
+    if (pts > 0 && pts <= 1000) return pts;
+  }
+  return 100;
+}
+
 function extractModuleKey(item: CaptureItem, index: number): string {
-  const text = `${item.title} ${item.plainText}`;
-  const match = text.match(/\bmodule\s+(\d+)\b/i);
-  return match ? `module-${match[1]}` : `item-${index + 1}`;
+  const moduleKeyTag = firstTagValue(item, "module-key:");
+  if (moduleKeyTag) {
+    return moduleKeyTag;
+  }
+
+  const moduleTag = firstTagValue(item, "module:");
+  if (moduleTag) {
+    const moduleInTag = moduleTag.match(/\bmodule\s+(\d+)\b/i);
+    if (moduleInTag) return `module-${moduleInTag[1]}`;
+    const weekInTag = moduleTag.match(/\bweek\s+(\d+)\b/i);
+    if (weekInTag) return `week-${weekInTag[1]}`;
+  }
+
+  // Check title first (most reliable), then headingTrail, then beginning of plainText
+  const title = item.title;
+  const moduleInTitle = title.match(/\bmodule\s+(\d+)\b/i);
+  if (moduleInTitle) return `module-${moduleInTitle[1]}`;
+  const weekInTitle = title.match(/\bweek\s+(\d+)\b/i);
+  if (weekInTitle) return `week-${weekInTitle[1]}`;
+
+  const trailText = item.headingTrail.join(" ");
+  const moduleInTrail = trailText.match(/\bmodule\s+(\d+)\b/i);
+  if (moduleInTrail) return `module-${moduleInTrail[1]}`;
+  const weekInTrail = trailText.match(/\bweek\s+(\d+)\b/i);
+  if (weekInTrail) return `week-${weekInTrail[1]}`;
+
+  const body = item.plainText.slice(0, 300);
+  const moduleInBody = body.match(/\bmodule\s+(\d+)\b/i);
+  if (moduleInBody) return `module-${moduleInBody[1]}`;
+  const weekInBody = body.match(/\bweek\s+(\d+)\b/i);
+  if (weekInBody) return `week-${weekInBody[1]}`;
+
+  // Group orphan items into estimated modules of 5 so unstructured courses still produce
+  // coherent workspace chapters instead of N isolated single-item modules.
+  return `sequence-${Math.ceil((index + 1) / 5)}`;
 }
 
 function estimateMinutes(item: CaptureItem, kind: TaskKind): number {
@@ -274,9 +480,10 @@ function requirementLines(item: CaptureItem): string[] {
 }
 
 function relatedConceptIds(item: CaptureItem, learning: LearningBundle): string[] {
-  const titleTokens = meaningful(item.title);
+  const displayTitle = deriveTaskTitle(item);
+  const titleTokens = meaningful(`${displayTitle} ${item.headingTrail.join(" ")}`);
   const textTokens = meaningful(item.plainText).slice(0, 48);
-  const itemText = normalize(`${item.title} ${item.plainText}`);
+  const itemText = normalize(`${displayTitle} ${item.headingTrail.join(" ")} ${item.plainText}`);
   const ranked = learning.concepts
     .map((concept) => {
       const conceptTokens = meaningful(`${concept.label} ${concept.definition} ${concept.summary} ${concept.keywords.join(" ")}`);
@@ -310,7 +517,7 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
       return {
         id: item.id,
         sourceItemId: item.id,
-        title: cleanTaskTitle(item.title),
+        title: deriveTaskTitle(item),
         kind,
         summary: cleanSummary(item),
         rawText: cleanRawText(item),
@@ -319,11 +526,13 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
         estimatedMinutes: estimateMinutes(item, kind),
         conceptIds,
         requirementLines: requirementLines(item),
+        pts: extractPointsFromItem(item),
         moduleKey: extractModuleKey(item, index),
         url: item.canonicalUrl
       };
     });
 
+  const seenTitles = new Set<string>();
   const tasks = entries
     .filter((task) => {
       const item = bundle.items.find((entry) => entry.id === task.id);
@@ -332,14 +541,32 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
       if (task.kind === "page") return task.conceptIds.length > 0;
       return true;
     })
-    .sort((left, right) => (left.dueDate ?? left.plannedDate) - (right.dueDate ?? right.plannedDate));
+    .sort((left, right) => (left.dueDate ?? left.plannedDate) - (right.dueDate ?? right.plannedDate))
+    .filter((task) => {
+      const key = task.title.toLowerCase().replace(/\s+/g, " ").trim();
+      if (seenTitles.has(key)) return false;
+      seenTitles.add(key);
+      return true;
+    });
 
-  const chapters = entries
-    .filter((task) => task.kind === "page" && task.conceptIds.length > 0)
+  // Build chapters from any item kind that has concept IDs — not just pages.
+  // Courses that use discussions/quizzes/assignments as primary content (e.g. skills
+  // courses, orientation courses) would otherwise produce zero chapters, leaving
+  // Reader and Library completely empty. We prefer pages first (richer content),
+  // then fall back to the richest item of any kind in each module group.
+  const allChapterCandidates = entries
+    .filter((task) => task.conceptIds.length > 0)
     .filter((task) => {
       const item = bundle.items.find((entry) => entry.id === task.id);
       return Boolean(item) && !shouldSkipWorkspaceItem(item!);
-    })
+    });
+
+  // Prefer page items as chapter anchors; fall back to highest-concept-count item
+  // per module key when no pages are present.
+  const pageChapters = allChapterCandidates.filter((task) => task.kind === "page");
+  const rawChapterSource = pageChapters.length >= 2 ? pageChapters : allChapterCandidates;
+
+  const chapters = rawChapterSource
     .map((task) => ({
       id: task.moduleKey,
       sourceItemId: task.sourceItemId,
@@ -380,7 +607,8 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
   const sourceMatches = bundle.items
     .filter((item) => !shouldSkipWorkspaceItem(item))
     .map((item) => {
-    const titleTokens = meaningful(item.title);
+    const displayTitle = deriveTaskTitle(item);
+    const titleTokens = meaningful(`${displayTitle} ${item.headingTrail.join(" ")}`);
     const textTokens = meaningful(item.plainText).slice(0, 64);
     const concepts = learning.concepts
       .map((concept) => {
@@ -412,7 +640,7 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
     return {
       sourceItemId: item.id,
       url: item.canonicalUrl,
-      title: cleanTaskTitle(item.title),
+      title: displayTitle,
       level,
       concepts
     };

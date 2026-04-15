@@ -15,7 +15,7 @@ function withSource(message: OutboundBridgeMessage): BridgeMessage {
 }
 
 export function postBridgeMessage(message: OutboundBridgeMessage): void {
-  window.postMessage(withSource(message), "*");
+  window.postMessage(withSource(message), window.location.origin);
 }
 
 export function subscribeToBridgeMessages(

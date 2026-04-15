@@ -290,8 +290,10 @@ async function clearPartialState(): Promise<void> {
   await storageLocalRemove([PARTIAL_BUNDLE_KEY, PARTIAL_WARNINGS_KEY, PARTIAL_RAW_HTML_KEY]);
 }
 
+let jobCounter = 0;
+
 function randomJobId(): string {
-  return `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
 }
 
 function parseCourseContextFromUrl(urlValue?: string, title = "Canvas Course"): CourseContext | null {

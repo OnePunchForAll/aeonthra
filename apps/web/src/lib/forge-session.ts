@@ -1,5 +1,5 @@
 import type { LearningBundle, LearningConcept } from "@learning/schema";
-import { deriveWorkspace, type ForgeChapter } from "./workspace";
+import { deriveWorkspace, type CourseTask, type ForgeChapter } from "./workspace";
 
 export type ForgeQuestion = {
   id: string;
@@ -48,6 +48,17 @@ export type ForgeSessionData = {
   transcend: {
     boss: ForgeQuestion[];
   };
+};
+
+export type ForgeConceptRuntime = {
+  conceptId: string;
+  chapterId: string;
+  chapterTitle: string;
+  moduleKey: string;
+  dilemmas: ForgeDilemma[];
+  rapid: ForgeQuestion[];
+  drill: ForgeQuestion[];
+  teachBack: ForgeSessionData["architect"]["teachBack"];
 };
 
 type PreparedConcept = LearningConcept & {
@@ -161,7 +172,12 @@ function conceptWindow(learning: LearningBundle, chapter: ForgeChapter): Learnin
     return direct;
   }
 
-  return learning.concepts.slice(0, 6);
+  // Supplement with global concepts to reach exactly 6 — always preserve chapter-specific ones first
+  const directIds = new Set(direct.map((c) => c.id));
+  const supplement = learning.concepts
+    .filter((c) => !directIds.has(c.id))
+    .slice(0, 6 - direct.length);
+  return [...direct, ...supplement];
 }
 
 function prepareConcept(concept: LearningConcept, pool: LearningConcept[]): PreparedConcept {
@@ -243,7 +259,7 @@ function classificationOptions(concept: PreparedConcept, pool: PreparedConcept[]
   const options = [
     concept.definition,
     ...distortions.slice(0, 2),
-    related ? firstSentence(`${related.label} belongs where the source is dealing with ${related.summary.toLowerCase()}`) : distortions[2] ?? ""
+    related ? truncate(related.definition || related.summary, 140) : distortions[2] ?? ""
   ].filter(Boolean);
   return Array.from(new Set(options)).slice(0, 4);
 }
@@ -271,7 +287,7 @@ function drillQuestion(concept: PreparedConcept, pool: PreparedConcept[], index:
     prompt: stem(DRILL_STEMS, concept, index),
     options,
     correctIndex: options.findIndex((option) => normalize(option) === normalize(concept.definition)),
-    explanation: `Keep this sentence in view: ${concept.definition} ${concept.commonConfusion}`,
+    explanation: `Keep this in view: ${concept.definition}${concept.transferHook ? ` — ${concept.transferHook}` : ""}`,
     conceptId: concept.id
   };
   return question.correctIndex >= 0 && validateQuestionCoherence(question, concept, pool, concept.relatedLabel ? [concept.relatedLabel] : []) ? question : null;
@@ -279,12 +295,17 @@ function drillQuestion(concept: PreparedConcept, pool: PreparedConcept[], index:
 
 function bossQuestion(concept: PreparedConcept, pool: PreparedConcept[], index: number): ForgeQuestion | null {
   const related = relatedPool(concept, pool)[0];
+  // Always produce exactly 4 options — no empty-string slots regardless of whether related exists
   const options = Array.from(new Set([
-    `Use ${concept.label} when ${concept.summary.replace(/\.$/, "").toLowerCase()}.`,
-    related ? `Use ${concept.label} and ${related.label} as if they make the same move.` : "",
+    `Use ${concept.label} when ${truncate(concept.summary.replace(/\.$/, "").toLowerCase(), 100)}.`,
+    related
+      ? `Use ${concept.label} and ${related.label} as if they make the same move.`
+      : `Apply ${concept.label} to any moral question that comes up, without checking what the source actually claims.`,
     `Treat ${concept.label} as a loose page label instead of the claim the source makes.`,
-    related ? `Switch to ${related.label} whenever ${concept.label} starts to require evidence.` : `Only remember the title of ${concept.label} and ignore the supporting sentence.`
-  ].filter(Boolean))).slice(0, 4);
+    related
+      ? `Switch to ${related.label} whenever ${concept.label} starts to require evidence.`
+      : `Only remember the title of ${concept.label} and ignore the supporting sentence.`
+  ])).slice(0, 4);
   const question: ForgeQuestion = {
     id: `${concept.id}:boss:${index}`,
     prompt: stem(BOSS_STEMS, concept, index),
@@ -330,15 +351,34 @@ function buildGenesisDilemmas(pool: PreparedConcept[]): ForgeDilemma[] {
     }));
   }
 
+  // Generic ethical scenarios for when the framework trio isn't available.
+  // These are real dilemmas so students have something concrete to apply the concept to.
+  const FALLBACK_SCENARIOS = [
+    "A student discovers their best friend has been submitting someone else's work. Reporting them could end the friendship; staying silent means the dishonesty continues.",
+    "A researcher finds a small but significant error in a published study. Retracting it would damage reputations; staying silent lets a false result stand in the literature.",
+    "You can stay late to help a struggling colleague meet an important deadline, but doing so means missing a family event you promised to attend.",
+    "A manager learns a cost-cutting measure will save the company money but will make conditions harder for lower-paid workers who have no voice in the decision.",
+    "A student is offered access to a leaked exam. Declining puts them at a disadvantage; accepting means benefiting from unfairness toward peers who didn't get the same access."
+  ];
+
   return pool.slice(0, 3).map((concept, index) => {
-    const evidence = concept.primer || concept.definition || concept.summary;
+    const scenario = FALLBACK_SCENARIOS[index % FALLBACK_SCENARIOS.length]!;
     return {
       id: `${concept.id}:dilemma:${index}`,
-      scenario: `A real choice turns on ${concept.label.toLowerCase()}: ${truncate(evidence, 180)}`,
+      scenario,
       options: [
-        { label: `Choose the path that best fits ${concept.label}.`, reveal: `${concept.label} becomes visible here because ${concept.summary.toLowerCase()}` },
-        { label: "Choose the most convenient option even if the moral logic stays blurry.", reveal: "Convenience is not the same as a grounded ethical reason." },
-        { label: "Delay the decision until the tension disappears on its own.", reveal: "These cases matter because the ethical pressure does not disappear without a choice." }
+        {
+          label: `Apply ${concept.label}: ${truncate(concept.summary, 80)}`,
+          reveal: `${concept.label} frames this situation as: ${concept.definition}`
+        },
+        {
+          label: "Do what produces the best outcome for the most people, regardless of rules.",
+          reveal: "That's a consequentialist move — useful, but it may not capture what the source is emphasizing."
+        },
+        {
+          label: "Avoid making a hard call and wait to see how things resolve on their own.",
+          reveal: `Avoidance sidesteps the question the source raises about ${concept.label}.`
+        }
       ],
       conceptId: concept.id
     };
@@ -362,7 +402,9 @@ function crossExamFor(concept: PreparedConcept, index: number): ForgeChallenge {
     prompt: related
       ? `Someone argues that ${concept.label} is just ${related} with different wording. What would you say back?`
       : `Someone says ${concept.label} is only a heading, not a real idea. How would you push back?`,
-    reveal: concept.commonConfusion,
+    reveal: related
+      ? `${concept.label} has a specific claim that ${related} doesn't make: ${concept.definition}`
+      : `${concept.label} is more than a label — it makes a concrete claim: ${concept.definition}`,
     conceptId: concept.id
   };
 }
@@ -371,7 +413,7 @@ function transferFor(concept: PreparedConcept, index: number): ForgeChallenge {
   return {
     id: `${concept.id}:transfer:${index}`,
     prompt: `Where would ${concept.label} matter in a real assignment, discussion post, or explanation task?`,
-    reveal: concept.transferHook,
+    reveal: concept.transferHook || concept.definition,
     conceptId: concept.id
   };
 }
@@ -389,6 +431,65 @@ function keyPoints(concept: PreparedConcept): string[] {
       ].map((entry) => entry.replace(/-/g, " "))
     )
   ).slice(0, 5);
+}
+
+function summarizeChapter(tasks: CourseTask[]): string {
+  const lines = tasks
+    .map((task) => task.summary || task.rawText)
+    .filter((entry) => entry.trim().length >= 24)
+    .slice(0, 2);
+  return truncate(lines.join(" "), 220) || "Synthetic chapter assembled from the current module tasks.";
+}
+
+function buildFallbackChapters(tasks: CourseTask[]): ForgeChapter[] {
+  const groups = new Map<string, CourseTask[]>();
+  for (const task of tasks) {
+    const current = groups.get(task.moduleKey) ?? [];
+    current.push(task);
+    groups.set(task.moduleKey, current);
+  }
+
+  return Array.from(groups.entries())
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([moduleKey, moduleTasks], index) => {
+      const firstTask = [...moduleTasks].sort((left, right) => left.plannedDate - right.plannedDate)[0] ?? moduleTasks[0]!;
+      const conceptIds = Array.from(new Set(moduleTasks.flatMap((task) => task.conceptIds))).sort();
+      return {
+        id: `synthetic:${moduleKey}`,
+        sourceItemId: firstTask.sourceItemId,
+        title: firstTask.title || `Module ${index + 1}`,
+        summary: summarizeChapter(moduleTasks),
+        conceptIds,
+        moduleKey
+      };
+    })
+    .filter((chapter) => chapter.conceptIds.length > 0);
+}
+
+function runtimeForConcept(
+  session: ForgeSessionData,
+  chapter: ForgeChapter,
+  conceptId: string
+): ForgeConceptRuntime | null {
+  const nextRuntime: ForgeConceptRuntime = {
+    conceptId,
+    chapterId: chapter.id,
+    chapterTitle: chapter.title,
+    moduleKey: chapter.moduleKey,
+    dilemmas: session.genesis.dilemmas.filter((entry) => entry.conceptId === conceptId),
+    rapid: session.forge.rapid.filter((entry) => entry.conceptId === conceptId),
+    drill: [...session.forge.drill, ...session.transcend.boss].filter((entry) => entry.conceptId === conceptId),
+    teachBack: session.architect.teachBack.filter((entry) => entry.conceptId === conceptId)
+  };
+
+  return (
+    nextRuntime.dilemmas.length > 0
+    || nextRuntime.rapid.length > 0
+    || nextRuntime.drill.length > 0
+    || nextRuntime.teachBack.length > 0
+  )
+    ? nextRuntime
+    : null;
 }
 
 export function createForgeSession(learning: LearningBundle, chapter: ForgeChapter): ForgeSessionData {
@@ -427,6 +528,66 @@ export function createForgeSession(learning: LearningBundle, chapter: ForgeChapt
       boss: concepts.map((concept, index) => bossQuestion(concept, concepts, index)).filter((entry): entry is ForgeQuestion => Boolean(entry)).slice(0, 8)
     }
   };
+}
+
+export function buildForgeRuntime(
+  learning: LearningBundle,
+  workspace: { tasks: CourseTask[]; chapters: ForgeChapter[] }
+): Record<string, ForgeConceptRuntime> {
+  const chapters = workspace.chapters.length > 0 ? workspace.chapters : buildFallbackChapters(workspace.tasks);
+  const runtimeByConcept = new Map<string, ForgeConceptRuntime>();
+  const scoreRuntime = (runtime: ForgeConceptRuntime): number =>
+    runtime.rapid.length * 3 + runtime.drill.length * 2 + runtime.dilemmas.length * 2 + runtime.teachBack.length;
+
+  chapters.forEach((chapter) => {
+    const session = createForgeSession(learning, chapter);
+    const conceptIds = Array.from(
+      new Set([...chapter.conceptIds, ...session.genesis.scan.map((concept) => concept.id)])
+    ).sort();
+
+    conceptIds.forEach((conceptId) => {
+      const nextRuntime = runtimeForConcept(session, chapter, conceptId);
+      if (!nextRuntime) {
+        return;
+      }
+
+      const current = runtimeByConcept.get(conceptId);
+      if (!current) {
+        runtimeByConcept.set(conceptId, nextRuntime);
+        return;
+      }
+
+      const currentScore = scoreRuntime(current);
+      const nextScore = scoreRuntime(nextRuntime);
+      if (nextScore > currentScore || (nextScore === currentScore && nextRuntime.chapterTitle.localeCompare(current.chapterTitle) < 0)) {
+        runtimeByConcept.set(conceptId, nextRuntime);
+      }
+    });
+  });
+
+  learning.concepts.forEach((concept, index) => {
+    if (runtimeByConcept.has(concept.id)) {
+      return;
+    }
+
+    const chapter: ForgeChapter = {
+      id: `concept:${concept.id}`,
+      sourceItemId: concept.sourceItemIds[0] ?? concept.id,
+      title: concept.label,
+      summary: concept.primer || concept.definition || concept.summary || concept.excerpt || concept.label,
+      conceptIds: Array.from(new Set([concept.id, ...concept.relatedConceptIds.slice(0, 3)])).sort(),
+      moduleKey: `concept-${String(index + 1).padStart(2, "0")}`
+    };
+    const session = createForgeSession(learning, chapter);
+    const nextRuntime = runtimeForConcept(session, chapter, concept.id);
+    if (nextRuntime) {
+      runtimeByConcept.set(concept.id, nextRuntime);
+    }
+  });
+
+  return Object.fromEntries(
+    Array.from(runtimeByConcept.entries()).sort(([left], [right]) => left.localeCompare(right))
+  );
 }
 
 export function chapterForTask(
