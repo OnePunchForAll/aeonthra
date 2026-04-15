@@ -590,9 +590,10 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     {launched&&<span ref={sessionTimerElRef} style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ 0m 0s</span>}
   </div>
   <div style={{display:"flex",gap:4}}>
-    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"],["courseware","Library"],["stats","Stats"],["settings","⚙"]].map(([id,lb])=>(
+    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
       <button key={id} onClick={()=>go(id)} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
+    <button onClick={()=>go("settings")} title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
   </div>
 </nav>
 
@@ -670,6 +671,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     ["📝","Assignment prep",()=>{if(nextA)go("assignment",{a:nextA});}],
     ["🗺","Journey map",()=>go("journey")],
     ["🧠","Explore concepts",()=>go("explore")],
+    ["📚","Library",()=>go("courseware")],
     ["📊","My stats",()=>go("stats")],
   ].map(([ic,lb,fn])=>(
     <button key={lb} onClick={fn} style={{padding:"14px 22px",borderRadius:16,border:`1px solid ${BD}`,background:CD2,cursor:"pointer",color:TX,fontSize:".88rem",fontWeight:500,transition:"all 250ms",display:"flex",alignItems:"center",gap:8}}>
@@ -777,6 +779,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   <div style={{padding:"28px 48px",background:"rgba(8,8,20,.85)",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:68,zIndex:40,backdropFilter:"blur(16px)"}}>
     <div><h2 style={{...hd(1.5),marginBottom:4}}>Course Atlas</h2><p style={{color:MU,fontSize:".88rem"}}>Each module climbs higher — scroll right and upward toward mastery</p></div>
     <div style={{display:"flex",gap:24,alignItems:"center"}}>
+      <button onClick={()=>go("courseware")} style={{padding:"8px 18px",borderRadius:12,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>📚 Library</button>
       <div style={{fontSize:"1.4rem",fontWeight:800,color:avg>=.8?GD:avg>=.5?TL:CY,fontFamily:"'Space Grotesk',sans-serif"}}>{P(avg)}</div>
       <div style={{width:160,height:10,borderRadius:5,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:5,background:`linear-gradient(90deg,${CY},${TL},${GD})`,width:P(avg),transition:"width 800ms ease"}}/></div>
       <span style={{fontSize:".88rem",color:MU}}>{done.size}/{cc.length}</span>
