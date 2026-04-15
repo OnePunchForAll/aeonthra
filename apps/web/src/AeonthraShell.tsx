@@ -1427,7 +1427,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
       <div style={{fontSize:"1.2rem",fontWeight:700,marginBottom:4}}>{p.n}</div>
       <div style={{fontSize:".82rem",color:c2,fontWeight:600,marginBottom:10}}>{p.t}</div>
       <div style={{fontSize:".82rem",color:MU}}>{p.q.length} passage{p.q.length!==1?"s":""}</div>
-      <div style={{fontSize:".78rem",color:T2,fontStyle:"italic",marginTop:12,lineHeight:1.5}}>"{(p.q[0].x.slice(0,80).replace(/\s+\S*$/,""))}…"</div>
+      {p.q.length>0&&<div style={{fontSize:".78rem",color:T2,fontStyle:"italic",marginTop:12,lineHeight:1.5}}>"{(p.q[0].x.slice(0,80).replace(/\s+\S*$/,""))}…"</div>}
     </button>);
   })}
 </div>:<div style={{textAlign:"center",padding:"60px 0",color:MU}}>
@@ -1460,13 +1460,13 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             <div style={{fontSize:".82rem",color:c2,fontWeight:600}}>{r.t}</div>
           </div>
           <div style={{textAlign:"right"}}>
-            {r.sq.p>0&&<div style={{fontSize:".78rem",color:MU}}>Textbook p.{r.sq.p}</div>}
+            {r.sq?.p>0&&<div style={{fontSize:".78rem",color:MU}}>Textbook p.{r.sq.p}</div>}
             <div style={{display:"flex",gap:2,marginTop:4,justifyContent:"flex-end"}}>{[...Array(5)].map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:"50%",background:j<r.r?c2:`${MU}44`,transition:"all 300ms"}}/>)}</div>
           </div>
         </div>
-        <div style={{padding:"20px 24px",borderRadius:16,background:innr,border:`1px solid ${BD}`,marginBottom:16}}>
+        {r.sq&&<div style={{padding:"20px 24px",borderRadius:16,background:innr,border:`1px solid ${BD}`,marginBottom:16}}>
           <p style={{fontSize:"1.1rem",lineHeight:1.9,color:T2,fontStyle:"italic",margin:0}}>"{r.sq.x}"</p>
-        </div>
+        </div>}
         {/* Core principle for this figure's area */}
         <div style={{fontSize:".82rem",color:c2,fontWeight:600}}>
           {(()=>{const t=r.t.toLowerCase();
@@ -1504,7 +1504,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
         </div>}
         {/* Hand off to learning */}
         <div style={{display:"flex",gap:10,marginTop:16}}>
-          {cc.filter(c=>c.cat.toLowerCase().includes(r.t.toLowerCase().split(" ")[0])||r.sq.tg.some(t=>c.kw.includes(t))).slice(0,2).map(c=>(
+          {cc.filter(c=>c.cat.toLowerCase().includes(r.t.toLowerCase().split(" ")[0])||(r.sq?.tg??[]).some(t=>c.kw.includes(t))).slice(0,2).map(c=>(
             <button key={c.id} onClick={()=>go("forge",{c})} style={{padding:"6px 14px",borderRadius:10,border:`1px solid ${c2}33`,background:`${c2}08`,color:c2,fontSize:".75rem",fontWeight:600,cursor:"pointer"}}>Learn {c.name} →</button>
           ))}
         </div>
