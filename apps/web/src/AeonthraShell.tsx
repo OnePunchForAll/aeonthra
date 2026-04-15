@@ -1,4 +1,9 @@
-// @ts-nocheck — NaN-fix + forge-empty + gym-empty + hardcoded-8 patch v2
+// @ts-nocheck
+// TODO(typing): This file is a single-pass minified JSX shell (~1938 lines).
+// Full TypeScript typing requires splitting into per-view components first.
+// Tracked: all prop types live in shell-mapper.ts and workspace.ts (typed).
+// The component contract (props in/out) is fully typed via the ShellData /
+// AppProgress interfaces; only the internal view state is untyped here.
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { ShellData } from "./lib/shell-mapper";
 import type { AppProgress } from "./lib/workspace";

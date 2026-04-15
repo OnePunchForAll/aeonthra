@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { createDemoSourceText, type LearningBuildStage } from "@learning/content-engine";
 import { CaptureBundleSchema, type CaptureBundle, type LearningBundle } from "@learning/schema";
 import { createDemoBundle, createDemoProgress } from "./lib/demo";
@@ -35,6 +35,37 @@ import {
   type BundleSummary
 } from "./lib/source-workspace";
 import { AeonthraShell } from "./AeonthraShell";
+
+type ShellErrorBoundaryState = { error: Error | null };
+
+class ShellErrorBoundary extends Component<{ children: ReactNode }, ShellErrorBoundaryState> {
+  state: ShellErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ShellErrorBoundaryState {
+    return { error };
+  }
+
+  override render() {
+    if (this.state.error) {
+      return (
+        <div style={{ minHeight: "100dvh", background: "#020308", color: "#edf2ff", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+          <div style={{ maxWidth: 540, textAlign: "center" }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: 16 }}>⚠</div>
+            <h2 style={{ fontSize: "1.4rem", fontWeight: 800, marginBottom: 12 }}>Something went wrong</h2>
+            <p style={{ color: "#8b97be", marginBottom: 24, lineHeight: 1.6 }}>{this.state.error.message}</p>
+            <button
+              onClick={() => this.setState({ error: null })}
+              style={{ padding: "12px 28px", borderRadius: 12, background: "linear-gradient(135deg,#00f0ff,#0080ff)", color: "#000", fontWeight: 700, border: "none", cursor: "pointer" }}
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { Button } from "./components/primitives/Button";
 import { Glow } from "./components/primitives/Glow";
 import { Loader } from "./components/primitives/Loader";
@@ -981,7 +1012,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <ShellErrorBoundary>
       <AeonthraShell
         data={shellData}
         progress={progress}
@@ -991,7 +1022,7 @@ export default function App() {
         onSaveReplayBundle={downloadReplayBundle}
         isDemoMode={isDemoMode}
       />
-    </>
+    </ShellErrorBoundary>
   );
 }
 

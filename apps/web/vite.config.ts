@@ -6,11 +6,11 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   server: {
-    port: 5180,
+    port: 5176,
     strictPort: true,
     fs: {
       allow: [
-        resolve(__dirname, "../../"),     // worktree root: dreamy-mendel/
+        resolve(__dirname, "../../"),     // worktree root: awesome-gould/
         resolve(__dirname, "../../../../") // main repo root: Canvas Converter/ (packages symlink target)
       ]
     },
