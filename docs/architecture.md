@@ -13,16 +13,16 @@ The repo still uses those OMEGA FORGE codenames in architecture docs. The curren
 
 ## Flow
 
-1. SENTINEL starts from an open Canvas course and discovers course-linked items it can capture from modules and core course surfaces.
-2. The extension normalizes each discovered item into a local capture bundle and keeps warnings when a page is too thin or too UI-heavy.
-3. The extension stores the bundle as a pending pack, then opens or focuses ATLAS when the user chooses `Open AEONTHRA` or when auto-handoff is enabled.
-4. The page bridge requests the pending pack.
-5. ATLAS validates and imports the pack.
-6. The deterministic engine derives the five-phase learning protocol and four engine profiles.
-7. The workspace persists locally and can export the bundle again.
+1. SENTINEL starts from an open Canvas course and captures supported course content in `Complete Snapshot` or `Learning Content Only` mode.
+2. The extension can also accumulate a bounded visited-page session keyed by `origin + courseId`, then materialize that session into normal local capture history on explicit save.
+3. The extension stores finalized captures locally, then opens or focuses AEONTHRA when the user chooses `Open AEONTHRA` or when auto-handoff is enabled.
+4. The page bridge and worker exchange a narrow validated handoff contract around `NF_IMPORT_REQUEST`, `NF_PACK_READY`, `NF_PACK_ACK`, and `NF_IMPORT_RESULT`.
+5. AEONTHRA validates and imports the pack, preserves scoped notes/progress by workspace identity, and can also restore deterministic offline replay bundles.
+6. The deterministic engine derives concepts, relations, assignment signals, and the Atlas skill tree from the imported source bundle.
+7. The shell materializes learner progress into locked, available, in-progress, earned, mastered, readiness, and recovery states without any backend.
 
 ## Truthful scope
 
-- The extension captures course material it can reach from the current Canvas course context; it does not promise universal extraction of arbitrary or unseen pages.
-- The app generates deterministic study content from the imported material.
+- The extension captures supported course material it can deterministically reach from the current Canvas course context; it does not promise universal extraction of arbitrary or unseen pages.
+- The app generates deterministic study content, Atlas progression, and replay bundles from the imported material.
 - The system does not rely on any runtime API or backend.

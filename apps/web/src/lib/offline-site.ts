@@ -35,7 +35,8 @@ function toStoredProgress(progress: AppProgress): StoredAppProgress {
     conceptMastery: progress.conceptMastery,
     chapterCompletion: progress.chapterCompletion,
     goalCompletion: progress.goalCompletion,
-    practiceMode: progress.practiceMode
+    // Practice mode is a transient shell session, not durable workspace truth.
+    practiceMode: false
   };
 }
 
@@ -44,8 +45,40 @@ function fromStoredProgress(progress: StoredAppProgress): AppProgress {
     conceptMastery: progress.conceptMastery,
     chapterCompletion: progress.chapterCompletion,
     goalCompletion: progress.goalCompletion,
-    practiceMode: progress.practiceMode
+    practiceMode: false
   };
+}
+
+function buildOfflineSiteHashPayload(input: {
+  canvasBundle: CaptureBundle;
+  textbookBundle: CaptureBundle;
+  mergedBundle: CaptureBundle;
+  learningBundle: LearningBundle;
+  progress: StoredAppProgress;
+  notes?: string;
+}, options?: {
+  includeNotes?: boolean;
+}): string {
+  const payload = {
+    canvasBundle: input.canvasBundle,
+    textbookBundle: input.textbookBundle,
+    mergedBundle: input.mergedBundle,
+    learningBundle: input.learningBundle,
+    progress: input.progress
+  } as {
+    canvasBundle: CaptureBundle;
+    textbookBundle: CaptureBundle;
+    mergedBundle: CaptureBundle;
+    learningBundle: LearningBundle;
+    progress: StoredAppProgress;
+    notes?: string;
+  };
+
+  if (options?.includeNotes !== false) {
+    payload.notes = input.notes ?? "";
+  }
+
+  return stableHash(JSON.stringify(payload));
 }
 
 export function createOfflineSiteBundle(input: {
@@ -54,13 +87,16 @@ export function createOfflineSiteBundle(input: {
   mergedBundle: CaptureBundle;
   learningBundle: LearningBundle;
   progress: AppProgress;
+  notes: string;
 }): OfflineSiteBundle {
+  const progress = toStoredProgress(input.progress);
   const serialized = {
     canvasBundle: input.canvasBundle,
     textbookBundle: input.textbookBundle,
     mergedBundle: input.mergedBundle,
     learningBundle: input.learningBundle,
-    progress: toStoredProgress(input.progress)
+    progress,
+    notes: input.notes
   };
 
   return OfflineSiteBundleSchema.parse({
@@ -68,14 +104,45 @@ export function createOfflineSiteBundle(input: {
     exportedAt: new Date().toISOString(),
     title: input.mergedBundle.title,
     ...serialized,
-    deterministicHash: stableHash(JSON.stringify(serialized))
+    deterministicHash: buildOfflineSiteHashPayload(serialized)
   });
 }
 
 export function parseOfflineSiteBundle(raw: string): OfflineSiteBundle | null {
   try {
-    const parsed = OfflineSiteBundleSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    const json = JSON.parse(raw);
+    const hadNotesField = typeof json === "object" && json !== null && Object.prototype.hasOwnProperty.call(json, "notes");
+    const parsed = OfflineSiteBundleSchema.safeParse(json);
+    if (!parsed.success) {
+      return null;
+    }
+    const { canvasBundle, textbookBundle, mergedBundle, learningBundle, progress, notes } = parsed.data;
+    const expectedHash = buildOfflineSiteHashPayload({
+      canvasBundle,
+      textbookBundle,
+      mergedBundle,
+      learningBundle,
+      progress,
+      notes
+    });
+    if (expectedHash === parsed.data.deterministicHash) {
+      return parsed.data;
+    }
+
+    if (!hadNotesField) {
+      const legacyHash = buildOfflineSiteHashPayload({
+        canvasBundle,
+        textbookBundle,
+        mergedBundle,
+        learningBundle,
+        progress
+      }, { includeNotes: false });
+      if (legacyHash === parsed.data.deterministicHash) {
+        return parsed.data;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -87,13 +154,15 @@ export function restoreOfflineSiteBundle(bundle: OfflineSiteBundle): {
   mergedBundle: CaptureBundle;
   learningBundle: LearningBundle;
   progress: AppProgress;
+  notes: string;
 } {
   return {
     canvasBundle: bundle.canvasBundle,
     textbookBundle: bundle.textbookBundle,
     mergedBundle: bundle.mergedBundle,
     learningBundle: bundle.learningBundle,
-    progress: fromStoredProgress(bundle.progress)
+    progress: fromStoredProgress(bundle.progress),
+    notes: bundle.notes ?? ""
   };
 }
 

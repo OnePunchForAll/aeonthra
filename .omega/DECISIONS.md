@@ -1,5 +1,32 @@
 # DECISIONS
 
+## 2026-04-16
+
+### Preserve deterministic continuity across additive metadata upgrades
+
+- Decision: replay restore and same-course state preservation should remain compatible across additive metadata upgrades when the older payload can still be validated or its course identity can still be inferred locally.
+- Why: stricter deterministic checks should reject corruption and ambiguity, not strand honest prior exports or course captures created before new fields existed.
+
+### Accept validated extension-initiated packs even when the app did not originate the request
+
+- Decision: AEONTHRA may accept a schema-valid `NF_PACK_READY` from the extension even when the local app did not first set `requestMode`, as long as the message is bridge-tagged and comes from the configured handoff flow.
+- Why: the extension's `Open AEONTHRA` path is a real local-first workflow. Dropping those packs to preserve a stricter request-only policy made legitimate handoffs fail more often than it protected users.
+
+### Treat `apps/extension/dist` as the canonical unpacked-extension artifact
+
+- Decision: `apps/extension/src/**` and `apps/extension/manifest.json` remain source of truth, and `apps/extension/dist` is the only generated unpacked-extension output that contributors should load in Chrome.
+- Why: mirroring generated JS/HTML/CSS back into `apps/extension/` created duplicate tracked artifacts and made verification itself dirty the repo.
+
+### Atlas progression is now skill-first, not module-board-first
+
+- Decision: the live Atlas surface should be derived from deterministic skill nodes, prerequisite edges, chapter rewards, and assignment skill requirements instead of module cards with concept chips.
+- Why: rebranding a module/concept board as a progression system crossed the repo's truth boundary; the skill tree needed its own model.
+
+### Replay bundles persist notes and fail closed on brittle unlock modes
+
+- Decision: offline replay bundles should include scoped notes and validate their deterministic hash on restore, while `practiceMode` should not persist across replay/export boundaries.
+- Why: replay export should be self-contained and truthful, but carrying a brittle unlock override forward would overstate learner state integrity.
+
 ## 2026-04-09
 
 ### Use the existing repo layout and map spec codenames onto it

@@ -702,6 +702,6 @@ export function taskGate(task: CourseTask, progress: AppProgress): {
   conceptIds: string[];
 } {
   const conceptIds = task.conceptIds.slice(0, 3);
-  const locked = !progress.practiceMode && conceptIds.some((id) => (progress.conceptMastery[id] ?? 0) < 0.6);
+  const locked = conceptIds.some((id) => (progress.conceptMastery[id] ?? 0) < 0.6);
   return { locked, conceptIds };
 }

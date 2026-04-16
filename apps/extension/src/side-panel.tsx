@@ -100,7 +100,7 @@ function SidePanelApp() {
   return (
     <Shell
       title={isBusy ? "AUTO CAPTURE RUNNING" : "COURSE BRIDGE"}
-      subtitle={activeCourse ? `Canvas course detected: ${activeCourse.courseName}` : "Open a Canvas course, then let AEONTHRA capture the whole thing for you."}
+      subtitle={activeCourse ? `Canvas course detected: ${activeCourse.courseName}` : "Open a Canvas course, then let AEONTHRA capture the supported course content truthfully."}
       footer={
         <div className="ae-footer-actions">
           <Button variant="ghost" onClick={() => void sendExtensionMessage({ type: "aeon:open-side-panel" })}>Refresh Panel</Button>
@@ -112,12 +112,12 @@ function SidePanelApp() {
 
       {state ? (
         <Card accent={isBusy ? "teal" : "cyan"}>
-          <div className="ae-card__title">{isBusy ? state.runtime.phaseLabel : activeCourse ? "Capture Entire Course" : "Waiting for Canvas"}</div>
+          <div className="ae-card__title">{isBusy ? state.runtime.phaseLabel : activeCourse ? "Capture Supported Course Content" : "Waiting for Canvas"}</div>
           <p className="ae-copy">
             {isBusy
               ? state.runtime.currentTitle || "Walking the course in the background."
               : activeCourse
-                ? "AEONTHRA can archive everything or strip this course down to forge-ready learning content."
+                ? "AEONTHRA can capture the supported course surfaces or strip them down to forge-ready learning content."
                 : "Open any Canvas course page first. The extension only runs where it can truthfully detect a course."}
           </p>
 
@@ -144,7 +144,7 @@ function SidePanelApp() {
                 <ModeCard mode="complete" selected={selectedMode === "complete"} onSelect={setSelectedMode} />
               </div>
               <div className="ae-inline-actions">
-                <Button variant="primary" onClick={() => void startCapture()}>Capture Entire Course</Button>
+                <Button variant="primary" onClick={() => void startCapture()}>Capture Supported Content</Button>
                 <Button variant="ghost" onClick={() => void openWorkspace()}>Open AEONTHRA</Button>
               </div>
             </>

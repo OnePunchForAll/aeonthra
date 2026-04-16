@@ -7,6 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { resolveDominantShellConceptId, type ShellData } from "./lib/shell-mapper";
 import type { AppProgress } from "./lib/workspace";
+import { materializeAtlasSkillTree } from "./lib/atlas-skill-tree";
 import { loadNotes, storeNotes } from "./lib/storage";
 
 type AeonthraShellProps = {
@@ -82,7 +83,7 @@ const MARGIN_TYPES={
 export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,onDownloadOfflineSite,onSaveReplayBundle,isDemoMode}:AeonthraShellProps){
 const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE,synthesis:SYNTHESIS}=data;
 const[cc,setCC]=useState(()=>CD.map(c=>({...c,mastery:initialProgress.conceptMastery[c.id]??0})));
-const[v,setV]=useState("home");
+const[v,setV]=useState("journey");
 const[selC,setSC]=useState(null);
 const[selA,setSA]=useState(null);
 const[fc,setFC]=useState(null);
@@ -183,19 +184,37 @@ const sessionTimerElRef=useRef(null);
 const[draft,setDraft]=useState({});
 const[navScrolled,setNavScrolled]=useState(false);
 const[notes,setNotes]=useState(()=>loadNotes());
+const[viewportWidth,setViewportWidth]=useState(()=>typeof window!=="undefined"?window.innerWidth:1280);
+const[prefersReducedMotion,setPrefersReducedMotion]=useState(()=>typeof window!=="undefined"&&window.matchMedia?window.matchMedia("(prefers-reduced-motion: reduce)").matches:false);
+const mobileLayout=viewportWidth<=768;
+const atlasLaneWidth=mobileLayout?Math.max(260,Math.min(320,viewportWidth-56)):360;
 useEffect(()=>{storeNotes(notes);},[notes]);
 useEffect(()=>{const h=()=>setNavScrolled(window.scrollY>30);window.addEventListener("scroll",h,{passive:true});return()=>window.removeEventListener("scroll",h);},[]);
+useEffect(()=>{
+  if(typeof window==="undefined"||!window.matchMedia)return;
+  const media=window.matchMedia("(prefers-reduced-motion: reduce)");
+  const onResize=()=>setViewportWidth(window.innerWidth);
+  const onMotion=()=>setPrefersReducedMotion(media.matches);
+  onResize();
+  onMotion();
+  window.addEventListener("resize",onResize,{passive:true});
+  if(media.addEventListener)media.addEventListener("change",onMotion);else media.addListener(onMotion);
+  return()=>{
+    window.removeEventListener("resize",onResize);
+    if(media.removeEventListener)media.removeEventListener("change",onMotion);else media.removeListener(onMotion);
+  };
+},[]);
 const atlasScrollRef=useRef(null);
 const atlasRafRef=useRef(null);
 useEffect(()=>{
-  if(v!=="journey"){if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}return;}
+  if(v!=="journey"||prefersReducedMotion||mobileLayout){if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}return;}
   let spd=0;
   const onMove=(e)=>{const w=window.innerWidth;const z=w*.28;if(e.clientX<z){spd=-(z-e.clientX)/z*14;}else if(e.clientX>w-z){spd=(e.clientX-(w-z))/z*14;}else{spd=0;}};
   const tick=()=>{if(atlasScrollRef.current&&spd!==0)atlasScrollRef.current.scrollLeft+=spd;atlasRafRef.current=requestAnimationFrame(tick);};
   window.addEventListener("mousemove",onMove,{passive:true});
   atlasRafRef.current=requestAnimationFrame(tick);
   return()=>{window.removeEventListener("mousemove",onMove);if(atlasRafRef.current)cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;};
-},[v]);
+},[mobileLayout,prefersReducedMotion,v]);
 // ═══ ARGUMENT FORGE ═══
 const[argStage,setArgStage]=useState("thesis"); // thesis|outline|draft
 const[thesis,setThesis]=useState({});
@@ -281,11 +300,6 @@ const[highlights,setHighlights]=useState([]); // [{id,text,tag,source,readingId,
 const[hlPopover,setHlPopover]=useState(null); // {text,x,y} — active selection popover
 const[hlTrayOpen,setHlTrayOpen]=useState(false);
 const hlIdRef=useRef(0);
-// Discussion reader
-const[activeDiscussion,setActiveDiscussion]=useState(null);
-const[collapsedThreads,setCollapsedThreads]=useState(new Set());
-const[discussionSaved,setDiscussionSaved]=useState([]);
-
 // Capture text selection in Reader
 useEffect(()=>{
   if(v!=="reader"||!readerContent)return;
@@ -333,7 +347,7 @@ useEffect(()=>{
         markSectionRead(readerContent.id,idx);
         // Auto-scroll left rail to keep active section visible
         const railBtn=document.getElementById("rail-btn-"+idx);
-        if(railBtn)railBtn.scrollIntoView({behavior:"smooth",block:"nearest"});
+        if(railBtn)railBtn.scrollIntoView({behavior:prefersReducedMotion?"auto":"smooth",block:"nearest"});
       }
     }
   },{root:readerScrollRef.current,threshold:[0.3],rootMargin:"-80px 0px -40% 0px"});
@@ -341,7 +355,7 @@ useEffect(()=>{
   const sections=document.querySelectorAll("[data-section-idx]");
   sections.forEach(el=>observer.observe(el));
   return()=>observer.disconnect();
-},[v,readerContent]);
+},[prefersReducedMotion,v,readerContent]);
 
 // Section mark helpers
 const markSection=(readingId,sectionIdx,mark)=>{
@@ -357,8 +371,30 @@ const getReadingProgress=(readingId,totalSections)=>{
   for(let i=0;i<totalSections;i++)if(sectionsRead[readingId+":"+i])read++;
   return Math.round(read/totalSections*100);
 };
+const buildChapterProgressMap=()=>{
+  const next={};
+  const buckets={};
+  READING.forEach((reading)=>{
+    const progressValue=getReadingProgress(reading.id,reading.sections.length)/100;
+    next[reading.id]=progressValue;
+    const key=reading.module||reading.id;
+    const bucket=buckets[key]||{sum:0,count:0};
+    bucket.sum+=progressValue;
+    bucket.count+=1;
+    buckets[key]=bucket;
+  });
+  Object.entries(buckets).forEach(([key,bucket])=>{
+    next[key]=bucket.count?bucket.sum/bucket.count:0;
+  });
+  return next;
+};
 const readerActiveSection=readerContent?.sections?.[readerSection]??null;
 const readerPrimaryConceptId=readerContent?resolveDominantShellConceptId(readerContent,readerActiveSection,cc):null;
+const markConceptComplete=(conceptId)=>setCC(p=>p.map(c=>c.id===conceptId?{...c,mastery:Math.max(c.mastery,.8)}:c));
+const conceptMasteryMap=Object.fromEntries(cc.map(c=>[c.id,c.mastery]));
+const chapterProgressMap=buildChapterProgressMap();
+const atlasSkillModel=data.skillTree?materializeAtlasSkillTree(data.skillTree,{conceptMastery:conceptMasteryMap,chapterCompletion:chapterProgressMap}):null;
+const atlasSkillById=atlasSkillModel?new Map(atlasSkillModel.nodes.map(node=>[node.id,node])):new Map();
 
 const MODULES=data.modules;
 
@@ -411,10 +447,17 @@ useEffect(()=>{
   });
 },[CD,initialProgress]);
 useEffect(()=>{
+  const next=new Set(cc.filter(c=>c.mastery>=.8).map(c=>c.id));
+  setDone((prev)=>{
+    if(next.size===prev.size&&[...next].every((id)=>prev.has(id)))return prev;
+    return next;
+  });
+},[cc]);
+useEffect(()=>{
   const restoredSections={};
   const restoredPositions={};
   READING.forEach((reading)=>{
-    const completion=initialProgress.chapterCompletion?.[reading.module]??initialProgress.chapterCompletion?.[reading.id]??0;
+    const completion=initialProgress.chapterCompletion?.[reading.id]??initialProgress.chapterCompletion?.[reading.module]??0;
     const restoredCount=Math.max(0,Math.min(reading.sections.length,Math.round(completion*reading.sections.length)));
     for(let idx=0;idx<restoredCount;idx+=1){
       restoredSections[`${reading.id}:${idx}`]=true;
@@ -430,18 +473,16 @@ useEffect(()=>{
 const prevProgressKeyRef=useRef(null);
 useEffect(()=>{
   const mastery=Object.fromEntries(cc.map(c=>[c.id,c.mastery]));
-  const key=JSON.stringify(mastery)+String(practiceMode);
+  const key=JSON.stringify(mastery);
   if(prevProgressKeyRef.current===key)return; // identical — skip to break render loop
   prevProgressKeyRef.current=key;
-  onProgressUpdate({conceptMastery:mastery,practiceMode:Boolean(practiceMode)});
+  onProgressUpdate({conceptMastery:mastery,practiceMode:false});
 // eslint-disable-next-line react-hooks/exhaustive-deps
-},[cc,practiceMode]);
+},[cc]);
 const prevChapterKeyRef=useRef(null);
 useEffect(()=>{
   const chapterCompletion=Object.fromEntries(
-    READING
-      .map((reading)=>[reading.module||reading.id,getReadingProgress(reading.id,reading.sections.length)/100])
-      .sort((left,right)=>String(left[0]).localeCompare(String(right[0])))
+    Object.entries(buildChapterProgressMap()).sort((left,right)=>String(left[0]).localeCompare(String(right[0])))
   );
   const key=JSON.stringify(chapterCompletion);
   if(prevChapterKeyRef.current===key)return; // identical — skip to break render loop
@@ -592,13 +633,13 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 </div>}
 
 {launched&&<>
-<nav style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 48px",borderBottom:`1px solid ${navScrolled?"rgba(0,240,255,.18)":"rgba(0,240,255,.07)"}`,position:"sticky",top:0,zIndex:100,background:navScrolled?"rgba(6,6,18,.98)":"rgba(8,8,20,.92)",backdropFilter:"blur(24px)",boxShadow:navScrolled?"0 4px 32px rgba(0,0,0,.7)":"none",transition:"background 300ms ease, box-shadow 300ms ease, border-color 300ms ease"}}>
-  <div style={{display:"flex",alignItems:"center",gap:20}}>
+<nav style={{display:"flex",justifyContent:"space-between",alignItems:mobileLayout?"stretch":"center",flexDirection:mobileLayout?"column":"row",padding:mobileLayout?"14px 16px":"16px 48px",borderBottom:`1px solid ${navScrolled?"rgba(0,240,255,.18)":"rgba(0,240,255,.07)"}`,position:"sticky",top:0,zIndex:100,background:navScrolled?"rgba(6,6,18,.98)":"rgba(8,8,20,.92)",backdropFilter:"blur(24px)",boxShadow:navScrolled?"0 4px 32px rgba(0,0,0,.7)":"none",transition:"background 300ms ease, box-shadow 300ms ease, border-color 300ms ease",gap:mobileLayout?12:0}}>
+  <div style={{display:"flex",alignItems:"center",gap:mobileLayout?12:20,justifyContent:mobileLayout?"space-between":"flex-start",flexWrap:"wrap",width:mobileLayout?"100%":"auto"}}>
     <span style={{fontWeight:900,fontSize:"1.6rem",letterSpacing:".16em",color:CY,textShadow:`0 0 36px rgba(0,240,255,.35)`,fontFamily:"'Space Grotesk',sans-serif"}}>AEONTHRA</span>
     <span style={{fontSize:".78rem",letterSpacing:".14em",color:MU,border:"1px solid #222255",padding:"5px 14px",borderRadius:20}}>{COURSE.code}</span>
     {launched&&<span ref={sessionTimerElRef} style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ 0m 0s</span>}
   </div>
-  <div style={{display:"flex",gap:4}}>
+  <div style={{display:"flex",gap:4,flexWrap:"wrap",width:mobileLayout?"100%":"auto",overflowX:mobileLayout?"auto":"visible",paddingBottom:mobileLayout?2:0}}>
     {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
       <button key={id} onClick={()=>go(id)} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
@@ -628,7 +669,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   </div>
 </div>}
 
-<main style={{maxWidth:1440,margin:"0 auto",padding:"44px 48px 140px",opacity:fade?1:0,transition:"opacity 180ms ease"}}>
+<main style={{maxWidth:1440,margin:"0 auto",padding:mobileLayout?"28px 16px 120px":"44px 48px 140px",opacity:fade?1:0,transition:"opacity 180ms ease"}}>
 
 {/* HOME */}
 {v==="home"&&<>
@@ -784,83 +825,90 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 </>}
 
 {/* COURSE ATLAS */}
-{v==="journey"&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48}}>
-  <div style={{padding:"28px 48px",background:"rgba(8,8,20,.85)",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:68,zIndex:40,backdropFilter:"blur(16px)"}}>
-    <div><h2 style={{...hd(1.5),marginBottom:4}}>Course Atlas</h2><p style={{color:MU,fontSize:".88rem"}}>Each module climbs higher — scroll right and upward toward mastery</p></div>
-    <div style={{display:"flex",gap:24,alignItems:"center"}}>
-      <button onClick={()=>go("courseware")} style={{padding:"8px 18px",borderRadius:12,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>📚 Library</button>
-      <div style={{fontSize:"1.4rem",fontWeight:800,color:avg>=.8?GD:avg>=.5?TL:CY,fontFamily:"'Space Grotesk',sans-serif"}}>{P(avg)}</div>
-      <div style={{width:160,height:10,borderRadius:5,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:5,background:`linear-gradient(90deg,${CY},${TL},${GD})`,width:P(avg),transition:"width 800ms ease"}}/></div>
-      <span style={{fontSize:".88rem",color:MU}}>{done.size}/{cc.length}</span>
+{v==="journey"&&(()=>{const rewardByModule=new Map((atlasSkillModel?.chapterRewards||[]).map(r=>[r.moduleId,r]));const reqByAssignment=new Map((atlasSkillModel?.assignmentRequirements||[]).map(r=>[r.assignmentId,r]));const skillStateColor=(state)=>state==="mastered"?GD:state==="earned"?TL:state==="recovery"?"#fb923c":state==="in-progress"?CY:state==="available"?"#7dd3fc":MU;const skillStateFill=(state)=>state==="mastered"?`linear-gradient(135deg,${GD},#ff8c38)`:state==="earned"?`linear-gradient(135deg,${TL},#0cc08f)`:state==="recovery"?"linear-gradient(135deg,#fb923c,#f97316)":state==="in-progress"?`linear-gradient(135deg,${CY},#2f7bff)`:state==="available"?"rgba(125,211,252,.12)":CD2;const skillIcon=(kind,state)=>kind==="mastery"?"✦":kind==="assignment-readiness"?"⬢":kind==="distinction"?"⇄":kind==="applied"?"➜":state==="mastered"?"✦":"◉";const assignmentsById=new Map(ASSIGNMENTS.map(a=>[a.id,a]));const upcomingAssignments=ASSIGNMENTS.filter(a=>a.skills?.length).map(a=>{const req=reqByAssignment.get(a.id);const linked=(req?.skillIds||[]).map(id=>atlasSkillById.get(id)).filter(Boolean);const readiness=linked.length?Math.round(linked.reduce((sum,node)=>sum+node.progress,0)/linked.length*100):a.con.length?Math.round(a.con.reduce((sum,id)=>sum+Math.min(1,(cc.find(c=>c.id===id)?.mastery??0)/.6),0)/a.con.length*100):100;return{assignment:a,readiness,missing:linked.filter(node=>!["earned","mastered"].includes(node.state)).slice(0,2)};}).sort((left,right)=>left.assignment.due-right.assignment.due).slice(0,4);const recoveryNodes=(atlasSkillModel?.nodes||[]).filter(node=>node.state==="recovery").slice(0,4);return(<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48}}>
+  <div style={{padding:mobileLayout?"20px 16px":"28px 48px",background:"rgba(8,8,20,.88)",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:68,zIndex:40,backdropFilter:"blur(16px)",gap:24,flexWrap:"wrap"}}>
+    <div>
+      <h2 style={{...hd(1.5),marginBottom:4}}>Atlas Skill Tree</h2>
+      <p style={{color:MU,fontSize:".88rem",maxWidth:620}}>Chapters now pay out skills, assignments consume those skills, and weak skills reopen as recovery loops instead of hiding behind module averages.</p>
+    </div>
+    <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+      {[["Available",atlasSkillModel?.summary.available||0,"#7dd3fc"],["In Flight",atlasSkillModel?.summary.inProgress||0,CY],["Earned",atlasSkillModel?.summary.earned||0,TL],["Mastered",atlasSkillModel?.summary.mastered||0,GD]].map(([label,count,color])=><div key={label} style={{padding:"10px 14px",borderRadius:14,background:"rgba(12,16,30,.78)",border:`1px solid ${BD}`}}><div style={{fontSize:".68rem",letterSpacing:".14em",textTransform:"uppercase",color,marginBottom:4,fontFamily:"'Space Grotesk',sans-serif"}}>{label}</div><div style={{fontSize:"1.05rem",fontWeight:800,color:TX,fontFamily:"'Space Grotesk',sans-serif"}}>{count}</div></div>)}
+      <button onClick={()=>go("courseware")} style={{padding:"10px 18px",borderRadius:12,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".82rem",fontWeight:600,cursor:"pointer"}}>📚 Library</button>
     </div>
   </div>
-  <div ref={atlasScrollRef} style={{overflowX:"auto",overflowY:"auto",padding:"40px 56px 80px",minHeight:"calc(100dvh - 132px)",scrollbarWidth:"thin",scrollbarColor:`${BD} transparent`}}>
-    <div style={{display:"flex",gap:28,minWidth:"max-content",alignItems:"flex-end",paddingTop:"max(160px,calc(100dvh - 640px))"}}>
-      {MODULES.map((m,mi)=>{
-        const mC=m.concepts.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
-        const mA=mC.length?mC.reduce((s,c)=>s+c.mastery,0)/mC.length:0;
-        const aD=mC.every(c=>done.has(c.id));
-        const mAs=ASSIGNMENTS.filter(a=>a.con.some(id=>m.concepts.includes(id)));
-        const climb=mi*60;
-        return(<div key={m.id} style={{width:500,flexShrink:0,transform:`translateY(-${climb}px)`,transition:"transform 800ms cubic-bezier(.22,1,.36,1)",position:"relative"}}>
-          {/* Ascending connector line */}
-          {mi>0&&<svg style={{position:"absolute",top:-35-70,left:-36,width:72,height:105,overflow:"visible",zIndex:0}} viewBox="0 0 72 105">
-            <path d={`M 72 105 Q 36 52 0 0`} fill="none" stroke={MODULES[mi-1]&&cc.filter(c=>MODULES[mi-1].concepts.includes(c.id)).every(c=>done.has(c.id))?GD:`${MU}44`} strokeWidth="3" strokeDasharray={MODULES[mi-1]&&cc.filter(c=>MODULES[mi-1].concepts.includes(c.id)).every(c=>done.has(c.id))?"":"8 6"} strokeLinecap="round"/>
-          </svg>}
-          <div style={{...card,padding:"32px 28px",marginBottom:20,borderTop:`4px solid ${aD?GD:mA>.5?TL:mA>0?CY:BD}`,boxShadow:aD?`0 0 32px ${GD}15, 0 0 60px ${GD}08`:`0 8px 40px rgba(0,0,0,.5)`,transition:"all 600ms"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-              <div>
-                <div style={{fontSize:aD?"1.6rem":"1.2rem",marginBottom:8}}>{aD?"🔥":mA>.5?"⚡":"📖"}</div>
-                <h3 style={{...hd(1.15),fontFamily:"'Space Grotesk',sans-serif"}}>{m.title}</h3>
-                <p style={{color:MU,fontSize:".82rem",marginTop:4}}>{m.pages}</p>
-              </div>
-              <div style={{textAlign:"right"}}><div style={{fontSize:"1.6rem",fontWeight:800,color:aD?GD:mA>.5?TL:CY,fontFamily:"'Space Grotesk',sans-serif"}}>{P(mA)}</div></div>
+  <div style={{padding:mobileLayout?"24px 16px 20px":"30px 48px 24px",display:"grid",gridTemplateColumns:mobileLayout?"1fr":"1.3fr .9fr",gap:18}}>
+    <div style={{...card,padding:"24px 28px",background:"linear-gradient(135deg,rgba(0,240,255,.08),rgba(3,8,18,.88))"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:18,alignItems:"center",flexWrap:"wrap"}}>
+        <div>
+          <div style={ey}>Progression Story</div>
+          <h3 style={hd(1.18)}>Read → Forge → Distinguish → Apply → Master</h3>
+        </div>
+        <div style={{minWidth:220}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:".82rem",color:MU,marginBottom:8}}><span>Overall command</span><span>{P(avg)}</span></div>
+          <div style={{height:8,borderRadius:999,background:DM,overflow:"hidden"}}><div style={{height:"100%",width:P(avg),background:`linear-gradient(90deg,${CY},${TL},${GD})`,borderRadius:999}}/></div>
+        </div>
+      </div>
+    </div>
+    <div style={{...card,padding:"24px 28px"}}>
+      <div style={ey}>Assignment Readiness</div>
+      <div style={{display:"grid",gap:10}}>
+        {upcomingAssignments.length?upcomingAssignments.map(({assignment,readiness,missing})=><button key={assignment.id} onClick={()=>go("assignment",{a:assignment})} style={{padding:"16px 18px",borderRadius:16,background:innr,border:`1px solid ${assignment.due<=3?`${RD}33`:BD}`,cursor:"pointer",textAlign:"left",color:TX}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+            <div><div style={{fontSize:".92rem",fontWeight:700}}>{assignment.title}</div><div style={{fontSize:".76rem",color:MU,marginTop:4}}>{missing.length?`Missing ${missing.map(node=>node.label).join(" · ")}`:"Skill chain earned"}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontSize:"1rem",fontWeight:800,color:readiness>=100?TL:readiness>60?CY:"#fb923c",fontFamily:"'Space Grotesk',sans-serif"}}>{readiness}%</div><div style={{fontSize:".68rem",color:assignment.due<=3?RD:MU}}>{assignment.due}d</div></div>
+          </div>
+          <div style={{height:4,borderRadius:999,background:DM,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:readiness+"%",background:readiness>=100?TL:readiness>60?CY:"#fb923c",borderRadius:999}}/></div>
+        </button>):<div style={{color:MU,fontSize:".88rem"}}>No assignment-specific skill chains were derived yet.</div>}
+      </div>
+    </div>
+  </div>
+  {recoveryNodes.length>0&&<div style={{padding:mobileLayout?"0 16px 20px":"0 48px 24px"}}><div style={{...card,padding:"22px 24px",border:`1px solid #fb923c33`,background:"linear-gradient(135deg,rgba(251,146,60,.08),rgba(10,12,22,.9))"}}><div style={{...ey,color:"#fb923c"}}>Recovery Loop</div><div style={{display:"flex",flexWrap:"wrap",gap:12}}>{recoveryNodes.map(node=><button key={node.id} onClick={()=>{const c=cc.find(x=>x.id===node.conceptIds[0]);if(c)go("forge",{c});}} style={{padding:"12px 16px",borderRadius:14,border:"1px solid rgba(251,146,60,.24)",background:"rgba(251,146,60,.08)",color:TX,cursor:"pointer",textAlign:"left"}}><div style={{fontSize:".82rem",fontWeight:700,color:"#fb923c"}}>{node.label}</div><div style={{fontSize:".76rem",color:T2,marginTop:4}}>{Math.round(node.progress*100)}% command retained · reopen before the next assignment leans on it.</div></button>)}</div></div></div>}
+  <div ref={atlasScrollRef} style={{overflowX:"auto",overflowY:"hidden",padding:mobileLayout?"0 16px 64px":"0 48px 80px",scrollbarWidth:"thin",scrollbarColor:`${BD} transparent`}}>
+    <div style={{display:"flex",gap:24,minWidth:"max-content",alignItems:"flex-start"}}>
+      {(atlasSkillModel?.groups||[]).map((group,groupIndex)=>{const reward=rewardByModule.get(group.moduleId||"");const module=MODULES.find(m=>m.id===group.moduleId);const groupNodes=group.skillIds.map(id=>atlasSkillById.get(id)).filter(Boolean);const masteryNode=group.moduleId?atlasSkillById.get(`skill-mastery-${group.moduleId}`):null;const rewardState=!masteryNode||masteryNode.state==="locked"?"Locked":masteryNode.state==="earned"?"Ready to claim":masteryNode.state==="mastered"?"Claimed":"In progress";return(<div key={group.id} style={{width:atlasLaneWidth,flexShrink:0,position:"relative",paddingTop:mobileLayout?0:groupIndex*24}}>
+        {groupIndex>0&&<div style={{position:"absolute",left:-18,top:46,width:18,height:2,background:`linear-gradient(90deg,${MU}00,${BD})`}}/>}
+        <div style={{...card,padding:"24px 24px 22px",marginBottom:16,borderTop:`3px solid ${groupNodes.some(node=>node.state==="mastered")?GD:groupNodes.some(node=>node.state==="earned")?TL:CY}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+            <div>
+              <div style={ey}>{module?.pages||"Skill Lane"}</div>
+              <h3 style={hd(1.1)}>{group.title}</h3>
             </div>
-            <div style={{height:6,borderRadius:3,background:DM,overflow:"hidden",marginBottom:16}}><div style={{height:"100%",borderRadius:3,background:aD?`linear-gradient(90deg,${GD},#ff8800)`:mA>.5?TL:CY,width:P(mA),transition:"width 800ms ease"}}/></div>
-            <p style={{fontSize:".88rem",color:T2,lineHeight:1.6,margin:0}}>{m.desc}</p>
+            <button onClick={()=>openReaderForChapter(group.moduleId,0)} style={{padding:"8px 12px",borderRadius:10,border:`1px solid ${CY}24`,background:`${CY}0a`,color:CY,fontSize:".76rem",fontWeight:700,cursor:"pointer"}}>Read →</button>
           </div>
-          {m.textbook.map((ch,ci)=>(<div key={ci} style={{padding:"20px 24px",borderRadius:18,background:innr,border:`1px solid ${BD}`,marginBottom:12,marginLeft:24,borderLeft:`3px solid ${BD}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:".72rem",fontWeight:700,color:MU,fontFamily:"'Space Grotesk',sans-serif"}}>📖 CHAPTER</span><button onClick={()=>openReaderForChapter(m.id,ci)} style={{padding:"4px 12px",borderRadius:8,border:`1px solid ${CY}33`,background:`${CY}08`,color:CY,fontSize:".7rem",fontWeight:600,cursor:"pointer"}}>Read →</button></div>
-            <div style={{fontSize:".95rem",fontWeight:600,margin:"6px 0"}}>{ch.title}</div>
-            <p style={{fontSize:".85rem",color:T2,lineHeight:1.6,margin:0}}>{ch.summary}</p>
-          </div>))}
-          <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:20}}>
-            {mC.map(c=>{const dn2=done.has(c.id),act2=c.mastery>0&&!dn2;
-              return(<button key={c.id} onClick={()=>dn2?go("explore",{c}):go("forge",{c})} style={{display:"flex",alignItems:"center",gap:16,padding:"20px 24px",borderRadius:18,background:dn2?`${GD}08`:act2?`${CY}06`:innr,border:`2px solid ${dn2?`${GD}44`:act2?`${CY}33`:BD}`,cursor:"pointer",color:TX,width:"100%",textAlign:"left",transition:"all 400ms",boxShadow:dn2?`0 0 20px ${GD}15`:"none"}}>
-                <div style={{position:"relative",flexShrink:0}}>
-                  {dn2&&<div style={{position:"absolute",inset:-6,borderRadius:"50%",background:`radial-gradient(circle,${GD}20,transparent 70%)`,animation:"pulse 2s ease infinite"}}/>}
-                  <div style={{width:52,height:52,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:dn2?"1.5rem":"1rem",
-                    background:dn2?`linear-gradient(135deg,${GD},#ff6600)`:act2?`linear-gradient(135deg,${CY},${TL})`:CD2,
-                    border:`2px solid ${dn2?GD:act2?CY:BD}`,boxShadow:dn2?`0 0 24px ${GD}44`:"none"}}>{dn2?"🔥":act2?"⚡":"○"}</div>
+          <p style={{fontSize:".88rem",color:T2,lineHeight:1.65,margin:"10px 0 0"}}>{group.summary}</p>
+        </div>
+        {reward&&<div style={{padding:"16px 18px",borderRadius:18,background:"rgba(255,215,0,.05)",border:`1px solid ${GD}22`,marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:8}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".14em",color:GD,fontFamily:"'Space Grotesk',sans-serif"}}>CHAPTER REWARD</div><span style={{padding:"4px 10px",borderRadius:999,border:`1px solid ${rewardState==="Claimed"?`${GD}33`:rewardState==="Ready to claim"?`${TL}33`:`${BD}`}`,fontSize:".68rem",fontWeight:700,color:rewardState==="Claimed"?GD:rewardState==="Ready to claim"?TL:MU,background:"rgba(6,10,20,.24)"}}>{rewardState}</span></div><div style={{fontSize:".95rem",fontWeight:700,color:TX,marginBottom:6}}>{reward.title}</div><p style={{fontSize:".82rem",color:T2,lineHeight:1.55,margin:0}}>{reward.summary}</p></div>}
+        <div style={{display:"grid",gap:14}}>
+          {groupNodes.map((node,nodeIndex)=>{const primaryConcept=cc.find(c=>node.conceptIds.includes(c.id));const assignment=node.assignmentIds.map(id=>assignmentsById.get(id)).find(Boolean);return(<button key={node.id} onClick={()=>{if(node.missingPrerequisiteIds.length>0){const missing=node.missingPrerequisiteIds.map(id=>atlasSkillById.get(id)).find(Boolean);const missingConcept=missing?.conceptIds.map(id=>cc.find(c=>c.id===id)).find(Boolean);flash(missing?`Locked until ${missing.label}`:"This skill is still locked.",false);if(missingConcept){go("forge",{c:missingConcept});return;}if(missing?.moduleId){openReaderForChapter(missing.moduleId,0);}return;}if(node.kind==="assignment-readiness"&&assignment){go("assignment",{a:assignment});return;}if(node.kind==="distinction"){go("gym");return;}if(primaryConcept){go(["earned","mastered"].includes(node.state)?"explore":"forge",{c:primaryConcept});return;}if(group.moduleId)openReaderForChapter(group.moduleId,0);}} style={{position:"relative",padding:"20px 20px 18px",borderRadius:20,background:skillStateFill(node.state),border:`1px solid ${skillStateColor(node.state)}28`,boxShadow:node.state==="mastered"?`0 0 24px ${GD}18`:"none",color:TX,textAlign:"left",cursor:"pointer",overflow:"hidden"}}>
+            {nodeIndex<groupNodes.length-1&&<div style={{position:"absolute",left:28,top:"100%",width:2,height:18,background:`linear-gradient(180deg,${skillStateColor(node.state)},${BD})`,opacity:.55}}/>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+              <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{width:42,height:42,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(6,10,20,.4)",border:`1px solid ${skillStateColor(node.state)}33`,fontSize:"1.05rem",fontWeight:700,color:skillStateColor(node.state)}}>{skillIcon(node.kind,node.state)}</div>
+                <div>
+                  <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:skillStateColor(node.state),fontFamily:"'Space Grotesk',sans-serif"}}>{node.kind.replace(/-/g," ")}</div>
+                  <div style={{fontSize:"1rem",fontWeight:700,marginTop:6}}>{node.label}</div>
                 </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:"1.02rem",fontWeight:700,marginBottom:4}}>{c.name}</div>
-                  <div style={{height:4,borderRadius:2,background:DM,overflow:"hidden",marginBottom:4}}><div style={{height:"100%",borderRadius:2,background:dn2?GD:mc2(c.mastery),width:dn2?"100%":P(c.mastery),transition:"width 600ms"}}/></div>
-                  <div style={{fontSize:".78rem",color:dn2?GD:act2?CY:MU,fontWeight:600}}>{dn2?"Complete":act2?P(c.mastery):"Not started"}</div>
-                </div>
-              </button>);
-            })}
-          </div>
-          {mAs.length>0&&<div style={{marginTop:20}}>
-            <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".14em",color:"#fb923c",marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📋 ASSIGNMENTS</div>
-            {mAs.map(a=>{const rd=a.con.length?Math.round(a.con.reduce((s,id)=>s+Math.min(1,(cc.find(c=>c.id===id)?.mastery??0)/.6),0)/a.con.length*100):100;
-              return(<button key={a.id} onClick={()=>go("assignment",{a})} style={{display:"flex",alignItems:"center",gap:12,padding:"16px 20px",borderRadius:16,background:innr,border:`1px solid ${a.due<=3?`${RD}33`:BD}`,cursor:"pointer",width:"100%",color:TX,marginBottom:10,textAlign:"left",borderLeft:`3px solid ${rd>=100?TL:a.due<=3?RD:"#ff8800"}`}}>
-                <span style={{fontSize:"1.2rem"}}>{a.type}</span>
-                <div style={{flex:1}}><div style={{fontSize:".92rem",fontWeight:600}}>{a.title}</div><div style={{height:3,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:rd>=100?TL:rd>50?CY:"#ff8800",width:rd+"%"}}/></div></div>
-                <div style={{textAlign:"right"}}><div style={{fontSize:"1rem",fontWeight:800,color:rd>=100?TL:rd>50?CY:"#ff8800",fontFamily:"'Space Grotesk',sans-serif"}}>{rd}%</div><div style={{fontSize:".68rem",color:a.due<=3?RD:MU}}>{a.due}d</div></div>
-              </button>);
-            })}
-          </div>}
-        </div>);
-      })}
+              </div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:".92rem",fontWeight:800,color:skillStateColor(node.state),fontFamily:"'Space Grotesk',sans-serif"}}>{Math.round(node.progress*100)}%</div><div style={{fontSize:".68rem",color:MU,marginTop:2}}>{node.state}</div></div>
+            </div>
+            <p style={{fontSize:".84rem",lineHeight:1.62,color:T2,margin:"14px 0 12px"}}>{node.summary}</p>
+            <div style={{height:4,borderRadius:999,background:DM,overflow:"hidden",marginBottom:12}}><div style={{height:"100%",width:Math.round(node.progress*100)+"%",background:skillStateColor(node.state),borderRadius:999}}/></div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {node.assignmentIds.slice(0,1).map(id=>assignmentsById.get(id)).filter(Boolean).map(a=><span key={a.id} style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${BD}`,fontSize:".72rem",color:MU,background:"rgba(6,10,20,.32)"}}>Assignment: {a.title}</span>)}
+              {node.rewardLabel&&<span style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${BD}`,fontSize:".72rem",color:MU,background:"rgba(6,10,20,.32)"}}>{node.rewardLabel}</span>}
+              {node.missingPrerequisiteIds.length>0&&<span style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${RD}22`,fontSize:".72rem",color:RD,background:"rgba(255,68,102,.08)"}}>Requires {node.missingPrerequisiteIds.length} earlier skill{node.missingPrerequisiteIds.length!==1?"s":""}</span>}
+            </div>
+          </button>);})}
+        </div>
+      </div>);})}
     </div>
   </div>
-  {done.size===0&&<div style={{textAlign:"center",padding:"20px 48px 40px"}}><p style={{fontSize:"1rem",color:MU}}>Complete your first concept to watch the atlas come alive ✨</p><button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000"),marginTop:12}}>Start First Concept →</button></div>}
-</div>}
+  {(!atlasSkillModel||atlasSkillModel.nodes.length===0)&&<div style={{textAlign:"center",padding:"20px 48px 40px"}}><p style={{fontSize:"1rem",color:MU}}>Atlas needs stronger chapter and assignment signals before it can derive a skill graph for this bundle.</p><button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000"),marginTop:12}}>Start First Concept →</button></div>}
+</div>);})()}
 
 
 {/* EXPLORE */}
-{v==="explore"&&<div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:28,alignItems:"start",animation:"fadeUp .5s ease"}}>
+{v==="explore"&&<div style={{display:"grid",gridTemplateColumns:mobileLayout?"1fr":"320px 1fr",gap:28,alignItems:"start",animation:"fadeUp .5s ease"}}>
 <div style={{...card,position:"sticky",top:88,padding:"28px 24px"}}>
   <div style={{...ey,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT LIBRARY</div>
   <p style={{fontSize:".82rem",color:MU,marginBottom:20,marginTop:-12}}>{cc.length} concept{cc.length!==1?"s":""} · {mastered} mastered</p>
@@ -930,9 +978,10 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 {/* ASSIGNMENT */}
 {v==="assignment"&&selA&&(()=>{
 const needed=selA.con.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
+const requiredSkills=(selA.skills||[]).map(id=>atlasSkillById.get(id)).filter(Boolean);
 const ready=needed.filter(c=>c.mastery>=.6);
 const weak=needed.filter(c=>c.mastery<.6);
-const readiness=needed.length?Math.round(ready.length/needed.length*100):100;
+const readiness=requiredSkills.length?Math.round(requiredSkills.reduce((sum,node)=>sum+node.progress,0)/requiredSkills.length*100):needed.length?Math.round(ready.length/needed.length*100):100;
 const urgent=selA.due<=3;
 
 return(<div style={{maxWidth:880}}>
@@ -963,6 +1012,21 @@ return(<div style={{maxWidth:880}}>
     </div>
   </div>
 </div>
+
+{requiredSkills.length>0&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${CY}`}}>
+  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:CY,marginBottom:16,fontFamily:"'Space Grotesk',sans-serif"}}>⬢ SKILL CHAIN</div>
+  <div style={{display:"grid",gap:10}}>
+    {requiredSkills.map((skill)=><div key={skill.id} style={{padding:"14px 16px",borderRadius:14,background:innr,border:`1px solid ${skill.state==="mastered"?`${GD}22`:skill.state==="earned"?`${TL}22`:skill.state==="recovery"?"rgba(251,146,60,.24)":BD}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:".86rem",fontWeight:700,color:TX}}>{skill.label}</div>
+          <div style={{fontSize:".76rem",color:MU,marginTop:4}}>{skill.summary}</div>
+        </div>
+        <div style={{textAlign:"right"}}><div style={{fontSize:".88rem",fontWeight:800,color:skill.state==="mastered"?GD:skill.state==="earned"?TL:skill.state==="recovery"?"#fb923c":CY,fontFamily:"'Space Grotesk',sans-serif"}}>{Math.round(skill.progress*100)}%</div><div style={{fontSize:".68rem",color:MU,marginTop:2}}>{skill.state}</div></div>
+      </div>
+    </div>)}
+  </div>
+</div>}
 
 {/* What it's really asking */}
 {selA.reallyAsking&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${CY}`}}>
@@ -998,20 +1062,6 @@ return(<div style={{maxWidth:880}}>
     <button onClick={()=>go("forge",{c:weak[0]})} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Start prep: {weak[0].name}</button>
   </div>}
 </div>
-
-{/* Discussion thread access */}
-{(()=>{const disc=DISCUSSIONS.find(d=>d.assignmentId===selA.id);
-  return disc?<div style={{...card,marginBottom:20,borderLeft:`4px solid #a78bfa`,cursor:"pointer"}} onClick={()=>{setActiveDiscussion(disc);go("discussion");}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div>
-        <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:"#a78bfa",marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>💬 DISCUSSION THREAD</div>
-        <p style={{fontSize:".95rem",color:TX,margin:0}}>{disc.threads.length} posts · {disc.threads.reduce((s,t)=>s+t.replies.length+t.replies.reduce((s2,r)=>s2+r.replies.length,0),0)} replies</p>
-        {disc.whatItsReallyAbout&&<p style={{fontSize:".82rem",color:T2,margin:"6px 0 0",fontStyle:"italic"}}>{disc.whatItsReallyAbout}</p>}
-      </div>
-      <span style={{color:"#a78bfa",fontSize:"1.1rem"}}>→</span>
-    </div>
-  </div>:null;
-})()}
 
 {/* Common failure modes */}
 {selA.failModes&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${RD}`}}>
@@ -1071,7 +1121,7 @@ return(<div style={{maxWidth:880}}>
     {/* Custom thesis */}
     <div>
       <div style={{fontSize:".68rem",fontWeight:700,color:TL,marginBottom:10,letterSpacing:".1em"}}>YOUR THESIS</div>
-      <textarea value={thesis[selA.id]||""} onChange={e=>setThesis(p=>({...p,[selA.id]:e.target.value}))} placeholder="State your central claim in one sentence..." style={{width:"100%",minHeight:80,padding:"18px 22px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1.05rem",lineHeight:1.8,resize:"vertical",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+<textarea value={thesis[selA.id]||""} onChange={e=>setThesis(p=>({...p,[selA.id]:e.target.value}))} placeholder="State your central claim in one sentence..." style={{width:"100%",minHeight:80,padding:"18px 22px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1.05rem",lineHeight:1.8,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
     </div>
     {thesis[selA.id]&&<button onClick={()=>setArgStage("outline")} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:20}}>Build outline →</button>}
   </div>}
@@ -1101,7 +1151,7 @@ return(<div style={{maxWidth:880}}>
             </div>
             <button onClick={()=>setOutline(p=>{const cur=[...(p[selA.id]||[])];cur.splice(i,1);return{...p,[selA.id]:cur};})} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem"}}>✕</button>
           </div>
-          <textarea value={block.content} onChange={e=>{const v2=e.target.value;setOutline(p=>{const cur=[...(p[selA.id]||[])];cur[i]={...cur[i],content:v2};return{...p,[selA.id]:cur};});}} placeholder={`What will this ${pt.label.toLowerCase()} paragraph say?`} style={{width:"100%",minHeight:60,padding:"12px 16px",borderRadius:12,border:`1px solid ${BD}`,background:"rgba(0,0,0,.15)",color:TX,fontSize:".95rem",lineHeight:1.7,resize:"vertical",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+<textarea value={block.content} onChange={e=>{const v2=e.target.value;setOutline(p=>{const cur=[...(p[selA.id]||[])];cur[i]={...cur[i],content:v2};return{...p,[selA.id]:cur};});}} placeholder={`What will this ${pt.label.toLowerCase()} paragraph say?`} style={{width:"100%",minHeight:60,padding:"12px 16px",borderRadius:12,border:`1px solid ${BD}`,background:"rgba(0,0,0,.15)",color:TX,fontSize:".95rem",lineHeight:1.7,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
         </div>);
       })}
     </div>
@@ -1128,7 +1178,7 @@ return(<div style={{maxWidth:880}}>
         {(outline[selA.id]||[]).length===0&&<p style={{fontSize:".78rem",color:MU}}>No outline yet</p>}
       </div>
       <div>
-        <textarea value={draft[selA.id]||""} onChange={e=>setDraft(d=>({...d,[selA.id]:e.target.value}))} placeholder="Write your full response here. Your outline is on the left for reference." style={{width:"100%",minHeight:320,padding:"22px 26px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",lineHeight:1.9,resize:"vertical",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+<textarea value={draft[selA.id]||""} onChange={e=>setDraft(d=>({...d,[selA.id]:e.target.value}))} placeholder="Write your full response here. Your outline is on the left for reference." style={{width:"100%",minHeight:320,padding:"22px 26px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",lineHeight:1.9,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
           <span style={{fontSize:".78rem",color:MU}}>{(draft[selA.id]||"").split(/\s+/).filter(Boolean).length} words</span>
           <div style={{display:"flex",gap:8}}>
@@ -1308,9 +1358,9 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
     </div>;})()}
 
     <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:28}}>
-      <button onClick={()=>{setDone(p=>new Set([...p,fc.id]));triggerCelebration();const n=cc.filter(c=>c.id!==fc.id&&!done.has(c.id));if(n.length)go("forge",{c:n.sort((a,b)=>a.mastery-b.mastery)[0]});else go("journey");}} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Next Concept →</button>
-      <button onClick={()=>{setDone(p=>new Set([...p,fc.id]));go("stats");}} style={{...bt("transparent",CY),border:`1px solid ${CY}33`}}>View Stats 📊</button>
-      <button onClick={()=>{setDone(p=>new Set([...p,fc.id]));go("journey");}} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Journey Map</button>
+      <button onClick={()=>{markConceptComplete(fc.id);triggerCelebration();const nextConcept=cc.filter(c=>c.id!==fc.id&&c.mastery<.8).sort((a,b)=>a.mastery-b.mastery)[0];if(nextConcept)go("forge",{c:nextConcept});else go("journey");}} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Next Concept →</button>
+      <button onClick={()=>{markConceptComplete(fc.id);go("stats");}} style={{...bt("transparent",CY),border:`1px solid ${CY}33`}}>View Stats 📊</button>
+      <button onClick={()=>{markConceptComplete(fc.id);go("journey");}} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Journey Map</button>
     </div>
   </div>);
   return(<>
@@ -1418,7 +1468,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
 {/* Input */}
 <div style={{display:"flex",gap:14,marginBottom:32}}>
-  <input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a figure from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",outline:"none"}}/>
+<input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a figure from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}/>
   <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>{oracleMode==="thesis"?"Challenge":"Ask"}</button>
 </div>
 
@@ -1520,13 +1570,13 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 </div>}
 
 {/* ═══ COURSEWARE ═══ */}
-{v==="courseware"&&<div style={{display:"grid",gridTemplateColumns:cwConcept?"340px 1fr":"1fr",gap:28,alignItems:"start"}}>
+{v==="courseware"&&<div style={{display:"grid",gridTemplateColumns:mobileLayout?"1fr":cwConcept?"340px 1fr":"1fr",gap:28,alignItems:"start"}}>
 <div>
   <h2 style={{...hd(1.5),marginBottom:8}}>Course Map</h2>
   <p style={{color:T2,fontSize:".95rem",marginBottom:32}}>Explore modules, chapters, textbook content, and launch custom practice sessions.</p>
 
   {MODULES.map(m=>(
-    <div key={m.id} style={{...card,marginBottom:16,padding:"28px 32px",cursor:"pointer",borderLeft:cwModule===m.id?`4px solid ${CY}`:`4px solid transparent`,transition:"all 300ms"}} onClick={()=>{setCWM(cwModule===m.id?null:m.id);setCWC(null);}}>
+    <div key={m.id} role="button" tabIndex={0} style={{...card,marginBottom:16,padding:"28px 32px",cursor:"pointer",borderLeft:cwModule===m.id?`4px solid ${CY}`:`4px solid transparent`,transition:"all 300ms"}} onClick={()=>{setCWM(cwModule===m.id?null:m.id);setCWC(null);}} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setCWM(cwModule===m.id?null:m.id);setCWC(null);}}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <h3 style={{...hd(1.1),fontFamily:"'Space Grotesk',sans-serif"}}>{m.title}</h3>
@@ -1682,8 +1732,8 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 })()}
 
 {/* ═══ READER OS ═══ */}
-{v==="reader"&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510"}}>
-  <div style={{width:readerContent?280:0,flexShrink:0,borderRight:`1px solid ${BD}`,padding:readerContent?"28px 20px":"0",overflowY:"auto",background:"rgba(6,6,16,.6)",transition:"width 300ms ease"}}>
+{v==="reader"&&<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510",flexDirection:mobileLayout?"column":"row"}}>
+  <div style={{width:readerContent?(mobileLayout?"100%":280):0,flexShrink:0,borderRight:`1px solid ${BD}`,padding:readerContent?(mobileLayout?"20px 16px":"28px 20px"):"0",overflowY:"auto",background:"rgba(6,6,16,.6)",transition:"width 300ms ease"}}>
     {readerContent&&<>
       <button onClick={()=>{setReadingPositions(p=>({...p,[readerContent.id]:readerSection}));setReaderContent(null);}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Library</button>
       <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📖 CHAPTER</div>
@@ -1692,7 +1742,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}><div style={{flex:1,height:4,borderRadius:2,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:`linear-gradient(90deg,${CY},${TL})`,width:`${getReadingProgress(readerContent.id,readerContent.sections.length)}%`,transition:"width 500ms ease"}}/></div><span style={{fontSize:".72rem",color:CY,fontWeight:700}}>{getReadingProgress(readerContent.id,readerContent.sections.length)}%</span></div>
       <div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".12em",color:MU,marginBottom:10}}>SECTIONS</div>
       {readerContent.sections.map((s,i)=>{const mark=getSectionMark(readerContent.id,i);const read=isSectionRead(readerContent.id,i);const active=readerSection===i;
-        return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setReadingPositions(p=>({...p,[readerContent.id]:i}));markSectionRead(readerContent.id,i);const el=document.getElementById("rs-"+i);if(el)el.scrollIntoView({behavior:"smooth",block:"start"});}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"10px 14px",borderRadius:12,marginBottom:3,background:active?`${CY}0c`:"transparent",border:active?`1px solid ${CY}1a`:"1px solid transparent",cursor:"pointer",transition:"all 250ms"}}>
+return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setReadingPositions(p=>({...p,[readerContent.id]:i}));markSectionRead(readerContent.id,i);const el=document.getElementById("rs-"+i);if(el)el.scrollIntoView({behavior:prefersReducedMotion?"auto":"smooth",block:"start"});}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"10px 14px",borderRadius:12,marginBottom:3,background:active?`${CY}0c`:"transparent",border:active?`1px solid ${CY}1a`:"1px solid transparent",cursor:"pointer",transition:"all 250ms"}}>
           <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:mark?sectionMarkColor(mark):read?`${TL}66`:active?CY:`${MU}44`,transition:"all 300ms"}}/>
           <span style={{flex:1,fontSize:".84rem",fontWeight:active?600:400,color:active?CY:read?TX:T2,lineHeight:1.35}}>{s.heading}</span>
           {mark&&<span style={{fontSize:".7rem",color:sectionMarkColor(mark),fontWeight:700}}>{sectionMarkIcon(mark)}</span>}
@@ -1707,7 +1757,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
     <button onClick={()=>{setHlPopover(null);window.getSelection()?.removeAllRanges();}} style={{padding:"4px 8px",borderRadius:8,border:"none",background:"transparent",color:MU,cursor:"pointer"}}>✕</button>
   </div></div>}
   <div ref={readerScrollRef} style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center"}}>
-    {readerContent?<div style={{maxWidth:680,padding:"56px 48px 120px",animation:"fadeUp .4s ease"}}>
+    {readerContent?<div style={{maxWidth:680,padding:mobileLayout?"32px 18px 88px":"56px 48px 120px",animation:"fadeUp .4s ease"}}>
       {readingPositions[readerContent.id]>0&&readerSection===readingPositions[readerContent.id]&&<div style={{padding:"14px 20px",borderRadius:14,background:`${CY}06`,border:`1px solid ${CY}15`,marginBottom:32}}><span style={{fontSize:".85rem",color:CY}}>↻ Resumed from "{readerContent.sections[readerSection]?.heading}"</span></div>}
       <div style={{marginBottom:48,paddingBottom:32,borderBottom:`1px solid ${BD}`}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".2em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.subtitle}</div><h1 style={{fontSize:"2.2rem",fontWeight:700,color:TX,lineHeight:1.35,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.title}</h1></div>
       {readerContent.sections.map((s,i)=>{const mark=getSectionMark(readerContent.id,i);const active=readerSection===i;return(<div key={i} id={"rs-"+i} data-section-idx={i} style={{marginBottom:48,scrollMarginTop:80,padding:"24px 28px",marginLeft:-28,marginRight:-28,borderRadius:18,background:mark==="understood"?"rgba(6,214,160,.03)":mark==="confusing"?"rgba(255,68,102,.02)":"transparent",border:mark==="understood"?"1px solid rgba(6,214,160,.08)":mark==="confusing"?"1px solid rgba(255,68,102,.06)":"1px solid transparent",transition:"all 500ms ease"}}>
@@ -1719,28 +1769,28 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
       </div>);})}
       <div style={{textAlign:"center",padding:"40px 0",borderTop:`1px solid ${BD}`}}><p style={{color:TX,fontSize:"1.05rem",fontWeight:600,marginBottom:16}}>Chapter complete</p><div style={{display:"flex",gap:12,justifyContent:"center"}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(c)go("forge",{c});}} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Practice</button>}<button onClick={()=>setReaderContent(null)} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Library</button></div></div>
     </div>:
-    <div style={{maxWidth:720,padding:"56px 48px",width:"100%"}}><div style={{textAlign:"center",marginBottom:40}}><div style={{fontSize:"2rem",marginBottom:12}}>📖</div><h2 style={{...hd(1.5),marginBottom:8}}>Reader</h2><p style={{color:T2,fontSize:"1rem"}}>Focused, distraction-free reading.</p></div>
+    <div style={{maxWidth:720,padding:mobileLayout?"32px 18px":"56px 48px",width:"100%"}}><div style={{textAlign:"center",marginBottom:40}}><div style={{fontSize:"2rem",marginBottom:12}}>📖</div><h2 style={{...hd(1.5),marginBottom:8}}>Reader</h2><p style={{color:T2,fontSize:"1rem"}}>Focused, distraction-free reading.</p></div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>{READING.map(r=>{const prog=getReadingProgress(r.id,r.sections.length);const lastPos=readingPositions[r.id];return(<button key={r.id} onClick={()=>openReader(r.id)} style={{display:"flex",alignItems:"center",gap:16,padding:"22px 26px",borderRadius:18,background:CD2,border:`1px solid ${BD}`,cursor:"pointer",color:TX,textAlign:"left",width:"100%"}}><div style={{position:"relative",width:44,height:44,flexShrink:0}}><svg viewBox="0 0 44 44" style={{width:44,height:44}}><circle cx="22" cy="22" r="19" fill="none" stroke={DM} strokeWidth="3"/><circle cx="22" cy="22" r="19" fill="none" stroke={prog>=100?TL:prog>0?CY:DM} strokeWidth="3" strokeDasharray={`${prog/100*119} 119`} strokeLinecap="round" transform="rotate(-90 22 22)"/></svg><div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:".7rem"}}>{prog>=100?"✓":"📖"}</div></div><div style={{flex:1}}><div style={{fontSize:"1.02rem",fontWeight:600,marginBottom:2}}>{r.title}</div><div style={{fontSize:".82rem",color:MU}}>{r.subtitle}</div>{lastPos>0&&prog<100&&<div style={{fontSize:".75rem",color:CY,marginTop:4}}>↻ Resume from "{r.sections[lastPos]?.heading}"</div>}</div><span style={{color:CY}}>→</span></button>);})}</div>
       {highlights.length>0&&<div style={{marginTop:36}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12}}>HIGHLIGHTS ({highlights.length})</div>{highlights.slice(0,8).map(hl=>(<div key={hl.id} style={{padding:"12px 16px",borderRadius:12,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${hlTagColor(hl.tag)}`,marginBottom:6}}><div style={{fontSize:".7rem",color:hlTagColor(hl.tag),fontWeight:700,marginBottom:4}}>{hlTagIcon(hl.tag)} {hl.tag}</div><p style={{fontSize:".82rem",color:T2,margin:0}}>{hl.text.length>80?hl.text.slice(0,80)+"...":hl.text}</p></div>))}</div>}
     </div>}
   </div>
-  {readerContent&&<div style={{width:readerUtilOpen?240:48,flexShrink:0,borderLeft:`1px solid ${BD}`,background:"rgba(6,6,16,.6)",transition:"width 300ms ease",overflow:"hidden"}}><button onClick={()=>setReaderUtilOpen(!readerUtilOpen)} style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",color:MU,cursor:"pointer",fontSize:"1.1rem"}}>{readerUtilOpen?"▸":"◂"}</button>{readerUtilOpen&&<div style={{padding:"0 16px 28px"}}><div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".12em",color:MU,marginBottom:16}}>TOOLS</div><div style={{fontSize:"1.4rem",fontWeight:800,color:CY,marginBottom:12}}>{getReadingProgress(readerContent.id,readerContent.sections.length)}%</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(c)go("forge",{c});}} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${CY}33`,background:`${CY}08`,color:CY,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>⚡ Practice</button>}<button onClick={()=>go("oracle")} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${GD}33`,background:`${GD}08`,color:GD,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>🏛 Oracle</button></div></div>}</div>}
+  {readerContent&&<div style={{width:mobileLayout?"100%":readerUtilOpen?240:48,flexShrink:0,borderLeft:`1px solid ${BD}`,background:"rgba(6,6,16,.6)",transition:"width 300ms ease",overflow:"hidden"}}><button onClick={()=>setReaderUtilOpen(!readerUtilOpen)} style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",color:MU,cursor:"pointer",fontSize:"1.1rem"}}>{readerUtilOpen?"▸":"◂"}</button>{readerUtilOpen&&<div style={{padding:"0 16px 28px"}}><div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".12em",color:MU,marginBottom:16}}>TOOLS</div><div style={{fontSize:"1.4rem",fontWeight:800,color:CY,marginBottom:12}}>{getReadingProgress(readerContent.id,readerContent.sections.length)}%</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(c)go("forge",{c});}} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${CY}33`,background:`${CY}08`,color:CY,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>⚡ Practice</button>}<button onClick={()=>go("oracle")} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${GD}33`,background:`${GD}08`,color:GD,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>🏛 Oracle</button></div></div>}</div>}
 </div>}
 
 {/* ═══ TRANSCRIPT MODE ═══ */}
-{v==="transcript"&&transcript&&<div style={{marginLeft:-44,marginRight:-44,marginTop:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510"}}>
-  <div style={{width:260,flexShrink:0,borderRight:`1px solid ${BD}`,padding:"28px 20px",overflowY:"auto",background:"rgba(6,6,16,.6)"}}>
+{v==="transcript"&&transcript&&<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510",flexDirection:mobileLayout?"column":"row"}}>
+  <div style={{width:mobileLayout?"100%":260,flexShrink:0,borderRight:`1px solid ${BD}`,padding:mobileLayout?"20px 16px":"28px 20px",overflowY:"auto",background:"rgba(6,6,16,.6)"}}>
     <button onClick={()=>{setTranscript(null);go("reader");}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Reader</button>
     <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12}}>🎧 TRANSCRIPT</div>
     <h3 style={{fontSize:"1rem",fontWeight:700,color:TX,lineHeight:1.4,marginBottom:4}}>{transcript.title}</h3>
     <p style={{fontSize:".78rem",color:MU,marginBottom:16}}>{transcript.speaker} · {formatTime(transcript.duration)}</p>
     <div style={{padding:"14px 16px",borderRadius:14,background:innr,border:`1px solid ${BD}`,marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><button onClick={()=>setTxPlaying(!txPlaying)} style={{width:36,height:36,borderRadius:"50%",border:"2px solid #a78bfa",background:txPlaying?"#a78bfa":"transparent",color:txPlaying?"#000":"#a78bfa",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>{txPlaying?"⏸":"▶"}</button><div style={{flex:1}}><div style={{fontSize:".88rem",fontWeight:700,color:TX}}>{formatTime(txTime)}</div><div style={{height:4,borderRadius:2,background:DM,marginTop:4,overflow:"hidden",cursor:"pointer"}} onClick={(e)=>{const rect=e.currentTarget.getBoundingClientRect();setTxTime(Math.floor((e.clientX-rect.left)/rect.width*transcript.duration));}}><div style={{height:"100%",borderRadius:2,background:"#a78bfa",width:`${(txTime/transcript.duration)*100}%`}}/></div></div></div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><button onClick={()=>setTxPlaying(!txPlaying)} style={{width:36,height:36,borderRadius:"50%",border:"2px solid #a78bfa",background:txPlaying?"#a78bfa":"transparent",color:txPlaying?"#000":"#a78bfa",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>{txPlaying?"⏸":"▶"}</button><div style={{flex:1}}><div style={{fontSize:".88rem",fontWeight:700,color:TX}}>{formatTime(txTime)}</div><div role="slider" tabIndex={0} aria-label="Transcript position" aria-valuemin={0} aria-valuemax={transcript.duration} aria-valuenow={txTime} style={{height:4,borderRadius:2,background:DM,marginTop:4,overflow:"hidden",cursor:"pointer"}} onClick={(e)=>{const rect=e.currentTarget.getBoundingClientRect();setTxTime(Math.floor((e.clientX-rect.left)/rect.width*transcript.duration));}} onKeyDown={e=>{if(e.key==="ArrowLeft"){e.preventDefault();setTxTime(p=>Math.max(0,p-5));}if(e.key==="ArrowRight"){e.preventDefault();setTxTime(p=>Math.min(transcript.duration,p+5));}}}><div style={{height:"100%",borderRadius:2,background:"#a78bfa",width:`${(txTime/transcript.duration)*100}%`}}/></div></div></div>
       <div style={{display:"flex",gap:6}}><button onClick={()=>setTxTime(p=>Math.max(0,p-15))} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".7rem",cursor:"pointer"}}>-15s</button><button onClick={()=>setTxTime(p=>Math.min(transcript.duration,p+15))} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".7rem",cursor:"pointer"}}>+15s</button><div style={{flex:1}}/><button onClick={()=>setTxAutoScroll(!txAutoScroll)} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${txAutoScroll?"#a78bfa33":BD}`,background:txAutoScroll?"rgba(167,139,250,.08)":"transparent",color:txAutoScroll?"#a78bfa":MU,fontSize:".7rem",cursor:"pointer"}}>{txAutoScroll?"Auto ✓":"Auto"}</button></div>
     </div>
     {transcript.segments.map(seg=>{const segActive=txTime>=seg.ts&&(!transcript.segments.find(s2=>s2.ts>seg.ts)||txTime<transcript.segments.find(s2=>s2.ts>seg.ts).ts);return(<button key={seg.id} onClick={()=>setTxTime(seg.ts)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"8px 12px",borderRadius:10,marginBottom:3,background:segActive?"rgba(167,139,250,.1)":"transparent",border:segActive?"1px solid rgba(167,139,250,.18)":"1px solid transparent",cursor:"pointer"}}><div style={{width:6,height:6,borderRadius:"50%",background:segActive?"#a78bfa":`${MU}44`,flexShrink:0}}/><div><div style={{fontSize:".8rem",fontWeight:segActive?600:400,color:segActive?"#a78bfa":TX}}>{seg.label}</div><div style={{fontSize:".65rem",color:MU}}>{formatTime(seg.ts)}</div></div></button>);})}
   </div>
-  <div style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center"}}><div style={{maxWidth:700,padding:"56px 48px 120px",width:"100%"}}>
+  <div style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center"}}><div style={{maxWidth:700,padding:mobileLayout?"32px 18px 88px":"56px 48px 120px",width:"100%"}}>
     <div style={{marginBottom:48,paddingBottom:32,borderBottom:`1px solid ${BD}`}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".2em",color:"#a78bfa",marginBottom:12}}>🎧 LECTURE TRANSCRIPT</div><h1 style={{fontSize:"2rem",fontWeight:700,color:TX,lineHeight:1.35,marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>{transcript.title}</h1><span style={{fontSize:".88rem",color:T2}}>{transcript.speaker} · {formatTime(transcript.duration)}</span></div>
     {transcript.segments.map(seg=>{const segActive=txTime>=seg.ts&&(!transcript.segments.find(s2=>s2.ts>seg.ts)||txTime<transcript.segments.find(s2=>s2.ts>seg.ts).ts);return(<div key={seg.id} style={{marginBottom:32}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,paddingBottom:8,borderBottom:`1px solid ${segActive?"rgba(167,139,250,.15)":BD}`}}><div style={{width:4,height:20,borderRadius:2,background:segActive?"#a78bfa":"transparent"}}/><h3 style={{fontSize:"1.1rem",fontWeight:700,color:segActive?TX:T2,fontFamily:"'Space Grotesk',sans-serif",margin:0,flex:1}}>{seg.label}</h3><span style={{fontSize:".75rem",color:MU}}>{formatTime(seg.ts)}</span></div>
       {seg.lines.map((line,li)=>{const lineActive=txTime>=line.t&&(li<seg.lines.length-1?txTime<seg.lines[li+1].t:true)&&segActive;return(<button key={li} onClick={()=>{setTxTime(line.t);if(!txPlaying)setTxPlaying(true);}} style={{display:"flex",gap:12,padding:"10px 14px",marginBottom:2,borderRadius:12,width:"100%",textAlign:"left",cursor:"pointer",border:"none",background:lineActive?"rgba(167,139,250,.08)":"transparent",transition:"all 300ms"}}><span style={{fontSize:".7rem",color:lineActive?"#a78bfa":MU,fontFamily:"'Space Grotesk',sans-serif",fontWeight:600,minWidth:36,paddingTop:3,flexShrink:0}}>{formatTime(line.t)}</span><span style={{fontSize:"1.02rem",lineHeight:1.8,color:lineActive?TX:T2}}>{line.text}</span></button>);})}</div>);})}
@@ -1792,7 +1842,7 @@ return(<div style={{maxWidth:820,margin:"0 auto"}}>
 <div style={{display:"flex",gap:8}}>{["learn","test","adaptive"].map(m=><button key={m} onClick={()=>setMode(m)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${mode===m?CY:BD}`,background:mode===m?`${CY}15`:"transparent",color:mode===m?CY:MU,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>)}</div></div>
 <div style={{marginBottom:20}}>
 <div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📝 SESSION NOTES</div>
-<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Jot anything — key insights, reminders, questions for office hours…" rows={5} style={{width:"100%",padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:".92rem",lineHeight:1.7,resize:"vertical",outline:"none",fontFamily:"'Inter',system-ui,sans-serif"}}/>
+<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Jot anything — key insights, reminders, questions for office hours…" rows={5} style={{width:"100%",padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:".92rem",lineHeight:1.7,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/>
 <div style={{fontSize:".72rem",color:MU,marginTop:6,textAlign:"right"}}>{notes.length} chars · saved automatically</div>
 </div>
 <div style={{padding:"20px 24px",borderRadius:16,background:`${CY}06`,border:`1px solid ${CY}18`}}>

@@ -5,7 +5,7 @@ import { SCHEMA_VERSION } from "@learning/schema";
 import { buildBlocks, buildConcepts, buildRelations } from "./pipeline.ts";
 import { buildProtocol } from "./protocol.ts";
 import { buildNeuralForge } from "./neural-forge.ts";
-import { buildSynthesisReport, crystallizeConceptIds } from "./synthesis.ts";
+import { buildSynthesisReport, crystallizeConceptIds, rankConceptIdsBySupport } from "./synthesis.ts";
 
 function buildEngineProfiles(topLabel: string): EngineProfile[] {
   return [
@@ -39,7 +39,13 @@ export function buildLearningBundleWithProgress(
   onProgress?.("ranking-instructor-focus", 50);
   const stableConceptIds = crystallizeConceptIds(bundle, candidateConcepts, candidateRelations);
   onProgress?.("fusing-sources", 64);
-  const concepts = candidateConcepts.filter((concept) => stableConceptIds.includes(concept.id));
+  const stableConcepts = candidateConcepts.filter((concept) => stableConceptIds.includes(concept.id));
+  const supportRank = rankConceptIdsBySupport(bundle, stableConcepts, candidateRelations);
+  const concepts = stableConcepts.slice().sort((left, right) => {
+    const leftRank = supportRank.indexOf(left.id);
+    const rightRank = supportRank.indexOf(right.id);
+    return (leftRank === -1 ? Number.MAX_SAFE_INTEGER : leftRank) - (rightRank === -1 ? Number.MAX_SAFE_INTEGER : rightRank);
+  });
   const relations = buildRelations(concepts);
   onProgress?.("crystallizing-knowledge", 78);
   const synthesis = buildSynthesisReport(bundle, blocks, concepts, relations, stableConceptIds);

@@ -8,8 +8,10 @@ import {
   clearStoredNotes,
   clearStoredProgress,
   clearStoredSourceWorkspace,
+  loadNotes,
   loadProgress,
   storeScopedProgress,
+  storeNotes,
   loadStoredBundle,
   loadStoredSourceWorkspace,
   setActiveNoteScope,
@@ -257,13 +259,6 @@ export function resolveBridgeMessageAction(
   }
 
   if (message.type === "NF_PACK_READY") {
-    if (!requestMode) {
-      return {
-        kind: "ignore",
-        nextRequestMode: null
-      };
-    }
-
     const resolution = resolveBridgePackImport(message.pack);
     if (!resolution.ok) {
       return {
@@ -299,11 +294,11 @@ export function resolveBridgeMessageAction(
   };
 }
 
-export function clearPersistedWorkspaceState(): void {
+export function clearPersistedWorkspaceState(scope?: string): void {
   clearStoredBundle();
   clearStoredSourceWorkspace();
-  clearStoredProgress();
-  clearStoredNotes();
+  clearStoredProgress(scope);
+  clearStoredNotes(scope);
   setActiveNoteScope(null);
 }
 
@@ -443,6 +438,7 @@ export default function App() {
   const bridgeRequestModeRef = useRef<"auto" | "manual" | null>(null);
   const initialBridgeAttemptRef = useRef(false);
   const hydratedProgressScopeRef = useRef<string | null>(null);
+  const textbookImportTokenRef = useRef(0);
 
   const mergedBundle = useMemo(
     () => mergeSourceBundles(canvasBundle, textbookBundle),
@@ -469,6 +465,7 @@ export default function App() {
     [mergedBundle, learning, workspace]
   );
   const progressScope = learning?.synthesis.deterministicHash ?? null;
+  const progressReady = !progressScope || hydratedProgressScopeRef.current === progressScope;
   const shellData = useMemo(
     () => (baseShellData && learning && workspace ? enhanceShellData(baseShellData, learning, workspace, textbookBundle) : null),
     [baseShellData, learning, workspace, textbookBundle]
@@ -626,6 +623,7 @@ export default function App() {
   const applyCanvasBundle = (nextBundle: CaptureBundle, successMessage: string) => {
     const keepTextbook = textbookBundle && isSameCourse(canvasBundle, nextBundle) ? textbookBundle : null;
 
+    textbookImportTokenRef.current += 1;
     setActiveNoteScope(null);
     setCanvasBundle(nextBundle);
     setTextbookBundle(keepTextbook);
@@ -648,6 +646,7 @@ export default function App() {
   };
 
   const loadDemoMode = () => {
+    textbookImportTokenRef.current += 1;
     setActiveNoteScope(null);
     setCanvasBundle(createDemoBundle());
     setTextbookBundle(makeDemoTextbookBundle());
@@ -664,7 +663,9 @@ export default function App() {
     const resolution = resolveImportedJsonPayload(raw);
 
     if (resolution.kind === "offline-site") {
+      textbookImportTokenRef.current += 1;
       setActiveNoteScope(resolution.noteScope);
+      storeNotes(resolution.restored.notes, resolution.noteScope);
       setCanvasBundle(resolution.restored.canvasBundle);
       setTextbookBundle(resolution.restored.textbookBundle);
       setLearning(resolution.restored.learningBundle);
@@ -714,17 +715,25 @@ export default function App() {
       return;
     }
 
+    const importToken = ++textbookImportTokenRef.current;
     const lower = file.name.toLowerCase();
     if (file.type === "application/pdf" || lower.endsWith(".pdf")) {
       setUploadState({ kind: "pdf", progress: 0, label: "Extracting PDF" });
       const { extractTextFromPdf } = await import("./lib/pdf-ingest");
       const extracted = await extractTextFromPdf(file, (page, total) => {
+        if (importToken !== textbookImportTokenRef.current) {
+          return;
+        }
         setUploadState({
           kind: "pdf",
           progress: total > 0 ? (page / total) * 100 : 0,
           label: `Extracting page ${page} of ${total}`
         });
       });
+      if (importToken !== textbookImportTokenRef.current) {
+        setUploadState(null);
+        return;
+      }
       applyTextbookImport(
         {
           title: extracted.title,
@@ -752,6 +761,10 @@ export default function App() {
       setUploadState({ kind: "text", progress: 20, label: "Extracting DOCX" });
       const { extractTextFromDocx } = await import("./lib/docx-ingest");
       const extracted = await extractTextFromDocx(file);
+      if (importToken !== textbookImportTokenRef.current) {
+        setUploadState(null);
+        return;
+      }
       setUploadState({ kind: "text", progress: 80, label: "Preparing textbook sections" });
       applyTextbookImport(
         {
@@ -769,6 +782,10 @@ export default function App() {
     if (lower.endsWith(".txt") || lower.endsWith(".text") || lower.endsWith(".md") || file.type.startsWith("text/")) {
       setUploadState({ kind: "text", progress: 50, label: "Reading text file" });
       const text = await file.text();
+      if (importToken !== textbookImportTokenRef.current) {
+        setUploadState(null);
+        return;
+      }
       const inferredTitle = inferTextbookTitle(text);
       applyTextbookImport(
         {
@@ -867,7 +884,8 @@ export default function App() {
   };
 
   const resetWorkspace = () => {
-    clearPersistedWorkspaceState();
+    textbookImportTokenRef.current += 1;
+    clearPersistedWorkspaceState(progressScope ?? undefined);
     setCanvasBundle(null);
     setTextbookBundle(null);
     setLearning(null);
@@ -890,7 +908,8 @@ export default function App() {
       textbookBundle,
       mergedBundle,
       learningBundle: learning,
-      progress
+      progress,
+      notes: loadNotes(progressScope ?? undefined)
     });
     downloadOfflineSiteHtml(offlineBundle);
     setStatus(`Offline site downloaded: ${offlineBundle.title}`);
@@ -906,7 +925,8 @@ export default function App() {
       textbookBundle,
       mergedBundle,
       learningBundle: learning,
-      progress
+      progress,
+      notes: loadNotes(progressScope ?? undefined)
     });
     downloadOfflineReplayBundle(offlineBundle);
     setStatus(`Replay bundle saved: ${offlineBundle.title}`);
@@ -1186,7 +1206,7 @@ export default function App() {
     return renderIntake();
   }
 
-  if (appStage === "synthesizing" || !learning || !workspace || !shellData || !mergedBundle) {
+  if (appStage === "synthesizing" || !learning || !workspace || !shellData || !mergedBundle || !progressReady) {
     return renderProcessing();
   }
 

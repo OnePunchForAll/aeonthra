@@ -6,10 +6,11 @@ Repo docs also use the OMEGA FORGE mission codenames: `SENTINEL` for the extensi
 
 ## What it does
 
-- Captures Canvas assignments, discussions, quizzes, pages, modules, and supporting metadata through a Manifest V3 extension
+- Captures supported Canvas course content through a Manifest V3 extension in either `Complete Snapshot` or `Learning Content Only` mode
+- Supports a passive visited-page session path that can be saved into normal local capture history without a backend
 - Imports capture bundles into a static React/Vite classroom that runs on GitHub Pages or locally
-- Builds deterministic concepts, relationships, timelines, assignment prep, and Neural Forge study runs in a web worker
-- Supports one-click demo mode, textbook paste import, PDF textbook extraction, concept-map PNG export, forge summary export, and text-to-speech
+- Builds deterministic concepts, relations, Atlas skill-tree progression, assignment readiness, and Neural Forge study runs without runtime AI calls
+- Exports offline replay bundles with scoped notes and deterministic hash validation
 
 ## Why it stands out
 
@@ -21,11 +22,11 @@ Repo docs also use the OMEGA FORGE mission codenames: `SENTINEL` for the extensi
 
 ## Main surfaces
 
-- `Mission Control`: course overview, active work, concept momentum, and interaction launch points
-- `Timeline`: semester-scale horizontal planning surface
-- `Concept Map`: large concept constellation with mastery coloring and export
-- `Neural Forge`: five-phase guided study run with gating, ambient primers, and summary export
-- `Assignment Workbench`: gated writing and interaction layer for captured assignments
+- `Home`: source-quality banner, readiness overview, and launch points into the current workspace
+- `Atlas`: a deterministic skill tree with locked, available, in-progress, earned, mastered, assignment-readiness, and recovery states
+- `Concepts`: concept roster and concept detail access
+- `Learn`, `Read`, `Gym`, and `Oracle`: the current mounted study shell for guided practice, reader flow, contrast work, and synthesis views
+- `Offline replay`: export and restore of deterministic site bundles with scoped notes
 
 ## Project structure
 
@@ -38,11 +39,13 @@ Repo docs also use the OMEGA FORGE mission codenames: `SENTINEL` for the extensi
 ## Quick start
 
 ```bash
-npm install
+npm ci
 npm run typecheck
 npm test
 npm run build
 ```
+
+Use Node `24.x` and npm `11.x`.
 
 ### Run the web app locally
 
@@ -60,7 +63,14 @@ The local classroom is commonly available at:
 npm run build:extension
 ```
 
-Load the unpacked extension from the repo's `apps/extension` folder.
+Load the unpacked extension from `apps/extension/dist`.
+
+Canonical source of truth:
+
+- `apps/extension/src/**` for extension code
+- `apps/web/src/**` for the classroom
+- `packages/**/src/**` for shared deterministic logic
+- `apps/extension/dist/` as the generated unpacked-extension output
 
 ## Publish to GitHub Pages
 
@@ -87,6 +97,7 @@ Until Pages is live, point the extension's AEONTHRA URL setting to your local ap
 - Keep real Canvas captures, Playwright audit dumps, and exported assignment artifacts out of the public repo.
 - The extension-to-classroom handoff is local. Captured course data does not need to be committed to GitHub for AEONTHRA to work.
 - If you want the extension to forget imported captures after a successful handoff, enable the auto-delete option in the extension settings.
+- Interrupted full-course captures can leave temporary local partial state until they are finalized or cleared; that is not the same as a saved history capture.
 
 ## Demo mode
 
@@ -97,12 +108,12 @@ If you do not have a Canvas capture yet, open the web app and click `OPEN NEURAL
 - Workerized content processing for imported bundles
 - Static-site-safe service worker registration in the web app
 - Progressive processing overlay for large textbook imports
-- Extension bridge now returns structured failures instead of dropping the message channel silently
+- Atlas skill-tree materialization is derived once from synthesis output and learner progress rather than rebuilt ad hoc in the UI
+- Extension bridge returns structured failures instead of dropping the message channel silently
 
 ## Accessibility and ergonomics
 
 - Keyboard-accessible controls across the main shell
-- Text-to-speech support for concept details and forge prompts via the browser speech engine
 - Reduced-motion-friendly base shell
 - Strong contrast dark theme and explicit status messaging
 
@@ -118,4 +129,4 @@ If you do not have a Canvas capture yet, open the web app and click `OPEN NEURAL
 
 ## Status
 
-AEONTHRA is implemented as a real local-first learning product, not just a mockup. The remaining work is mostly refinement: deeper demo content, broader PDF chapter controls, and more aggressive performance polishing on the grand-scale views.
+AEONTHRA is implemented as a real local-first learning product, not just a mockup. The current focus is reliability and semantic hardening: stronger regression coverage, cleaner extension build posture, broader fixture breadth, and deeper end-to-end verification of capture-to-workspace handoff.

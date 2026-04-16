@@ -11,6 +11,7 @@
 import type { CaptureBundle, LearningBundle, LearningConcept, ConceptRelation } from "@learning/schema";
 import type { CourseTask, ForgeChapter } from "./workspace";
 import { assessSourceQuality, qualityBannerText } from "@learning/content-engine";
+import { buildAtlasSkillTree, type AtlasSkillTree } from "./atlas-skill-tree";
 
 // ─── Shell data types ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ export type ShellAssignment = {
   failModes: string[];
   evidence: string;
   quickPrep: string;
+  skills: string[];
 };
 
 export type ShellTextbookChapter = {
@@ -174,9 +176,12 @@ export type ShellFocusTheme = {
 
 export type ShellAssignmentIntel = {
   id: string;
+  sourceItemId: string;
   title: string;
   summary: string;
   likelySkills: string[];
+  conceptIds: string[];
+  focusThemeIds: string[];
   checklist: string[];
 };
 
@@ -224,6 +229,7 @@ export type ShellData = {
   dists: ShellDistinction[];
   philosophers: ShellPhilosopher[];
   synthesis: ShellSynthesis;
+  skillTree: AtlasSkillTree;
 };
 
 // ─── Canvas metadata cleaner ──────────────────────────────────────────────────
@@ -374,26 +380,31 @@ function conceptDistinctionText(
 }
 
 function conceptHookText(concept: LearningConcept): string {
+  const core = conceptCoreText(concept);
+  const depth = conceptDepthText(concept);
   const candidates = [concept.mnemonic, concept.transferHook];
   for (const candidate of candidates) {
     if (!isRenderableConceptText(candidate)) continue;
+    if (!isCompleteThought(candidate)) continue;
+    if (!isDistinctFrom(core, candidate)) continue;
+    if (depth && !isDistinctFrom(depth, candidate)) continue;
     return normalizeShellText(candidate);
   }
-  const keywords = concept.keywords.filter((keyword) => normalizeComparisonText(keyword).length >= 3).slice(0, 2);
-  if (keywords.length >= 2) {
-    return `Link ${concept.label} to ${keywords[0]} and ${keywords[1]} whenever the course asks you to explain it.`;
-  }
-  if (keywords.length === 1) {
-    return `Use ${keywords[0]} as the cue that brings ${concept.label} back into view.`;
-  }
-  return `Use ${concept.label} as the lens for explaining what the source is trying to show.`;
+  return "";
 }
 
 function conceptTrapText(concept: LearningConcept): string {
-  if (isRenderableConceptText(concept.commonConfusion) && !isNegationOnlyText(concept.commonConfusion)) {
+  const core = conceptCoreText(concept);
+  const depth = conceptDepthText(concept);
+  if (
+    isRenderableConceptText(concept.commonConfusion)
+    && !isNegationOnlyText(concept.commonConfusion)
+    && isDistinctFrom(core, concept.commonConfusion)
+    && (!depth || isDistinctFrom(depth, concept.commonConfusion))
+  ) {
     return normalizeShellText(concept.commonConfusion);
   }
-  return `Do not flatten ${concept.label} into a generic course prompt. Explain the concept's main move before you apply it.`;
+  return "";
 }
 
 const DOMINANT_CONCEPT_STOPWORDS = new Set([
@@ -457,8 +468,7 @@ function conceptEvidenceTokens(concept: ShellConcept): string[] {
       ...concept.kw.flatMap((keyword) => tokenizeConceptEvidence(keyword)),
       ...tokenizeConceptEvidence(concept.core),
       ...tokenizeConceptEvidence(concept.depth),
-      ...tokenizeConceptEvidence(concept.hook),
-      ...tokenizeConceptEvidence(concept.trap)
+      ...tokenizeConceptEvidence(concept.dist)
     ])
   ];
 }
@@ -775,8 +785,23 @@ function mapAssignment(task: CourseTask): ShellAssignment {
     secretCare: `Instructors look for specific concept application, not just general knowledge. Show that you understand ${task.conceptIds[0] ?? "the framework"} deeply.`,
     failModes,
     evidence: evidenceNeeded,
-    quickPrep: `Review ${task.conceptIds.slice(0, 2).join(" and ")} then work through one practice question. ~${Math.round(task.estimatedMinutes * 0.4)} minutes.`
+    quickPrep: `Review ${task.conceptIds.slice(0, 2).join(" and ")} then work through one practice question. ~${Math.round(task.estimatedMinutes * 0.4)} minutes.`,
+    skills: []
   };
+}
+
+function attachAssignmentSkillRequirements(
+  assignments: ShellAssignment[],
+  skillTree: AtlasSkillTree
+): ShellAssignment[] {
+  const requirementsByAssignmentId = new Map(
+    skillTree.assignmentRequirements.map((requirement) => [requirement.assignmentId, requirement.skillIds])
+  );
+
+  return assignments.map((assignment) => ({
+    ...assignment,
+    skills: requirementsByAssignmentId.get(assignment.id) ?? []
+  }));
 }
 
 function moduleLabel(moduleKey: string, idx: number): string {
@@ -1168,9 +1193,12 @@ function mapSynthesis(bundle: CaptureBundle, learning: LearningBundle): ShellSyn
     })),
     assignmentIntel: learning.synthesis.assignmentMappings.slice(0, 6).map((mapping) => ({
       id: mapping.id,
+      sourceItemId: mapping.sourceItemId,
       title: mapping.title,
       summary: mapping.summary,
       likelySkills: mapping.likelySkills,
+      conceptIds: mapping.conceptIds,
+      focusThemeIds: mapping.focusThemeIds,
       checklist: mapping.checklist
     })),
     retentionModules: learning.synthesis.retentionModules.slice(0, 6).map((module) => ({
@@ -1240,18 +1268,27 @@ export function mapToShellData(
   const philosophers = mapKeyFigures(bundle, learning);
   const course = mapCourse(bundle);
   const synthesis = mapSynthesis(bundle, learning);
+  const skillTree = buildAtlasSkillTree({
+    concepts,
+    assignments,
+    modules,
+    distinctions: dists,
+    synthesis
+  });
+  const enrichedAssignments = attachAssignmentSkillRequirements(assignments, skillTree);
 
   return {
     course,
     concepts,
-    assignments,
+    assignments: enrichedAssignments,
     modules,
     reading,
     margins,
     transcripts,
     dists,
     philosophers,
-    synthesis
+    synthesis,
+    skillTree
   };
 }
 

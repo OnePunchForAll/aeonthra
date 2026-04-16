@@ -1,5 +1,63 @@
 # ERROR LEDGER
 
+## 2026-04-16
+
+### [REPLAY] Offline bundle import rejected pre-notes exports
+
+**Status**: FIXED
+**Root cause**: `parseOfflineSiteBundle()` recomputed the deterministic hash with `notes`, while older exports were hashed before that field existed. Schema parsing defaulted `notes` after parse, so structurally valid bundles still failed hash comparison.
+**Symptom**: previously exported offline replay bundles loaded as generic invalid imports after the notes field was added.
+**Fix**: added dual hash validation in `offline-site.ts`: current bundles validate with `notes`, legacy bundles without a `notes` field validate against the pre-notes payload shape and restore `notes` as an empty string.
+**Guard**: `apps/web/src/lib/offline-site.test.ts`.
+
+### [STATE] Same-course preservation regressed across mixed legacy and host-aware captures
+
+**Status**: FIXED
+**Root cause**: course matching collapsed to a single normalized identity string, so a host-aware bundle normalized to `host::courseId` while an older course-id-only bundle normalized to `courseId`. The app treated the same course as different after metadata upgrades.
+**Symptom**: re-capturing the same course after the host metadata rollout could drop the textbook and reset progress.
+**Fix**: `source-workspace.ts` now compares course ids first, then enforces host equality only when both hosts are known. Host inference falls back to bundle URLs when explicit metadata is absent.
+**Guard**: `apps/web/src/lib/source-workspace.test.ts`.
+
+### [WEB] Mounted shell ignored reduced-motion, hid focus on text inputs, and overflowed on mobile Atlas layouts
+
+**Status**: FIXED
+**Root cause**: the live shell relied on JS-driven scrolling and large inline desktop layouts that bypassed CSS-only reduced-motion handling, while several mounted inputs overrode the repo-wide focus ring with `outline: none`.
+**Symptom**: Atlas edge-scroll still moved under reduced motion, Oracle/notes/assignment text fields lost a visible keyboard focus indicator, and the main shell overflowed on narrow mobile widths.
+**Fix**: added viewport and reduced-motion state in `AeonthraShell`, disabled JS scroll motion when motion should be reduced, removed inline focus suppression, added responsive layout switches for the mounted large views, and restored keyboard access to pointer-only controls.
+**Guard**: `npm run typecheck`, `npm test`, and `npm run build:web` all pass after the mounted-shell patch.
+
+### [PIPELINE] Evidence validation discarded application and misconception sentences before concept field synthesis
+
+**Status**: FIXED
+**Root cause**: the pipeline used one strict sentence validator for both concept definitions and semantic evidence lanes. Sentences like `use X when...` or `students often confuse X with Y` failed that validator even though they were exactly the right material for transfer and confusion fields.
+**Symptom**: `transferHook` and `commonConfusion` frequently collapsed to empty strings or repeated generic fallback text even when the source bundle contained clear instructional or misconception evidence.
+**Fix**: split strict definition validation from broader evidence validation, widened evidence collection to nearby structured blocks, and reserved evidence lanes for summary/confusion/transfer instead of letting one sentence fill every role.
+**Guard**: `packages/content-engine/src/index.test.ts`.
+
+### [WEB] Atlas overstated progression depth by presenting a module board as a skill tree
+
+**Status**: FIXED
+**Root cause**: the live shell derived progression from modules, chapters, and concept mastery percentages without a real skill-node model, prerequisite graph, or assignment-skill requirement layer.
+**Symptom**: Atlas looked game-like but was still fundamentally a dressed-up module/concept board.
+**Fix**: added deterministic skill-tree derivation, chapter rewards, assignment skill requirements, truthful locked-node behavior, and recovery/mastery states in the live shell.
+**Guard**: `apps/web/src/lib/atlas-skill-tree.test.ts`.
+
+### [WEB] Replay bundles were not self-contained and course identity could drift across hosts
+
+**Status**: FIXED
+**Root cause**: offline replay bundles omitted notes, accepted embedded hashes without recomputation, preserved `practiceMode`, and same-course checks could collapse different hosts that shared the same `courseId`.
+**Symptom**: replay restore could resurrect stale notes, carry brittle unlock state forward, or preserve textbook/progress state across unrelated hosts.
+**Fix**: replay bundles now include notes, validate their deterministic hash on restore, fail closed on `practiceMode`, and use host-aware course identity where possible.
+**Guard**: `apps/web/src/lib/offline-site.test.ts`, `apps/web/src/lib/source-workspace.test.ts`, and `apps/web/src/App.test.ts`.
+
+### [MAINTENANCE] Extension build mirrored generated artifacts back into source control
+
+**Status**: FIXED
+**Root cause**: the extension build copied compiled JS/HTML/CSS from `dist` back into `apps/extension/`, which made the repo carry duplicate generated artifacts and caused build verification to modify tracked files.
+**Symptom**: `npm run build:extension` dirtied the worktree even when no source code changed.
+**Fix**: kept `apps/extension/dist` as the canonical unpacked-extension output and removed the root mirror step from the build script.
+**Guard**: `apps/extension/scripts/build.mjs`, `README.md`, and `.github/workflows/verify.yml`.
+
 ## 2026-04-15
 
 ### [WEB] Reader hints, highlights, and practice CTAs could bind to the wrong concept from a multi-concept reading

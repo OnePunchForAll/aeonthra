@@ -1,5 +1,106 @@
 # IMPLEMENTATION LEDGER
 
+## 2026-04-16
+
+### Replay and course-identity compatibility repair
+
+**Files changed**: `apps/web/src/lib/offline-site.ts`, `apps/web/src/lib/offline-site.test.ts`, `apps/web/src/lib/source-workspace.ts`, `apps/web/src/lib/source-workspace.test.ts`
+
+**What changed**
+- Added dual hash validation so legacy offline replay bundles exported before `notes` existed still restore deterministically.
+- Reconciled mixed legacy/new course identity by comparing course ids first and only enforcing host equality when both hosts are known, with URL-based host inference as a fallback.
+- Added regression tests for both compatibility paths.
+
+**Why**: the overhaul correctly tightened replay determinism and host-aware course identity, but it also broke honest existing user data created before those new fields existed.
+
+**Downstream effects**: replay imports remain fail-closed for tampered payloads, while same-course carry-forward still rejects different course ids and conflicting known hosts.
+
+### Shell accessibility and mobile hardening: respect reduced motion, restore focus, and stop mobile overflow on mounted views
+
+**Files changed**: `apps/web/src/AeonthraShell.tsx`
+
+**What changed**
+- Added viewport and reduced-motion awareness to the live shell so Atlas edge-scroll RAF and Reader rail smooth-scroll both fail closed when motion should be reduced.
+- Removed inline `outline: none` overrides from the mounted text-entry fields so the global `:focus-visible` ring can render again.
+- Added responsive layout switches for the mounted nav, Atlas, Explore, Courseware, Reader, and Transcript surfaces to stop the worst mobile overflow paths.
+- Added keyboard semantics to pointer-only module cards and transcript seeking.
+
+**Why**: the mounted shell still had real accessibility regressions after the core semantic/Atlas pass, especially in the exact surfaces the user spends time in.
+
+**Downstream effects**: reduced-motion preferences now affect JS-driven movement, keyboard users regain visible focus in text fields, and the main shell is less hostile on narrow screens.
+
+### Deterministic semantic hardening: preserve application and misconception evidence lanes instead of filtering them out
+
+**Files changed**: `packages/content-engine/src/pipeline.ts`, `packages/content-engine/src/index.ts`, `packages/content-engine/src/synthesis.ts`, `packages/content-engine/src/index.test.ts`
+
+**What changed**
+- Split strict concept-definition validation from broader evidence-sentence validation so instructional and misconception-shaped sentences can survive into concept evidence lanes.
+- Extended concept candidate context gathering to pull nearby structured block evidence instead of treating a single definition sentence as the whole semantic lane.
+- Reserved evidence sentences for summary, confusion, and transfer roles so the distinctness gate blanks duplicates instead of reusing one sentence for every concept-facing field.
+- Re-ranked final concept output by support after stabilization so high-signal concepts surface ahead of title-heavy noise.
+- Added regression coverage for transfer/confusion distinctness collapse.
+
+**Why**: the engine was still throwing away the exact source sentences needed for `transferHook` and `commonConfusion`, which made the shell look repetitive even when the source bundle contained stronger cues.
+
+**Downstream effects**: concept-facing fields are materially less repetitive, hooks can stay instructional without becoming generic filler, and weak roles fail closed more honestly.
+
+### Atlas overhaul: replace module-board progression with a deterministic skill tree
+
+**Files changed**: `apps/web/src/lib/atlas-skill-tree.ts`, `apps/web/src/lib/atlas-skill-tree.test.ts`, `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/AeonthraShell.tsx`, `apps/web/src/lib/workspace.ts`
+
+**What changed**
+- Added a deterministic Atlas skill-tree materializer with node kinds for foundational, applied, distinction, assignment-readiness, and mastery lanes.
+- Derived chapter rewards and assignment skill requirements from synthesized concepts and assignment mappings rather than reusing raw module/concept lists.
+- Rebuilt the live Atlas surface around locked, available, in-progress, earned, mastered, and recovery states with truthful locked-node behavior.
+- Removed the old `practiceMode` unlock bypass from task gating and routed concept completion through mastery updates instead of direct UI mutation.
+
+**Why**: the previous Atlas was still a module board with concept chips and mastery percentages, which overstated progression depth without a real skill model.
+
+**Downstream effects**: Atlas now tells a real progression story, assignment readiness can depend on derived skills, and locked nodes stop pretending to be available.
+
+### Workspace and replay reliability: scoped notes, host-aware course identity, and truthful offline bundles
+
+**Files changed**: `apps/web/src/App.tsx`, `apps/web/src/App.test.ts`, `apps/web/src/lib/offline-site.ts`, `apps/web/src/lib/offline-site.test.ts`, `apps/web/src/lib/source-workspace.ts`, `apps/web/src/lib/source-workspace.test.ts`, `apps/web/src/lib/shell-runtime.ts`, `packages/schema/src/index.ts`
+
+**What changed**
+- Made offline replay bundles carry scoped notes and validate their deterministic hash on restore.
+- Forced restored/exported `practiceMode` to fail closed instead of persisting a brittle unlock mode across sessions.
+- Scoped same-course preservation by `sourceHost + courseId` where available, not just raw `courseId`.
+- Prevented shell mount from racing ahead of scoped progress hydration and added reset behavior that clears the active workspace scope rather than flattening all notes/progress.
+- Guarded textbook import progress callbacks with import tokens so stale long-running imports cannot overwrite a newer workspace.
+
+**Why**: replay bundles were not self-contained, course identity could drift across hosts, and several orchestration paths were still loose enough to resurrect stale state.
+
+**Downstream effects**: replay restore is more honest, stale state bleed is reduced, and scoped notes/progress are less likely to drift across unrelated workspaces.
+
+### Extension truthfulness and build posture: support the real workflow and stop mirroring generated artifacts into source
+
+**Files changed**: `apps/extension/src/popup.tsx`, `apps/extension/src/side-panel.tsx`, `apps/extension/src/service-worker.ts`, `apps/extension/scripts/build.mjs`, `README.md`, `docs/extension-handoff.md`
+
+**What changed**
+- Updated extension copy to say `Capture Supported Content` instead of implying omniscient whole-course capture.
+- Made the popup respect the saved default capture mode.
+- Clarified the interruption message so temporary partial state is not mislabeled as a saved capture.
+- Declared `apps/extension/dist` as the canonical unpacked-extension build target and removed the copy-back mirror step that dirtied tracked root artifacts on every build.
+
+**Why**: the extension still overstated what it captured and the build pipeline was duplicating generated outputs into the source tree.
+
+**Downstream effects**: contributor workflow is cleaner, the repo is less artifact-heavy, and the extension copy stays within the product truth boundary.
+
+### Release hardening and contributor truth alignment
+
+**Files changed**: `.github/workflows/verify.yml`, `.gitignore`, `package.json`, `README.md`, `docs/architecture.md`, `docs/truth-boundaries.md`, `.omega/DECISIONS.md`, `.omega/ERROR_LEDGER.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Added a dedicated CI verification workflow for `typecheck -> test -> build`.
+- Pinned Node/npm expectations in the root manifest and switched quick-start docs to `npm ci`.
+- Ignored `output/` so Playwright/log dumps stop appearing as repo drift.
+- Updated contributor docs to describe the mounted AEONTHRA shell, Atlas skill tree, replay bundle behavior, and current extension handoff posture.
+
+**Why**: Pages deploy alone was not a real verification gate, and contributor docs had drifted away from the runtime surface.
+
+**Downstream effects**: the repo is closer to a shippable verification posture and the docs now describe the current product instead of a legacy shell.
+
 ## 2026-04-15
 
 ### Reader concept resolution: fail-closed dominant concept selection for hints, highlights, and practice

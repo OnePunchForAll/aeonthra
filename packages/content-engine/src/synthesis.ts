@@ -207,6 +207,7 @@ function buildConceptSupport(
     const relationCount = relations.filter((relation) => relation.fromId === concept.id || relation.toId === concept.id).length;
     const verbHits = Array.from(new Set(canvasItems.flatMap(collectVerbHits))).sort();
     const sourceCount = new Set(sourceItems.map((item) => item.id)).size;
+    const familyCount = new Set(sourceItems.map(sourceFamilyFor)).size;
 
     // Diversity-weighted counts: clone-family members beyond the first contribute
     // fractional weight so repeated boilerplate items cannot dominate scoring.
@@ -220,18 +221,24 @@ function buildConceptSupport(
       (sum, item) => sum + (diversityWeights.get(item.id) ?? 1.0), 0
     );
 
-    // Support scoring weights signals by course relevance, not raw frequency.
-    // Diversity-weighted counts replace raw counts so structural repetition
-    // (identical reflection prompts, clone discussion items) cannot invert ranking.
-    // See inline comments in the original function body for full rationale.
+    const semanticEvidence = concept.score;
+    const sourceDiversity = Math.min(3, sourceCount) * 8;
+    const crossFamilyCoverage = familyCount * 10 + (canvasItems.length > 0 && textbookItems.length > 0 ? 8 : 0);
+    const assignmentRelevance = assignmentItems.length > 0 ? 10 + Math.min(2, weightedAssignment) * 6 : 0;
+    const relationCentrality = Math.min(4, relationCount) * 6;
+    const repeatedCanvasPressure = canvasItems.length > 0 ? Math.min(2.5, weightedCanvas) * 4 : 0;
+    const textbookAnchoring = textbookItems.length > 0 ? Math.min(2.5, weightedTextbook) * 5 : 0;
+    const verbPressure = verbHits.length * 4;
+
     const supportScore = Number((
-      concept.score
-      + relationCount * 10
-      + sourceCount * 7
-      + weightedCanvas * 14
-      + weightedTextbook * 14
-      + weightedAssignment * 12
-      + verbHits.length * 6
+      semanticEvidence
+      + sourceDiversity
+      + crossFamilyCoverage
+      + assignmentRelevance
+      + relationCentrality
+      + repeatedCanvasPressure
+      + textbookAnchoring
+      + verbPressure
       + Math.min(concept.keywords.length, 6) * 2
     ).toFixed(2));
 
@@ -246,6 +253,14 @@ function buildConceptSupport(
       verbHits
     };
   }).sort((left, right) => right.supportScore - left.supportScore || left.conceptId.localeCompare(right.conceptId));
+}
+
+export function rankConceptIdsBySupport(
+  bundle: CaptureBundle,
+  concepts: LearningConcept[],
+  relations: ConceptRelation[]
+): string[] {
+  return buildConceptSupport(bundle, concepts, relations).map((entry) => entry.conceptId);
 }
 
 export function crystallizeConceptIds(

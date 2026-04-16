@@ -13,6 +13,9 @@ interface ExtState {
   tabId?: number | null;
   error?: string;
   history?: Array<{ id?: string; title?: string }>;
+  settings?: {
+    defaultMode?: "complete" | "learning";
+  };
 }
 
 const RETRYABLE_RUNTIME_ERRORS = [
@@ -189,7 +192,7 @@ function Popup() {
   const handleStart = async () => {
     setError(null);
     try {
-      const response = await sendMessageWithRetry<{ ok?: boolean; error?: string; message?: string }>({ type: "START_CAPTURE", mode: "learning" }, 3);
+      const response = await sendMessageWithRetry<{ ok?: boolean; error?: string; message?: string }>({ type: "START_CAPTURE", mode: ext?.settings?.defaultMode ?? "learning" }, 3);
       if (response?.ok === false) {
         setError(response.error || response.message || "Failed to start capture");
         return;
@@ -360,7 +363,7 @@ function Popup() {
               marginBottom: "10px"
             }}
           >
-            CAPTURE ENTIRE COURSE
+            CAPTURE SUPPORTED COURSE CONTENT
           </button>
 
           <button

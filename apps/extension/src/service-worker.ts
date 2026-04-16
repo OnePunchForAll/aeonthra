@@ -931,7 +931,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
         await updateRuntime({
           status: "error",
           phaseLabel: "Capture Interrupted",
-          errorMessage: "The background capture tab was closed. Partial progress is still saved."
+          errorMessage: "The background capture tab was closed before AEONTHRA finalized the bundle. Temporary partial state remains local, but it is not yet a saved capture."
         });
       }
     } catch (error) {

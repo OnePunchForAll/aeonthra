@@ -327,6 +327,7 @@ export const OfflineSiteBundleSchema = z.object({
   mergedBundle: CaptureBundleSchema,
   learningBundle: LearningBundleSchema,
   progress: AppProgressSchema,
+  notes: z.string().default(""),
   deterministicHash: z.string()
 });
 

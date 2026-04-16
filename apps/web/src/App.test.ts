@@ -149,7 +149,7 @@ describe("App intake orchestration", () => {
     });
   });
 
-  it("ignores unsolicited NF_PACK_READY bridge payloads when no request is active", () => {
+  it("accepts extension-initiated NF_PACK_READY payloads even when no request is active", () => {
     const bundle = makeCanvasCaptureBundle();
     const resolution = resolveBridgeMessageAction(
       {
@@ -161,7 +161,10 @@ describe("App intake orchestration", () => {
     );
 
     expect(resolution).toEqual({
-      kind: "ignore",
+      kind: "accept-pack",
+      bundle,
+      successMessage: "Canvas bundle imported: Canvas Ethics.",
+      ackPackId: captureBundleId(bundle),
       nextRequestMode: null
     });
   });
@@ -219,7 +222,8 @@ describe("App intake orchestration", () => {
       textbookBundle,
       mergedBundle: mergedBundle!,
       learningBundle,
-      progress
+      progress,
+      notes: "Recovered note lane."
     });
 
     const resolution = resolveImportedJsonPayload(JSON.stringify(offlineBundle));
@@ -229,7 +233,8 @@ describe("App intake orchestration", () => {
       throw new Error("Expected offline-site resolution");
     }
     expect(resolution.restored.learningBundle).toEqual(learningBundle);
-    expect(resolution.restored.progress).toEqual(progress);
+    expect(resolution.restored.progress).toEqual({ ...progress, practiceMode: false });
+    expect(resolution.restored.notes).toBe("Recovered note lane.");
     expect(resolution.noteScope).toBe(learningBundle.synthesis.deterministicHash);
     expect(resolution.status).toBe(`Offline site bundle restored: ${offlineBundle.title}`);
   });
@@ -256,5 +261,34 @@ describe("App intake orchestration", () => {
     expect(loadStoredSourceWorkspace()).toBeNull();
     expect(loadNotes()).toBe("");
     expect(loadProgress("hash-reset")).toEqual(createEmptyProgress());
+  });
+
+  it("clears only the requested scoped notes and progress when a scope is provided", () => {
+    storeScopedProgress({
+      conceptMastery: { left: 1 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      practiceMode: false
+    }, "scope-a");
+    storeScopedProgress({
+      conceptMastery: { right: 0.5 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      practiceMode: false
+    }, "scope-b");
+    storeNotes("Scope A notes", "scope-a");
+    storeNotes("Scope B notes", "scope-b");
+
+    clearPersistedWorkspaceState("scope-a");
+
+    expect(loadProgress("scope-a")).toEqual(createEmptyProgress());
+    expect(loadNotes("scope-a")).toBe("");
+    expect(loadProgress("scope-b")).toEqual({
+      conceptMastery: { right: 0.5 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      practiceMode: false
+    });
+    expect(loadNotes("scope-b")).toBe("Scope B notes");
   });
 });

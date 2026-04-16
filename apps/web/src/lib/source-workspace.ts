@@ -128,15 +128,26 @@ export function summarizeBundle(bundle: CaptureBundle | null): BundleSummary | n
   };
 }
 
-function normalizedCourseIdentity(bundle: CaptureBundle | null): string {
-  if (!bundle) {
+function normalizedCourseId(bundle: CaptureBundle | null): string {
+  return bundle?.captureMeta?.courseId?.trim().toLowerCase() || "";
+}
+
+function normalizedBundleHost(bundle: CaptureBundle | null): string {
+  const host = bundle?.captureMeta?.sourceHost?.trim().toLowerCase();
+  if (host) {
+    return host;
+  }
+
+  const candidateUrl = bundle?.manifest.sourceUrls[0] || bundle?.items[0]?.canonicalUrl;
+  if (!candidateUrl) {
     return "";
   }
-  const courseId = bundle.captureMeta?.courseId?.trim().toLowerCase();
-  if (courseId) {
-    return courseId;
+
+  try {
+    return new URL(candidateUrl).host.trim().toLowerCase();
+  } catch {
+    return "";
   }
-  return "";
 }
 
 export function isCanvasCaptureBundle(bundle: CaptureBundle | null): boolean {
@@ -155,12 +166,19 @@ export function isSameCourse(left: CaptureBundle | null, right: CaptureBundle | 
   if (!left || !right) {
     return false;
   }
-  const leftIdentity = normalizedCourseIdentity(left);
-  const rightIdentity = normalizedCourseIdentity(right);
-  if (!leftIdentity || !rightIdentity) {
+  const leftCourseId = normalizedCourseId(left);
+  const rightCourseId = normalizedCourseId(right);
+  if (!leftCourseId || !rightCourseId || leftCourseId !== rightCourseId) {
     return false;
   }
-  return leftIdentity === rightIdentity;
+
+  const leftHost = normalizedBundleHost(left);
+  const rightHost = normalizedBundleHost(right);
+  if (leftHost && rightHost) {
+    return leftHost === rightHost;
+  }
+
+  return true;
 }
 
 export function determineAppStage(input: {

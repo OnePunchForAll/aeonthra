@@ -300,6 +300,7 @@ export function normalizeProgressForWorkspace(
   const validConceptIds = new Set(shellData.concepts.map((concept) => concept.id));
   const validChapterIds = new Set([
     ...shellData.modules.map((module) => module.id),
+    ...shellData.reading.map((reading) => reading.id),
     ...workspace.chapters.map((chapter) => chapter.id)
   ]);
   const validGoalIds = new Set(workspace.goals.map((goal) => goal.id));

@@ -166,4 +166,37 @@ describe("content engine", () => {
     expect(labels.some((label) => label.includes("utilitarianism"))).toBe(true);
     expect(labels.some((label) => label.includes("deontology"))).toBe(true);
   });
+
+  it("keeps confusion and transfer fields grounded in distinct evidence lanes", () => {
+    const bundle = createManualCaptureBundle({
+      title: "Reinforcement Learning",
+      text: [
+        "Positive reinforcement is the practice of increasing a behavior by adding a desired stimulus after the behavior occurs.",
+        "In classroom management, use positive reinforcement when you want a student to repeat a productive habit after immediate feedback.",
+        "Students often confuse positive reinforcement with negative reinforcement because both increase behavior, but one adds a stimulus and the other removes an aversive condition.",
+        "Negative reinforcement is the practice of increasing a behavior by removing an aversive condition after the behavior occurs."
+      ].join(" ")
+    });
+
+    const learningBundle = buildLearningBundle(bundle);
+    const concept = learningBundle.concepts.find((entry) => entry.label.toLowerCase().includes("positive reinforcement"));
+
+    expect(concept).toBeDefined();
+    expect(concept?.transferHook).toContain("when");
+    expect(concept?.transferHook).not.toMatch(/^Use .+ to explain/i);
+    expect(concept?.commonConfusion.toLowerCase()).toMatch(/confus|blur|failure mode/);
+    expect(concept?.commonConfusion).not.toContain(" is not ");
+
+    const normalizedFields = [
+      concept?.definition,
+      concept?.summary,
+      concept?.primer,
+      concept?.transferHook,
+      concept?.commonConfusion
+    ]
+      .filter((entry): entry is string => Boolean(entry))
+      .map((entry) => entry.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim());
+
+    expect(new Set(normalizedFields).size).toBe(normalizedFields.length);
+  });
 });

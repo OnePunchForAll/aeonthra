@@ -84,7 +84,7 @@ describe("source workspace helpers", () => {
     expect(split.textbookBundle?.items.every((item) => (item.tags ?? []).includes("textbook"))).toBe(true);
   });
 
-  it("uses course ids when deciding whether a textbook can be preserved across imports", () => {
+  it("uses host plus course id when deciding whether a textbook can be preserved across imports", () => {
     const left = makeCanvasBundle();
     const right = {
       ...makeCanvasBundle(),
@@ -97,9 +97,30 @@ describe("source workspace helpers", () => {
         courseId: "course-77"
       }
     };
+    const differentHost = {
+      ...makeCanvasBundle(),
+      captureMeta: {
+        ...makeCanvasBundle().captureMeta,
+        sourceHost: "other.canvas.example.test"
+      }
+    };
 
     expect(isSameCourse(left, right)).toBe(true);
     expect(isSameCourse(left, other)).toBe(false);
+    expect(isSameCourse(left, differentHost)).toBe(false);
+  });
+
+  it("preserves same-course state across mixed legacy and host-aware capture metadata", () => {
+    const hostAware = makeCanvasBundle();
+    const legacy = {
+      ...makeCanvasBundle(),
+      captureMeta: {
+        courseId: "course-42",
+        courseName: "Deterministic Ethics"
+      }
+    };
+
+    expect(isSameCourse(hostAware, legacy)).toBe(true);
   });
 
   it("does not preserve textbooks when course ids are missing, even if titles match", () => {

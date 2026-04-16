@@ -209,7 +209,9 @@ const stripHtml = (value: string): string =>
   value
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/(?:div|section|article|blockquote|figcaption|h[1-6])>/gi, "\n\n")
     .replace(/<\/li>/gi, "\n")
+    .replace(/<\/(?:tr|td|th|dd|dt)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -250,6 +252,34 @@ const stripLeadingTitleEcho = (text: string, candidates: string[]): string => {
   }
   return next || text.trim();
 };
+
+const SENTENCE_ABBREVIATIONS = [
+  "e.g.",
+  "i.e.",
+  "mr.",
+  "mrs.",
+  "ms.",
+  "dr.",
+  "prof.",
+  "vs.",
+  "etc.",
+  "fig.",
+  "st.",
+  "no.",
+  "u.s.",
+  "u.k."
+] as const;
+
+const protectSentenceStops = (text: string): string => {
+  let next = text;
+  for (const abbreviation of SENTENCE_ABBREVIATIONS) {
+    const escaped = abbreviation.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    next = next.replace(new RegExp(escaped, "gi"), (match) => match.replace(/\./g, "∯"));
+  }
+  return next;
+};
+
+const restoreSentenceStops = (text: string): string => text.replace(/∯/g, ".");
 
 const decodeTitle = (text: string): string =>
   cleanPassage(text)
@@ -321,9 +351,9 @@ const ensureSentence = (text: string): string => {
 };
 
 const splitIntoSentences = (text: string): string[] =>
-  cleanPassage(text)
+  protectSentenceStops(cleanPassage(text))
     .split(/(?<=[.!?])\s+|(?<=:)\s+(?=[A-Z])/)
-    .map((entry) => cleanPassage(entry))
+    .map((entry) => restoreSentenceStops(cleanPassage(entry)))
     .filter((entry) => entry.length >= 24);
 
 const contentWordCount = (text: string): number => meaningfulWords(text).length;
@@ -461,15 +491,34 @@ const skipForConceptMining = (item: CaptureItem): boolean => {
     || title.includes("writing center & library");
 };
 
-const isValidSentence = (text: string): boolean => {
-  const normalized = cleanPassage(text);
+const hasSentenceShape = (normalized: string): boolean => {
   if (!normalized || normalized.length < 10 || normalized.length > 500) return false;
   if (!/^[A-Z"']/.test(normalized.trim())) return false;
   if (!/[.!?"]$/.test(normalized.trim())) return false;
-  if (!/\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides)\b/i.test(normalized)) return false;
-  if (lexicalDiversity(normalized) < 0.4) return false;
   if (contentWordCount(normalized) < 3) return false;
   return !/\{[^}]+\}/.test(normalized);
+};
+
+const STRICT_SENTENCE_VERBS =
+  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides)\b/i;
+
+const EVIDENCE_SENTENCE_VERBS =
+  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides|use|apply|repeat|increase|decrease|remove|add|confuse|mistake|mix|blur|want|need|practice|respond|evaluate|analyze|interpret|decide|justify|compare|explain|illustrate|demonstrate)\b/i;
+
+const isValidSentence = (text: string): boolean => {
+  const normalized = cleanPassage(text);
+  if (!hasSentenceShape(normalized)) return false;
+  if (!STRICT_SENTENCE_VERBS.test(normalized)) return false;
+  if (lexicalDiversity(normalized) < 0.4) return false;
+  return true;
+};
+
+const isValidEvidenceSentence = (text: string): boolean => {
+  const normalized = cleanPassage(text);
+  if (!hasSentenceShape(normalized)) return false;
+  if (!EVIDENCE_SENTENCE_VERBS.test(normalized)) return false;
+  if (lexicalDiversity(normalized) < 0.32) return false;
+  return true;
 };
 
 const isValidPrimer = (primer: string): boolean => {
@@ -504,7 +553,21 @@ const isValidConcept = (concept: Pick<LearningConcept, "label" | "definition" | 
 
 const cleanHtmlContent = (html: string): string => { let next = html; for (const pattern of CHROME_REGEX) next = next.replace(pattern, " "); return next; };
 const extractEmphasizedTerms = (html: string): string[] => [...html.matchAll(/<(?:strong|b|em|i)[^>]*>([\s\S]*?)<\/(?:strong|b|em|i)>/gi)].map((match) => cleanPassage(match[1] ?? "")).filter((term) => term.length >= 3 && term.length <= 60 && !blockedLabel(term));
-const sourceHtml = (item: CaptureItem): string => { if (!item.html) return item.plainText; const cleaned = cleanHtmlContent(item.html); for (const selector of SOURCE_SELECTORS) { const matches = [...cleaned.matchAll(selector)].map((entry) => entry[1] ?? ""); if (matches.length > 0) return matches.join("\n"); } return cleaned; };
+const sourceHtml = (item: CaptureItem): string => {
+  if (!item.html) return item.plainText;
+  const cleaned = cleanHtmlContent(item.html);
+  const cleanedTextLength = cleanPassage(stripHtml(cleaned)).length;
+  for (const selector of SOURCE_SELECTORS) {
+    const matches = [...cleaned.matchAll(selector)].map((entry) => entry[1] ?? "");
+    if (matches.length === 0) continue;
+    const extracted = matches.join("\n");
+    const extractedTextLength = cleanPassage(stripHtml(extracted)).length;
+    if (extractedTextLength >= Math.max(220, Math.round(cleanedTextLength * 0.55))) {
+      return extracted;
+    }
+  }
+  return cleaned;
+};
 
 const scoreContentBlock = (block: Omit<ContentBlock, "score">): number => {
   let score = 0;
@@ -540,7 +603,7 @@ const extractStructuredBlocks = (item: CaptureItem): ContentBlock[] => {
   const blocks: Array<Omit<ContentBlock, "score">> = [];
   let currentHeading: string | null = null;
   let position = 0;
-  const pattern = /<(h([1-6])|p|li|dt|dd)[^>]*>([\s\S]*?)<\/\1>/gi;
+  const pattern = /<(h([1-6])|p|li|dt|dd|blockquote|figcaption|td|th)[^>]*>([\s\S]*?)<\/\1>/gi;
   for (const match of html.matchAll(pattern)) {
     const tag = (match[1] ?? "").toLowerCase();
     const level = Number(match[2] ?? "0") || undefined;
@@ -554,7 +617,7 @@ const extractStructuredBlocks = (item: CaptureItem): ContentBlock[] => {
       blocks.push({ id: `${item.id}:heading:${position}`, sourceItemId: item.id, sourceKind: item.kind, sourceTitle: item.title, type: "heading", level, text: currentHeading, parentHeading: null, position: position += 1, wordCount, sentenceCount, emphasizedTerms: [] });
       continue;
     }
-    if ((tag === "p" && text.length >= 40) || (tag === "li" && text.length >= 20) || tag === "dd" || tag === "dt") {
+    if ((tag === "p" && text.length >= 40) || (tag === "li" && text.length >= 20) || tag === "dd" || tag === "dt" || tag === "blockquote" || tag === "figcaption" || tag === "td" || tag === "th") {
       blocks.push({ id: `${item.id}:${tag}:${position}`, sourceItemId: item.id, sourceKind: item.kind, sourceTitle: item.title, type: tag === "li" ? "list-item" : tag === "dt" || tag === "dd" ? "definition" : "paragraph", text, parentHeading: currentHeading, position: position += 1, wordCount, sentenceCount, emphasizedTerms: emphasizedTerms.filter((term) => text.includes(term)).slice(0, 4) });
     }
   }
@@ -670,7 +733,36 @@ const findTopicSentences = (block: ContentBlock): string[] => {
 const nearestSentenceForTerm = (term: string, block: ContentBlock): string | null => splitIntoSentences(block.text).find((sentence) => normalizePhrase(sentence).includes(normalizePhrase(term))) ?? null;
 const nounPhrases = (text: string): string[] => [...text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/g), ...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]{4,})\b/g), ...text.matchAll(/\b([a-z]+(?:ism|ity|tion|ics|ology))\b/gi), ...text.matchAll(/\b([a-z]+(?:\s+[a-z]+){0,2}\s+(?:framework|principle|theory|approach|report|services|support|management|portal|tutoring|analysis|reasoning))\b/gi)].map((match) => titleCase(normalizeCandidateName(match[1] ?? ""))).filter((phrase) => phrase.length >= 3 && phrase.length <= 60 && !blockedLabel(phrase));
 
-const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
+const relatedContextBlocks = (block: ContentBlock, blocks: ContentBlock[]): ContentBlock[] =>
+  blocks
+    .filter((candidate) => candidate.id !== block.id)
+    .filter((candidate) => candidate.sourceItemId === block.sourceItemId)
+    .filter((candidate) => candidate.type !== "heading")
+    .filter((candidate) => Math.abs(candidate.position - block.position) <= 3)
+    .filter((candidate) => {
+      if (block.parentHeading && candidate.parentHeading) {
+        return normalizePhrase(block.parentHeading) === normalizePhrase(candidate.parentHeading);
+      }
+      return true;
+    })
+    .sort((left, right) => Math.abs(left.position - block.position) - Math.abs(right.position - block.position) || left.position - right.position)
+    .slice(0, 3);
+
+const contextSentencesForBlock = (block: ContentBlock, blocks: ContentBlock[], sourceSentence: string): string[] => {
+  const ownSentences = splitIntoSentences(block.text).filter((entry) => entry !== sourceSentence);
+  const nearbySentences = relatedContextBlocks(block, blocks).flatMap((candidate) => splitIntoSentences(candidate.text));
+  return Array.from(new Set([...ownSentences, ...nearbySentences].map((entry) => ensureSentence(entry))))
+    .filter(isValidEvidenceSentence)
+    .filter((entry) => normalizeFieldText(entry) !== normalizeFieldText(sourceSentence))
+    .slice(0, 4);
+};
+
+const detailFromBlockContext = (block: ContentBlock, blocks: ContentBlock[]): string => {
+  const companionText = relatedContextBlocks(block, blocks).map((candidate) => candidate.text);
+  return truncateReadable([block.text, ...companionText].join(" "), 240);
+};
+
+const topicCandidatesFromBlock = (block: ContentBlock, blocks: ContentBlock[]): ConceptCandidate[] => {
   const candidates: ConceptCandidate[] = [];
   const topicSentences = findTopicSentences(block);
   const subjectMatch = splitIntoSentences(block.text)
@@ -683,16 +775,49 @@ const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
       if (!match) continue;
       const name = titleCase(normalizeCandidateName(match[1] ?? ""));
       if (blockedLabel(name)) continue;
-      candidates.push({ name, sourceItemId: block.sourceItemId, sourceSentence: sentence, definition: ensureSentence(sentence), detail: truncateReadable(block.text, 240), extractionMethod: "explicit-definition", confidence: 1, evidence: splitIntoSentences(block.text).filter((entry) => entry !== sentence).slice(0, 2), category: categoryFor(block), keywords: blockKeywords(block) });
+      candidates.push({
+        name,
+        sourceItemId: block.sourceItemId,
+        sourceSentence: sentence,
+        definition: ensureSentence(sentence),
+        detail: detailFromBlockContext(block, blocks),
+        extractionMethod: "explicit-definition",
+        confidence: 1,
+        evidence: contextSentencesForBlock(block, blocks, sentence),
+        category: categoryFor(block),
+        keywords: blockKeywords(block)
+      });
     }
   }
   for (const term of block.emphasizedTerms) {
     const sentence = nearestSentenceForTerm(term, block);
     if (!sentence || blockedLabel(term)) continue;
-    candidates.push({ name: titleCase(term), sourceItemId: block.sourceItemId, sourceSentence: sentence, definition: ensureSentence(sentence), detail: truncateReadable(block.text, 240), extractionMethod: "bold-term", confidence: 0.9, evidence: splitIntoSentences(block.text).filter((entry) => entry !== sentence).slice(0, 2), category: categoryFor(block), keywords: blockKeywords(block) });
+    candidates.push({
+      name: titleCase(term),
+      sourceItemId: block.sourceItemId,
+      sourceSentence: sentence,
+      definition: ensureSentence(sentence),
+      detail: detailFromBlockContext(block, blocks),
+      extractionMethod: "bold-term",
+      confidence: 0.9,
+      evidence: contextSentencesForBlock(block, blocks, sentence),
+      category: categoryFor(block),
+      keywords: blockKeywords(block)
+    });
   }
   if (block.parentHeading && !blockedLabel(block.parentHeading) && topicSentences.length > 0) {
-    candidates.push({ name: titleCase(block.parentHeading), sourceItemId: block.sourceItemId, sourceSentence: topicSentences[0]!, definition: ensureSentence(topicSentences[0]!), detail: truncateReadable(block.text, 240), extractionMethod: "heading-topic", confidence: 0.72, evidence: splitIntoSentences(block.text).slice(1, 3), category: titleCase(block.parentHeading), keywords: blockKeywords(block) });
+    candidates.push({
+      name: titleCase(block.parentHeading),
+      sourceItemId: block.sourceItemId,
+      sourceSentence: topicSentences[0]!,
+      definition: ensureSentence(topicSentences[0]!),
+      detail: detailFromBlockContext(block, blocks),
+      extractionMethod: "heading-topic",
+      confidence: 0.72,
+      evidence: contextSentencesForBlock(block, blocks, topicSentences[0]!),
+      category: titleCase(block.parentHeading),
+      keywords: blockKeywords(block)
+    });
   }
   if (subjectMatch?.match?.[1] && !blockedLabel(subjectMatch.match[1])) {
     candidates.push({
@@ -700,10 +825,10 @@ const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
       sourceItemId: block.sourceItemId,
       sourceSentence: subjectMatch.sentence,
       definition: ensureSentence(subjectMatch.sentence),
-      detail: truncateReadable(block.text, 240),
+      detail: detailFromBlockContext(block, blocks),
       extractionMethod: "noun-phrase",
       confidence: 0.68,
-      evidence: splitIntoSentences(block.text).slice(1, 3),
+      evidence: contextSentencesForBlock(block, blocks, subjectMatch.sentence),
       category: categoryFor(block),
       keywords: blockKeywords(block)
     });
@@ -736,14 +861,17 @@ const mergeCandidates = (candidates: ConceptCandidate[]): Seed[] => {
     const aliasKey = normalizeConceptAlias(candidate.name) || normalized;
     const existing = seeds.get(aliasKey);
     const score = candidate.confidence * 100 + candidate.evidence.length * 10 + candidate.keywords.length * 2 + (candidate.extractionMethod === "explicit-definition" ? 30 : 0) + (candidate.extractionMethod === "bold-term" ? 20 : 0);
-    if (!existing) { seeds.set(aliasKey, { name: candidate.name, score, category: candidate.category, sourceItemIds: new Set([candidate.sourceItemId]), definition: candidate.definition, detail: candidate.detail, evidence: candidate.evidence.filter(isValidSentence), keywords: new Set(candidate.keywords) }); continue; }
+    if (!existing) {
+      seeds.set(aliasKey, { name: candidate.name, score, category: candidate.category, sourceItemIds: new Set([candidate.sourceItemId]), definition: candidate.definition, detail: candidate.detail, evidence: candidate.evidence.filter(isValidEvidenceSentence), keywords: new Set(candidate.keywords) });
+      continue;
+    }
     existing.score += score;
     existing.sourceItemIds.add(candidate.sourceItemId);
     const candidateHasWrapper = normalizeConceptAlias(candidate.name) !== normalized;
     const existingHasWrapper = normalizeConceptAlias(existing.name) !== normalizePhrase(existing.name);
     if ((!candidateHasWrapper && existingHasWrapper && candidate.confidence >= 0.7) || (candidate.name.length > existing.name.length && candidate.confidence >= 0.7 && candidateHasWrapper === existingHasWrapper)) existing.name = candidate.name;
     if (candidate.confidence >= 0.9 || existing.definition.length < candidate.definition.length) { existing.definition = candidate.definition; existing.detail = candidate.detail; existing.category = candidate.category; }
-    candidate.evidence.forEach((entry) => { if (isValidSentence(entry)) existing.evidence.push(entry); });
+    candidate.evidence.forEach((entry) => { if (isValidEvidenceSentence(entry)) existing.evidence.push(entry); });
     candidate.keywords.forEach((keyword) => existing.keywords.add(keyword));
   }
   return [...seeds.values()].sort((left, right) => right.score - left.score);
@@ -817,14 +945,25 @@ const conceptMnemonic = (label: string, keywords: string[], confusion: string | 
 
 const normalizeLoose = (text: string): string => cleanPassage(text).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 
-const distinctConceptDetail = (definition: string, detail: string, evidence: string[]): string => {
+const distinctConceptDetail = (
+  definition: string,
+  detail: string,
+  evidence: string[],
+  reserved: string[] = []
+): string => {
   const normalizedDefinition = normalizeLoose(definition);
+  const reservedSet = new Set(reserved.map((entry) => normalizeLoose(entry)).filter(Boolean));
   const candidates = [detail, ...evidence]
     .map((entry) => truncateReadable(cleanPassage(entry), 240))
     .filter((entry) => entry.length >= 35)
     .filter((entry) => normalizeLoose(entry) !== normalizedDefinition)
-    .filter((entry) => !normalizeLoose(entry).includes(normalizedDefinition) && !normalizedDefinition.includes(normalizeLoose(entry)));
-  return candidates[0] ?? "";
+    .filter((entry) => !normalizeLoose(entry).includes(normalizedDefinition) && !normalizedDefinition.includes(normalizeLoose(entry)))
+    .filter((entry) => !reservedSet.has(normalizeLoose(entry)));
+  const roleNeutral = candidates.filter(
+    (entry) => !FIELD_APPLICATION_PATTERNS.some((pattern) => pattern.test(entry))
+      && !FIELD_CONFUSION_PATTERNS.some((pattern) => pattern.test(entry))
+  );
+  return roleNeutral[0] ?? candidates[0] ?? "";
 };
 
 const sanitizeConceptMnemonic = (mnemonic: string): string => {
@@ -842,8 +981,168 @@ const sanitizeConceptMnemonic = (mnemonic: string): string => {
   return mnemonic;
 };
 
+const FIELD_APPLICATION_PATTERNS = [
+  /\b(use|apply|when|helps?|allows?|guides?|supports?|lets?|enables?|practice|respond|evaluate|analyze|interpret|decide|justify|compare|explain)\b/i,
+  /\b(for example|for instance|in practice|under pressure|in a case|on an assignment|in an argument)\b/i
+] as const;
+
+const FIELD_CONFUSION_PATTERNS = [
+  /\b(confuse|mistake|mix|equate|collapse|blur|assum|reduce|treat)\b/i,
+  /\b(unlike|whereas|rather than|instead of|in contrast|different from|not merely|not just)\b/i
+] as const;
+
+const normalizeFieldText = (text: string): string =>
+  cleanPassage(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const fieldTokenSet = (text: string): Set<string> =>
+  new Set(meaningfulWords(text).map((token) => stem(token)).filter((token) => token.length >= 4));
+
+const fieldSimilarity = (left: string, right: string): number => {
+  const leftNormalized = normalizeFieldText(left);
+  const rightNormalized = normalizeFieldText(right);
+  if (!leftNormalized || !rightNormalized) return 0;
+  const a = fieldTokenSet(leftNormalized);
+  const b = fieldTokenSet(rightNormalized);
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  const tokenSimilarity = a.size && b.size ? overlap / Math.min(a.size, b.size) : 0;
+  return Math.max(trigramJaccard(leftNormalized, rightNormalized), tokenSimilarity);
+};
+
+const isDistinctFromFields = (candidate: string, baselines: string[]): boolean => {
+  const normalizedCandidate = normalizeFieldText(candidate);
+  if (!normalizedCandidate) return false;
+  return baselines.every((baseline) => {
+    const normalizedBaseline = normalizeFieldText(baseline);
+    if (!normalizedBaseline) return true;
+    if (normalizedCandidate === normalizedBaseline) return false;
+    if (normalizedCandidate.includes(normalizedBaseline) || normalizedBaseline.includes(normalizedCandidate)) return false;
+    return fieldSimilarity(normalizedCandidate, normalizedBaseline) < 0.58;
+  });
+};
+
+const uniqueEvidenceSentences = (definition: string, detail: string, evidence: string[]): string[] =>
+  Array.from(new Set([detail, ...evidence].flatMap((entry) => splitIntoSentences(entry))))
+    .map((entry) => ensureSentence(entry))
+    .filter(isValidEvidenceSentence)
+    .filter((entry) => isDistinctFromFields(entry, [definition]))
+    .slice(0, 10);
+
+const selectBestRoleSentence = (
+  sentences: string[],
+  definition: string,
+  label: string,
+  patterns: readonly RegExp[],
+  contrastLabel?: string | null
+): string => {
+  const ranked = sentences
+    .map((sentence) => {
+      const normalized = normalizeFieldText(sentence);
+      const patternHits = patterns.reduce((sum, pattern) => sum + (pattern.test(sentence) ? 1 : 0), 0);
+      const contrastBonus = contrastLabel && normalized.includes(normalizePhrase(contrastLabel)) ? 1.6 : 0;
+      const labelBonus = normalized.includes(normalizePhrase(label)) ? 0.7 : 0;
+      const noveltyBonus = 1 - fieldSimilarity(sentence, definition);
+      const lengthBonus = sentence.length >= 60 && sentence.length <= 190 ? 0.4 : 0;
+      return { sentence, score: patternHits * 2 + contrastBonus + labelBonus + noveltyBonus + lengthBonus };
+    })
+    .filter((entry) => entry.score >= 2.1)
+    .sort((left, right) => right.score - left.score || left.sentence.length - right.sentence.length);
+  return ranked[0]?.sentence ?? "";
+};
+
+const renderConfusionField = (label: string, contrastLabel: string | null, sentence: string): string => {
+  if (!sentence) return "";
+  if (contrastLabel && normalizeFieldText(sentence).includes(normalizePhrase(contrastLabel))) {
+    return ensureSentence(`Students often blur ${label} with ${contrastLabel}. ${sentence}`);
+  }
+  return ensureSentence(`Common failure mode: ${sentence}`);
+};
+
+const renderTransferField = (label: string, sentence: string): string => {
+  if (!sentence) return "";
+  const cleaned = ensureSentence(sentence);
+  const whenMatch = cleaned.match(/\bwhen\b([\s\S]+)$/i);
+  if (whenMatch?.[1]) {
+    return ensureSentence(`Reach for ${label} when${whenMatch[1].replace(/[.!?]+$/g, "")}`);
+  }
+  return ensureSentence(`Reach for ${label} in practice: ${cleaned.replace(/[.!?]+$/g, "")}`);
+};
+
+const gateConceptField = (candidate: string, baselines: string[]): string =>
+  candidate && isDistinctFromFields(candidate, baselines) ? candidate : "";
+
+type FinalizedConceptFields = {
+  summary: string;
+  primer: string;
+  mnemonic: string;
+  commonConfusion: string;
+  transferHook: string;
+  excerpt: string;
+  evidence: string[];
+};
+
+const finalizeConceptFields = (
+  label: string,
+  definition: string,
+  detail: string,
+  evidence: string[],
+  keywords: string[],
+  confusion: string | null,
+  category: string
+): FinalizedConceptFields => {
+  const evidenceLane = uniqueEvidenceSentences(definition, detail, evidence);
+  const confusionSentence = selectBestRoleSentence(
+    evidenceLane,
+    definition,
+    label,
+    FIELD_CONFUSION_PATTERNS,
+    confusion
+  );
+  const applicationSentence = selectBestRoleSentence(
+    evidenceLane,
+    definition,
+    label,
+    FIELD_APPLICATION_PATTERNS,
+    confusion
+  );
+  const summary = gateConceptField(
+    distinctConceptDetail(definition, detail, evidenceLane, [confusionSentence, applicationSentence]),
+    [definition]
+  );
+  const primer = gateConceptField(conceptPrimer(label, definition), [definition, summary]);
+  const mnemonic = gateConceptField(
+    sanitizeConceptMnemonic(conceptMnemonic(label, keywords, confusion, category)),
+    [definition, summary, primer]
+  );
+  const confusionField = gateConceptField(
+    renderConfusionField(label, confusion, confusionSentence),
+    [definition, summary, primer, mnemonic]
+  );
+  const transferHook = gateConceptField(
+    renderTransferField(label, applicationSentence),
+    [summary, primer, mnemonic, confusionField]
+  );
+  const finalizedEvidence = evidenceSnippets(label, definition, detail, evidenceLane);
+
+  return {
+    summary,
+    primer,
+    mnemonic,
+    commonConfusion: confusionField,
+    transferHook,
+    excerpt: finalizedEvidence[0] ?? definition,
+    evidence: finalizedEvidence
+  };
+};
+
 const evidenceSnippets = (label: string, definition: string, detail: string, evidence: string[]): string[] => {
-  const snippets = [definition, ...evidence, detail].map((entry) => cleanPassage(entry)).filter(isValidSentence).filter((entry) => entry.length >= 30 && entry.length <= 220).filter((entry) => normalizePhrase(entry).includes(stem(label))).filter((entry, index, array) => array.findIndex((candidate) => normalizePhrase(candidate) === normalizePhrase(entry)) === index).filter((entry) => !/^(this|it|they|that)\b/i.test(entry)).slice(0, 3);
+  const snippets = [definition, ...evidence, detail].map((entry) => cleanPassage(entry)).filter(isValidEvidenceSentence).filter((entry) => entry.length >= 30 && entry.length <= 220).filter((entry) => normalizePhrase(entry).includes(stem(label))).filter((entry, index, array) => array.findIndex((candidate) => normalizePhrase(candidate) === normalizePhrase(entry)) === index).filter((entry) => !/^(this|it|they|that)\b/i.test(entry)).slice(0, 3);
   return snippets.length > 0 ? snippets : [definition];
 };
 
@@ -855,9 +1154,9 @@ export function buildBlocks(bundle: CaptureBundle): Block[] {
     const strongBlocks = structured.filter((block) => block.score >= BLOCK_THRESHOLD);
     const leadBlock = strongBlocks[0] ?? structured[0];
     const clean = preferredItemTitle(item, structured);
-    const headingTopics = Array.from(new Set(extractHeadingTopics(item).concat(strongBlocks.filter((block) => block.type === "heading" && !blockedLabel(block.text)).map((block) => titleCase(block.text))).concat(strongBlocks.flatMap((block) => topicCandidatesFromBlock(block).slice(0, 2).map((candidate) => titleCase(candidate.name)))))).slice(0, 6);
+    const headingTopics = Array.from(new Set(extractHeadingTopics(item).concat(strongBlocks.filter((block) => block.type === "heading" && !blockedLabel(block.text)).map((block) => titleCase(block.text))).concat(strongBlocks.flatMap((block) => topicCandidatesFromBlock(block, structured).slice(0, 2).map((candidate) => titleCase(candidate.name)))))).slice(0, 6);
     const lead = leadBlock ? leadSentence(leadBlock.text) : truncateReadable(item.excerpt);
-    const strongSentences = strongBlocks.flatMap((block) => splitIntoSentences(block.text)).filter(isValidSentence).slice(0, 8);
+    const strongSentences = strongBlocks.flatMap((block) => splitIntoSentences(block.text)).filter(isValidEvidenceSentence).slice(0, 8);
     const keywords = Array.from(new Set(strongBlocks.flatMap(blockKeywords))).slice(0, 10);
     return { sourceItemId: item.id, sourceTitle: item.title, sourceKind: item.kind, cleanTitle: clean, headingTopics, lead, summary: truncateReadable([clean, lead].filter(Boolean).join(". ")), sentences: strongSentences.length > 0 ? strongSentences : splitIntoSentences(item.plainText).slice(0, 4), score: strongBlocks.reduce((sum, block) => sum + block.score, 0) + scoreTitle(clean), titleScore: scoreTitle(clean), keywords };
   })
@@ -867,7 +1166,8 @@ export function buildBlocks(bundle: CaptureBundle): Block[] {
 
 export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningConcept[] {
   const contentItems = bundle.items.filter((item) => !skipForConceptMining(item));
-  const contentBlocks = contentItems.flatMap((item) => extractStructuredBlocks(item)).filter((block) => block.score >= BLOCK_THRESHOLD);
+  const structuredBlocks = contentItems.flatMap((item) => extractStructuredBlocks(item));
+  const contentBlocks = structuredBlocks.filter((block) => block.score >= BLOCK_THRESHOLD);
   const headingSeeds: ConceptCandidate[] = contentItems.flatMap((item) => {
     const blocks = extractStructuredBlocks(item).filter((block) => block.score >= BLOCK_THRESHOLD);
     const lead = blocks[0];
@@ -879,7 +1179,7 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
         definition: leadSentence(lead?.text ?? item.excerpt),
         detail: truncateReadable(blocks.slice(0, 2).map((block) => block.text).join(" "), 220),
         extractionMethod: "heading-topic" as const,
-        confidence: 0.9,
+        confidence: 0.76,
         evidence: blocks.slice(1, 3).map((block) => leadSentence(block.text)),
         category: topic,
         keywords: meaningfulWords(`${topic} ${lead?.text ?? item.excerpt}`).slice(0, 8)
@@ -898,7 +1198,7 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
         definition: leadSentence(lead?.text ?? item.excerpt),
         detail: truncateReadable(splitIntoSentences(item.plainText).slice(0, 2).join(" "), 220),
         extractionMethod: "heading-topic" as const,
-        confidence: 0.85,
+        confidence: 0.7,
         evidence: [],
         category: title,
         keywords: meaningfulWords(`${title} ${item.excerpt}`).slice(0, 8)
@@ -916,12 +1216,12 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
       definition: ensureSentence(block.lead),
       detail: block.summary,
       extractionMethod: "heading-topic" as const,
-      confidence: 0.92,
+      confidence: 0.8,
       evidence: block.sentences.slice(1, 3),
       category: block.cleanTitle,
       keywords: block.keywords
     }));
-  const candidates = [...blockSeeds, ...headingSeeds, ...titleSeeds, ...contentBlocks.flatMap(topicCandidatesFromBlock), ...deriveNounPhraseCandidates(contentBlocks)];
+  const candidates = [...blockSeeds, ...headingSeeds, ...titleSeeds, ...contentBlocks.flatMap((block) => topicCandidatesFromBlock(block, structuredBlocks)), ...deriveNounPhraseCandidates(contentBlocks)];
   const merged = mergeCandidates(candidates).filter((seed) => isValidConcept({ label: seed.name, definition: seed.definition, summary: truncateReadable(seed.detail, 220) }));
   const chosenPool = merged.filter((seed) => !isBundleEchoLabel(seed.name, bundle));
   const chosen = (chosenPool.length >= 2 ? chosenPool : merged).slice(0, MAX_CONCEPTS);
@@ -929,7 +1229,7 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     const rawLabel = titleCase(cleanTitle(bundle.items[0]?.title || bundle.title || "Source Focus"));
     const label = blockedLabel(rawLabel) ? "Source Focus" : rawLabel;
     const definition = truncateReadable(bundle.items[0]?.excerpt || bundle.title);
-    return [{ id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label, score: 1, summary: definition, primer: "", mnemonic: "", excerpt: definition, definition: `${definition}.`, stakes: "This is the clearest source-grounded anchor left after the cleanup pass.", commonConfusion: "Do not let navigation labels substitute for the actual topic.", transferHook: "Restate this source section in your own words before moving on.", category: "Source Focus", keywords: meaningfulWords(definition).slice(0, 6), sourceItemIds: bundle.items[0] ? [bundle.items[0].id] : [], relatedConceptIds: [] }];
+    return [{ id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label, score: 1, summary: definition, primer: "", mnemonic: "", excerpt: definition, definition: `${definition}.`, stakes: "This is the clearest source-grounded anchor left after the cleanup pass.", commonConfusion: "", transferHook: "", category: "Source Focus", keywords: meaningfulWords(definition).slice(0, 6), sourceItemIds: bundle.items[0] ? [bundle.items[0].id] : [], relatedConceptIds: [] }];
   }
   const concepts = chosen.map((seed, _index, source) => {
     const related = source.filter((candidate) => candidate.name !== seed.name);
@@ -937,27 +1237,24 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     const label = dedupeAdjacentPhraseRepeats(seed.name);
     const definition = truncateReadable(dedupeAdjacentPhraseRepeats(seed.definition), 220);
     const detail = truncateReadable(dedupeAdjacentPhraseRepeats(seed.detail), 240);
-    const summary = distinctConceptDetail(definition, detail, seed.evidence);
-    const evidence = evidenceSnippets(label, definition, detail, seed.evidence);
     const keywords = [...seed.keywords].slice(0, 8);
     const category = seed.category || titleCase(cleanTitle(bundle.title));
+    const finalized = finalizeConceptFields(label, definition, detail, seed.evidence, keywords, confusion, category);
     // Must use the same ID derivation as concept.id (dedupeAdjacentPhraseRepeats → slug)
     // to avoid relatedConceptId mismatches that silently break relatedPool() lookups.
     const relatedConceptIds = related.filter((candidate) => [...candidate.keywords].some((keyword) => seed.keywords.has(keyword))).slice(0, 3).map((candidate) => dedupeAdjacentPhraseRepeats(candidate.name).toLowerCase().replace(/[^a-z0-9]+/g, "-"));
-    const primer = conceptPrimer(label, definition);
-    const mnemonic = sanitizeConceptMnemonic(conceptMnemonic(label, keywords, confusion, category));
     return {
       id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
       label,
       score: Math.max(1, Math.round(seed.score)),
-      summary,
-      primer,
-      mnemonic,
-      excerpt: evidence[0] ?? definition,
+      summary: finalized.summary,
+      primer: finalized.primer,
+      mnemonic: finalized.mnemonic,
+      excerpt: finalized.excerpt,
       definition,
       stakes: `${label} matters because the source spends real explanatory space showing what it does.`,
-      commonConfusion: confusion ? `${label} is not ${confusion}. Keep their main moves separate when you explain the source.` : "",
-      transferHook: `Use ${label} to explain what this part of the source is doing in plain language.`,
+      commonConfusion: finalized.commonConfusion,
+      transferHook: finalized.transferHook,
       category,
       keywords,
       sourceItemIds: [...seed.sourceItemIds].filter(Boolean),
@@ -980,14 +1277,28 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
       id: block.cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
       label: block.cleanTitle,
       score: Math.max(1, Math.round(block.score)),
-      summary: distinctConceptDetail(ensureSentence(block.lead), truncateReadable(block.summary), block.sentences),
-      primer: conceptPrimer(block.cleanTitle, ensureSentence(block.lead)),
-      mnemonic: sanitizeConceptMnemonic(conceptMnemonic(block.cleanTitle, block.keywords, null, block.cleanTitle)),
-      excerpt: ensureSentence(block.lead),
-      definition: ensureSentence(block.lead),
+      ...(() => {
+        const definition = ensureSentence(block.lead);
+        const finalized = finalizeConceptFields(
+          block.cleanTitle,
+          definition,
+          truncateReadable(block.summary),
+          block.sentences,
+          block.keywords.slice(0, 8),
+          null,
+          block.cleanTitle
+        );
+        return {
+          summary: finalized.summary,
+          primer: finalized.primer,
+          mnemonic: finalized.mnemonic,
+          excerpt: finalized.excerpt,
+          definition
+        };
+      })(),
       stakes: `${block.cleanTitle} matters because it anchors a real section of the source.`,
       commonConfusion: "",
-      transferHook: `Use ${block.cleanTitle} to explain what this source section is trying to teach.`,
+      transferHook: "",
       category: block.cleanTitle,
       keywords: block.keywords.slice(0, 8),
       sourceItemIds: [block.sourceItemId],

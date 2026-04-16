@@ -1,3 +1,4 @@
+import { stableHash } from "@learning/schema";
 import { describe, expect, it } from "vitest";
 import { createDemoSourceText, buildLearningBundleWithProgress } from "@learning/content-engine";
 import { createDemoBundle } from "./demo";
@@ -33,7 +34,8 @@ describe("offline replay bundle", () => {
       textbookBundle,
       mergedBundle: mergedBundle!,
       learningBundle,
-      progress
+      progress,
+      notes: "Deterministic note lane."
     });
 
     expect(parseOfflineSiteBundle(JSON.stringify(offlineBundle))).toEqual(offlineBundle);
@@ -42,7 +44,8 @@ describe("offline replay bundle", () => {
       textbookBundle,
       mergedBundle,
       learningBundle,
-      progress
+      progress: { ...progress, practiceMode: false },
+      notes: "Deterministic note lane."
     });
   });
 
@@ -60,7 +63,8 @@ describe("offline replay bundle", () => {
       textbookBundle,
       mergedBundle,
       learningBundle,
-      progress: createEmptyProgress()
+      progress: createEmptyProgress(),
+      notes: ""
     });
 
     const html = buildOfflineSiteHtml(offlineBundle);
@@ -72,5 +76,44 @@ describe("offline replay bundle", () => {
 
   it("rejects malformed replay payloads", () => {
     expect(parseOfflineSiteBundle("{\"type\":\"not-an-offline-bundle\"}")).toBeNull();
+  });
+
+  it("accepts legacy replay payloads that were hashed before notes were introduced", () => {
+    const canvasBundle = createDemoBundle();
+    const textbookBundle = createTextbookCaptureBundle({
+      title: "AEONTHRA Demo Textbook",
+      text: createDemoSourceText(),
+      format: "text"
+    });
+    const mergedBundle = mergeSourceBundles(canvasBundle, textbookBundle)!;
+    const learningBundle = buildLearningBundleWithProgress(mergedBundle);
+    const progress = createEmptyProgress();
+    const legacySerialized = {
+      canvasBundle,
+      textbookBundle,
+      mergedBundle,
+      learningBundle,
+      progress: {
+        conceptMastery: progress.conceptMastery,
+        chapterCompletion: progress.chapterCompletion,
+        goalCompletion: progress.goalCompletion,
+        practiceMode: false
+      }
+    };
+    const legacyPayload = {
+      schemaVersion: learningBundle.schemaVersion,
+      exportedAt: "2026-04-16T00:00:00.000Z",
+      title: mergedBundle.title,
+      ...legacySerialized
+    };
+
+    const raw = JSON.stringify({
+      ...legacyPayload,
+      deterministicHash: stableHash(JSON.stringify(legacySerialized))
+    });
+    const parsed = parseOfflineSiteBundle(raw);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.notes).toBe("");
   });
 });

@@ -7,24 +7,6 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(currentDir, "..");
 const outDir = resolve(extensionRoot, "dist");
 
-const generatedArtifacts = [
-  "service-worker.js",
-  "content-canvas.js",
-  "content-bridge.js",
-  "popup.js",
-  "side-panel.js",
-  "options.js",
-  "popup.html",
-  "side-panel.html",
-  "options.html",
-  "global.css",
-  "tokens.css",
-  "popup.css",
-  "side-panel.css",
-  "options.css",
-  "icon.ico"
-];
-
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 
@@ -94,9 +76,3 @@ await Promise.all([
   copyFile(resolve(extensionRoot, "src/styles/tokens.css"), resolve(outDir, "tokens.css")),
   copyFile(resolve(extensionRoot, "public/icon.ico"), resolve(outDir, "icon.ico"))
 ]);
-
-await Promise.all(
-  generatedArtifacts.map((filename) =>
-    copyFile(resolve(outDir, filename), resolve(extensionRoot, filename))
-  )
-);
