@@ -4,7 +4,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../../../node_modules/zod/v3/external.js
+// ../../node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -116,7 +116,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../../../../node_modules/zod/v3/helpers/util.js
+// ../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -250,7 +250,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../../../../node_modules/zod/v3/ZodError.js
+// ../../node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -368,7 +368,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../../../../node_modules/zod/v3/locales/en.js
+// ../../node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -471,7 +471,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../../../../node_modules/zod/v3/errors.js
+// ../../node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -480,7 +480,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../../../../node_modules/zod/v3/helpers/parseUtil.js
+// ../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -590,14 +590,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../../../../node_modules/zod/v3/helpers/errorUtil.js
+// ../../node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../../../../node_modules/zod/v3/types.js
+// ../../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -4445,6 +4445,7 @@ var SETTINGS_FALLBACK_KEY = "aeonthra:settings:local";
 var RUNTIME_KEY = "aeonthra:runtime";
 var HISTORY_KEY = "aeonthra:history";
 var PENDING_BUNDLE_KEY = "aeonthra:pending-bundle";
+var SESSION_STATES_KEY = "aeonthra:sessions";
 var QUOTA_BYTES = 100 * 1024 * 1024;
 function storageGet(area, keys) {
   return new Promise((resolve, reject) => {
@@ -4497,17 +4498,11 @@ function storageRemove(area, keys) {
 var DEFAULT_SETTINGS = {
   defaultMode: "learning",
   requestDelay: 650,
-  autoExpand: true,
-  includeFileMetadata: true,
   autoHandoff: false,
   autoDeleteAfterImport: true,
   maxRetries: 3,
   retryBackoffMs: 1200,
-  aeonthraUrl: "https://aeonthra.github.io/aeonthra/",
-  concurrentTabs: 1,
-  excludeModuleItemTypes: ["external-tool"],
-  theme: "default",
-  reduceMotion: false
+  aeonthraUrl: "https://aeonthra.github.io/aeonthra/"
 };
 var EMPTY_RUNTIME_STATE = {
   status: "idle",
@@ -4534,26 +4529,75 @@ var EMPTY_RUNTIME_STATE = {
 function captureRecordKey(id) {
   return `aeonthra:capture:${id}`;
 }
+function sessionKeyForCourse(course) {
+  return `${course.origin}::${course.courseId}`;
+}
 function byteSize(value) {
   return new Blob([JSON.stringify(value)]).size;
+}
+function normalizeSettings(value) {
+  const next = value && typeof value === "object" ? value : {};
+  return {
+    defaultMode: next.defaultMode === "complete" ? "complete" : DEFAULT_SETTINGS.defaultMode,
+    requestDelay: typeof next.requestDelay === "number" ? next.requestDelay : DEFAULT_SETTINGS.requestDelay,
+    autoHandoff: typeof next.autoHandoff === "boolean" ? next.autoHandoff : DEFAULT_SETTINGS.autoHandoff,
+    autoDeleteAfterImport: typeof next.autoDeleteAfterImport === "boolean" ? next.autoDeleteAfterImport : DEFAULT_SETTINGS.autoDeleteAfterImport,
+    maxRetries: typeof next.maxRetries === "number" ? next.maxRetries : DEFAULT_SETTINGS.maxRetries,
+    retryBackoffMs: typeof next.retryBackoffMs === "number" ? next.retryBackoffMs : DEFAULT_SETTINGS.retryBackoffMs,
+    aeonthraUrl: typeof next.aeonthraUrl === "string" && next.aeonthraUrl.trim().length > 0 ? next.aeonthraUrl : DEFAULT_SETTINGS.aeonthraUrl
+  };
+}
+function normalizeSessionStateMap(value) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(([, state]) => state && typeof state === "object" && state.course && state.bundle)
+  );
+}
+function baseSessionBundle(course, observedAt) {
+  return {
+    ...createEmptyBundle(course.courseName || "AEONTHRA Session"),
+    source: "extension-capture",
+    title: course.courseName || "AEONTHRA Session",
+    capturedAt: observedAt
+  };
+}
+function summarizeSession(state) {
+  const latestItem = state.bundle.items[state.bundle.items.length - 1];
+  return {
+    sessionKey: state.sessionKey,
+    origin: state.course.origin,
+    courseId: state.course.courseId,
+    courseName: state.course.courseName,
+    sourceHost: state.course.host,
+    firstSeenAt: state.firstSeenAt,
+    lastSeenAt: state.lastSeenAt,
+    itemCount: state.bundle.items.length,
+    resourceCount: state.bundle.resources.length,
+    warningCount: state.warnings.length,
+    sourceTabIds: state.sourceTabIds,
+    latestItemTitle: latestItem?.title ?? state.course.courseName
+  };
 }
 async function readSettings() {
   try {
     const stored = await storageGet(chrome.storage.sync, SETTINGS_KEY);
     if (stored[SETTINGS_KEY]) {
-      return { ...DEFAULT_SETTINGS, ...stored[SETTINGS_KEY] };
+      return normalizeSettings(stored[SETTINGS_KEY]);
     }
   } catch {
   }
   const fallback = await storageGet(chrome.storage.local, SETTINGS_FALLBACK_KEY);
-  return { ...DEFAULT_SETTINGS, ...fallback[SETTINGS_FALLBACK_KEY] };
+  return normalizeSettings(fallback[SETTINGS_FALLBACK_KEY]);
 }
 async function writeSettings(settings) {
+  const normalized = normalizeSettings(settings);
   const writes = [
-    storageSet(chrome.storage.local, { [SETTINGS_FALLBACK_KEY]: settings })
+    storageSet(chrome.storage.local, { [SETTINGS_FALLBACK_KEY]: normalized })
   ];
   try {
-    writes.push(storageSet(chrome.storage.sync, { [SETTINGS_KEY]: settings }));
+    writes.push(storageSet(chrome.storage.sync, { [SETTINGS_KEY]: normalized }));
   } catch {
   }
   await Promise.allSettled(writes);
@@ -4561,6 +4605,74 @@ async function writeSettings(settings) {
 async function readRuntimeState() {
   const stored = await storageGet(chrome.storage.local, RUNTIME_KEY);
   return { ...EMPTY_RUNTIME_STATE, ...stored[RUNTIME_KEY] };
+}
+async function readSessionStates() {
+  const stored = await storageGet(chrome.storage.local, SESSION_STATES_KEY);
+  return normalizeSessionStateMap(stored[SESSION_STATES_KEY]);
+}
+async function readSessionState(target) {
+  const states = await readSessionStates();
+  const key = typeof target === "string" ? target : sessionKeyForCourse(target);
+  return states[key] ?? null;
+}
+async function readSessionSummary(target) {
+  const state = await readSessionState(target);
+  return state ? summarizeSession(state) : null;
+}
+async function writeSessionStates(states) {
+  await storageSet(chrome.storage.local, { [SESSION_STATES_KEY]: states });
+}
+async function clearSessionState(target) {
+  const states = await readSessionStates();
+  const key = typeof target === "string" ? target : sessionKeyForCourse(target);
+  if (!(key in states)) {
+    return;
+  }
+  delete states[key];
+  if (Object.keys(states).length === 0) {
+    await storageRemove(chrome.storage.local, SESSION_STATES_KEY);
+    return;
+  }
+  await writeSessionStates(states);
+}
+async function upsertSessionObservation(observation) {
+  const key = sessionKeyForCourse(observation.course);
+  const states = await readSessionStates();
+  const current = states[key];
+  const warningKey = (warning) => `${warning.url}::${warning.message}`;
+  const nextWarnings = [
+    ...current?.warnings ?? [],
+    ...observation.warning ? [observation.warning] : []
+  ].filter((warning, index, warnings) => warnings.findIndex((entry) => warningKey(entry) === warningKey(warning)) === index).slice(-30);
+  const nextSourceTabs = Array.from(
+    /* @__PURE__ */ new Set(
+      [
+        ...current?.sourceTabIds ?? [],
+        ...typeof observation.sourceTabId === "number" ? [observation.sourceTabId] : []
+      ]
+    )
+  ).slice(-8);
+  const nextBundle = observation.item ? mergeCaptureBundle(current?.bundle ?? baseSessionBundle(observation.course, observation.observedAt), observation.item, observation.resources) : {
+    ...current?.bundle ?? baseSessionBundle(observation.course, observation.observedAt),
+    title: observation.course.courseName
+  };
+  const nextState = {
+    sessionKey: key,
+    course: observation.course,
+    bundle: {
+      ...nextBundle,
+      title: observation.course.courseName,
+      source: "extension-capture",
+      capturedAt: observation.observedAt
+    },
+    warnings: nextWarnings,
+    firstSeenAt: current?.firstSeenAt ?? observation.observedAt,
+    lastSeenAt: observation.observedAt,
+    sourceTabIds: nextSourceTabs
+  };
+  states[key] = nextState;
+  await writeSessionStates(states);
+  return nextState;
 }
 async function writeRuntimeState(state) {
   await storageSet(chrome.storage.local, { [RUNTIME_KEY]: state });
@@ -4628,11 +4740,10 @@ async function upsertHistory(record) {
   };
   const nextHistory = [summary, ...history.filter((entry) => entry.id !== record.id)].slice(0, 20);
   await Promise.all([writeCaptureRecord(record), writeHistorySummaries(nextHistory)]);
-  if (history.length >= 20) {
-    const removed = history.slice(19);
-    if (removed.length > 0) {
-      await storageRemove(chrome.storage.local, removed.map((entry) => captureRecordKey(entry.id)));
-    }
+  const retainedIds = new Set(nextHistory.map((entry) => entry.id));
+  const removedKeys = history.filter((entry) => !retainedIds.has(entry.id)).map((entry) => captureRecordKey(entry.id));
+  if (removedKeys.length > 0) {
+    await storageRemove(chrome.storage.local, removedKeys);
   }
 }
 async function deleteCaptureRecord(id) {
@@ -4649,6 +4760,7 @@ async function clearAllCaptures() {
     ...keys,
     HISTORY_KEY,
     PENDING_BUNDLE_KEY,
+    SESSION_STATES_KEY,
     "aeonthra:partial-bundle",
     "aeonthra:partial-warnings",
     "aeonthra:partial-raw-html"
@@ -4670,6 +4782,7 @@ async function latestCaptureId() {
 }
 async function estimateStorageUsage() {
   const history = await readHistorySummaries();
+  const sessions = await readSessionStates();
   let usedBytes = byteSize(history);
   for (const entry of history) {
     const record = await readCaptureRecord(entry.id);
@@ -4677,10 +4790,72 @@ async function estimateStorageUsage() {
       usedBytes += byteSize(record);
     }
   }
+  usedBytes += byteSize(sessions);
   return {
     usedBytes,
     quotaBytes: QUOTA_BYTES
   };
+}
+
+// src/core/platform.ts
+var COURSE_PATH_RE = /\/courses\/(\d+)(?:[/?#]|$)/i;
+var BRIDGE_HOST_PATTERNS = [
+  /(^|\.)github\.io$/i
+];
+var BRIDGE_URL_REQUIREMENT = "Direct handoff requires a GitHub Pages URL or a local URL on http://localhost/* or http://127.0.0.1/*.";
+function extractCourseId(pathname) {
+  return pathname.match(COURSE_PATH_RE)?.[1] ?? null;
+}
+function isKnownCanvasHost(hostname) {
+  return /(^|\.)instructure\.com$/i.test(hostname) || /^canvas\./i.test(hostname) || /\.canvas\./i.test(hostname);
+}
+function parseCourseContextFromUrl(urlValue, title = "Canvas Course", options = {}) {
+  if (!urlValue) {
+    return null;
+  }
+  try {
+    const url = new URL(urlValue);
+    if (options.requireKnownCanvasHost && !isKnownCanvasHost(url.hostname)) {
+      return null;
+    }
+    const courseId = extractCourseId(url.pathname);
+    if (!courseId) {
+      return null;
+    }
+    const courseName = title.split("|")[0].trim() || `Course ${courseId}`;
+    return {
+      courseId,
+      courseName,
+      origin: url.origin,
+      courseUrl: `${url.origin}/courses/${courseId}`,
+      modulesUrl: `${url.origin}/courses/${courseId}/modules`,
+      host: url.host
+    };
+  } catch {
+    return null;
+  }
+}
+function validateAeonthraUrl(value) {
+  try {
+    const url = new URL(value.trim());
+    const isLocalHost = url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    const isGitHubPages = url.protocol === "https:" && BRIDGE_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname));
+    if (!isLocalHost && !isGitHubPages) {
+      return {
+        ok: false,
+        message: BRIDGE_URL_REQUIREMENT
+      };
+    }
+    return {
+      ok: true,
+      normalizedUrl: url.toString()
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "AEONTHRA Classroom URL must be a valid absolute URL."
+    };
+  }
 }
 
 // src/service-worker.ts
@@ -4898,33 +5073,6 @@ var jobCounter = 0;
 function randomJobId() {
   return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
 }
-function parseCourseContextFromUrl(urlValue, title = "Canvas Course") {
-  if (!urlValue) {
-    return null;
-  }
-  try {
-    const url = new URL(urlValue);
-    const match = url.pathname.match(/\/courses\/(\d+)/);
-    if (!match) {
-      return null;
-    }
-    const courseId = match[1];
-    const courseName = title.split("|")[0].trim() || `Course ${courseId}`;
-    return {
-      courseId,
-      courseName,
-      origin: url.origin,
-      courseUrl: `${url.origin}/courses/${courseId}`,
-      modulesUrl: `${url.origin}/courses/${courseId}/modules`,
-      host: url.host
-    };
-  } catch {
-    return null;
-  }
-}
-function isCanvasUrl(urlValue) {
-  return Boolean(parseCourseContextFromUrl(urlValue));
-}
 async function activeTab() {
   const [tab] = await tabsQuery({ active: true, currentWindow: true });
   return tab ?? null;
@@ -4953,10 +5101,18 @@ async function sendCanvasMessage(tabId, payload) {
   return tabsSendMessage(tabId, payload);
 }
 async function detectCourseContext(tab) {
-  if (!tab?.id || !isCanvasUrl(tab.url)) {
+  if (!tab?.id) {
     return null;
   }
-  const fallback = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course");
+  const candidate = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
+    requireKnownCanvasHost: false
+  });
+  if (!candidate) {
+    return null;
+  }
+  const fallback = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
   try {
     const response = await sendCanvasMessage(tab.id, { type: "aeon:get-course-context" });
     if (response?.ok && response.course) {
@@ -4988,6 +5144,9 @@ async function updateRuntime(patch) {
   await broadcastOverlay(next);
   return next;
 }
+function runtimeIsBusy(runtime) {
+  return ["starting", "discovering", "capturing", "paused"].includes(runtime.status);
+}
 async function buildStatusPayload() {
   const tab = await activeTab();
   const [course, runtime, settings, history, latestId, storage] = await Promise.all([
@@ -4998,6 +5157,7 @@ async function buildStatusPayload() {
     latestCaptureId(),
     estimateStorageUsage()
   ]);
+  const session = await readSessionSummary(course ?? runtime.course ?? "").catch(() => null);
   return {
     ok: true,
     activeCourse: course,
@@ -5005,7 +5165,8 @@ async function buildStatusPayload() {
     settings,
     history,
     latestCaptureId: latestId,
-    storage
+    storage,
+    session
   };
 }
 async function openOrFocusWorkspace(workspaceUrl) {
@@ -5042,13 +5203,128 @@ async function requestWorkspaceImport(tabId) {
 }
 async function queueBundleForWorkspace(bundle) {
   const settings = await readSettings();
+  const validatedUrl = validateAeonthraUrl(settings.aeonthraUrl);
+  if (!validatedUrl.ok) {
+    throw new Error(validatedUrl.message);
+  }
   await writePendingBundle(bundle);
-  const tab = await openOrFocusWorkspace(settings.aeonthraUrl);
+  const tab = await openOrFocusWorkspace(validatedUrl.normalizedUrl);
   const bridgeReady = tab.id ? await requestWorkspaceImport(tab.id) : false;
   return {
     bridgeReady,
     queuedPackId: captureBundleId(bundle)
   };
+}
+async function openWorkspaceOnly() {
+  const settings = await readSettings();
+  const validatedUrl = validateAeonthraUrl(settings.aeonthraUrl);
+  if (!validatedUrl.ok) {
+    return { ok: false, message: validatedUrl.message };
+  }
+  await openOrFocusWorkspace(validatedUrl.normalizedUrl);
+  return { ok: true };
+}
+function buildStoredRecordFromSession(session) {
+  const durationMs = Math.max(0, Date.parse(session.lastSeenAt) - Date.parse(session.firstSeenAt));
+  const title = `${session.course.courseName} Visited Session`;
+  const provisional = {
+    ...session.bundle,
+    source: "extension-capture",
+    title,
+    capturedAt: session.lastSeenAt,
+    captureMeta: {
+      mode: "learning",
+      courseId: session.course.courseId,
+      courseName: session.course.courseName,
+      sourceHost: session.course.host,
+      stats: {
+        totalItemsVisited: session.bundle.items.length,
+        totalItemsCaptured: session.bundle.items.length,
+        totalItemsSkipped: 0,
+        totalItemsFailed: 0,
+        durationMs,
+        sizeBytes: 0
+      },
+      warnings: session.warnings
+    }
+  };
+  const sizeBytes = new Blob([JSON.stringify(provisional)]).size;
+  const finalized = {
+    ...provisional,
+    captureMeta: {
+      ...provisional.captureMeta,
+      stats: {
+        ...provisional.captureMeta.stats,
+        sizeBytes
+      }
+    }
+  };
+  return {
+    id: captureBundleId(finalized),
+    title,
+    capturedAt: finalized.capturedAt,
+    courseId: session.course.courseId,
+    courseName: session.course.courseName,
+    mode: "learning",
+    sizeBytes,
+    stats: finalized.captureMeta.stats,
+    warnings: session.warnings,
+    bundle: finalized
+  };
+}
+function explicitSessionTarget(message) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const candidate = message;
+  return typeof candidate.origin === "string" && typeof candidate.courseId === "string" ? { origin: candidate.origin, courseId: candidate.courseId } : null;
+}
+async function resolveSessionTarget(message) {
+  const explicit = explicitSessionTarget(message);
+  if (explicit) {
+    return explicit;
+  }
+  const runtime = await readRuntimeState();
+  if (runtime.course) {
+    return {
+      origin: runtime.course.origin,
+      courseId: runtime.course.courseId
+    };
+  }
+  const tab = await activeTab();
+  const course = await detectCourseContext(tab);
+  if (!course) {
+    return null;
+  }
+  return {
+    origin: course.origin,
+    courseId: course.courseId
+  };
+}
+async function saveSessionCapture(target) {
+  if (!target) {
+    return { ok: false, message: "Open a Canvas course with a visited session before saving it." };
+  }
+  const session = await readSessionState(target);
+  if (!session || session.bundle.items.length === 0) {
+    return { ok: false, message: "No visited session pages are available to save yet." };
+  }
+  const record = buildStoredRecordFromSession(session);
+  await upsertHistory(record);
+  await clearSessionState(session.sessionKey);
+  return {
+    ok: true,
+    captureId: record.id,
+    title: record.title,
+    itemCount: record.bundle.items.length
+  };
+}
+async function clearSessionCapture(target) {
+  if (!target) {
+    return { ok: false, message: "No active course session is available to clear." };
+  }
+  await clearSessionState(target);
+  return { ok: true };
 }
 async function finalizeCapture(jobId, mode, course, stats, cancelled = false) {
   const runtime = await readRuntimeState();
@@ -5107,7 +5383,15 @@ async function finalizeCapture(jobId, mode, course, stats, cancelled = false) {
   });
   const settings = await readSettings();
   if (!cancelled && settings.autoHandoff) {
-    await queueBundleForWorkspace(finalized);
+    try {
+      await queueBundleForWorkspace(finalized);
+    } catch (error) {
+      await updateRuntime({
+        status: "completed",
+        phaseLabel: "Capture Saved",
+        errorMessage: error instanceof Error ? error.message : "Auto handoff could not start."
+      });
+    }
   }
 }
 async function startCapture(mode) {
@@ -5240,8 +5524,15 @@ async function openClassroom(captureId) {
   if (!record) {
     return { ok: false, message: "That capture no longer exists in history." };
   }
-  const result = await queueBundleForWorkspace(record.bundle);
-  return { ok: true, bridgeReady: result.bridgeReady };
+  try {
+    const result = await queueBundleForWorkspace(record.bundle);
+    return { ok: true, bridgeReady: result.bridgeReady };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Unable to open AEONTHRA Classroom."
+    };
+  }
 }
 async function handleContentProgress(message) {
   const runtime = await readRuntimeState();
@@ -5354,8 +5645,6 @@ globalThis.addEventListener("unhandledrejection", (event) => {
 async function getExtensionState() {
   const [tab] = await tabsQuery({ active: true, currentWindow: true });
   const url = tab?.url || "";
-  const isCanvas = /instructure\.com|canvas\./i.test(url);
-  const courseMatch = url.match(/\/courses\/(\d+)/);
   const courseName = tab?.title?.replace(/\s*-\s*Canvas.*$/i, "").trim() || "";
   let fallbackHistory = [];
   try {
@@ -5370,6 +5659,7 @@ async function getExtensionState() {
     const history = await readHistorySummaries().catch(() => fallbackHistory);
     const fallbackLatestCaptureId = await latestCaptureId().catch(() => null);
     const storage = await estimateStorageUsage().catch(() => ({ usedBytes: 0, quotaBytes: 0 }));
+    const session = runtime.course ? await readSessionSummary(runtime.course).catch(() => null) : null;
     return {
       ok: true,
       activeCourse: null,
@@ -5377,16 +5667,20 @@ async function getExtensionState() {
       settings,
       history,
       latestCaptureId: fallbackLatestCaptureId,
-      storage
+      storage,
+      session
     };
   });
-  const activeCourse = courseMatch ? status.activeCourse ?? parseCourseContextFromUrl(url, courseName || `Course ${courseMatch[1]}`) ?? null : null;
+  const fallbackCourse = parseCourseContextFromUrl(url, courseName || "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
+  const activeCourse = status.activeCourse ?? fallbackCourse;
   return {
     ...status,
     activeCourse,
-    state: isCanvas && courseMatch ? "course-detected" : "idle",
-    isCanvas,
-    courseId: courseMatch?.[1] || null,
+    state: activeCourse ? "course-detected" : "idle",
+    isCanvas: Boolean(activeCourse),
+    courseId: activeCourse?.courseId ?? null,
     courseName: activeCourse?.courseName || courseName,
     url,
     tabId: tab?.id || null,
@@ -5401,6 +5695,28 @@ async function handleMessage(message, sender) {
   if (type.startsWith("aeon:job-")) {
     await handleContentProgress(message);
     return { state: "ok" };
+  }
+  if (type === "aeon:session-observe-page") {
+    const runtime = await readRuntimeState();
+    if (runtimeIsBusy(runtime)) {
+      return { ok: true, ignored: true };
+    }
+    const observation = message;
+    if (!observation.course || typeof observation.course.courseId !== "string" || typeof observation.course.origin !== "string") {
+      return { ok: false, message: "Session observation was missing a valid course." };
+    }
+    if (!observation.item && !observation.warning) {
+      return { ok: true, ignored: true };
+    }
+    await upsertSessionObservation({
+      course: observation.course,
+      item: observation.item ?? null,
+      resources: Array.isArray(observation.resources) ? observation.resources : [],
+      warning: observation.warning,
+      observedAt: typeof observation.observedAt === "string" ? observation.observedAt : (/* @__PURE__ */ new Date()).toISOString(),
+      sourceTabId: sender.tab?.id ?? null
+    });
+    return { ok: true };
   }
   if (type === "GET_STATE" || type === "aeon:get-extension-state" || type === "getState") {
     return await getExtensionState();
@@ -5446,11 +5762,31 @@ async function handleMessage(message, sender) {
   if (type === "aeon:download-capture") {
     return downloadCapture(message.captureId ?? null);
   }
+  if (type === "aeon:save-session-capture") {
+    return saveSessionCapture(await resolveSessionTarget(message));
+  }
+  if (type === "aeon:clear-session") {
+    return clearSessionCapture(await resolveSessionTarget(message));
+  }
   if (type === "HANDOFF" || type === "aeon:open-classroom") {
     return openClassroom(message.captureId ?? null);
   }
+  if (type === "aeon:open-workspace") {
+    return openWorkspaceOnly();
+  }
   if (type === "aeon:update-settings") {
-    const settings = { ...await readSettings(), ...message.settings ?? {} };
+    const nextPartial = message.settings ?? {};
+    const currentSettings = await readSettings();
+    const rawAeonthraUrl = typeof nextPartial.aeonthraUrl === "string" ? nextPartial.aeonthraUrl : currentSettings.aeonthraUrl;
+    const validatedUrl = validateAeonthraUrl(rawAeonthraUrl);
+    if (!validatedUrl.ok) {
+      return { ok: false, message: validatedUrl.message };
+    }
+    const settings = {
+      ...currentSettings,
+      ...nextPartial,
+      aeonthraUrl: validatedUrl.normalizedUrl
+    };
     await writeSettings(settings);
     return { ok: true };
   }

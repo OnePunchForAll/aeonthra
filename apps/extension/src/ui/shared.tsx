@@ -109,7 +109,7 @@ export function Button(
 }
 
 export function Progress({ value }: { value: number }) {
-  const safe = Math.max(0, Math.min(100, value));
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   return (
     <div className="ae-progress" aria-hidden="true">
       <div className="ae-progress__fill" style={{ width: `${safe}%` }} />
@@ -137,16 +137,16 @@ export function ModeCard({
 }) {
   const descriptor = mode === "complete"
     ? {
-        icon: "📦",
+        icon: "FULL",
         title: "Complete Snapshot",
         body: "Archive the whole course with raw HTML, metadata, files, discussions, and the broadest recovery path.",
-        meta: "Large output · slower capture · backup-grade"
+        meta: "Large output - slower capture - backup-grade"
       }
     : {
-        icon: "⚡",
+        icon: "FAST",
         title: "Learning Content Only",
         body: "Strip Canvas chrome, keep meaningful teaching text, and build the cleanest forge-ready AEONTHRA bundle.",
-        meta: "Smaller output · faster capture · recommended"
+        meta: "Smaller output - faster capture - recommended"
       };
 
   return (

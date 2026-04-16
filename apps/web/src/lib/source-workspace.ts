@@ -80,7 +80,8 @@ export function splitLegacyBundle(bundle: CaptureBundle | null): SourceWorkspace
       {
         ...bundle,
         source: "manual-import",
-        title: textbookItems[0]?.headingTrail[0] ?? textbookItems[0]?.title ?? "Imported Textbook"
+        title: textbookItems[0]?.headingTrail[0] ?? textbookItems[0]?.title ?? "Imported Textbook",
+        captureMeta: undefined
       },
       textbookItems
     )
@@ -135,14 +136,31 @@ function normalizedCourseIdentity(bundle: CaptureBundle | null): string {
   if (courseId) {
     return courseId;
   }
-  return bundle.title.trim().toLowerCase().replace(/\s+/g, " ");
+  return "";
+}
+
+export function isCanvasCaptureBundle(bundle: CaptureBundle | null): boolean {
+  if (!bundle) {
+    return false;
+  }
+
+  if (bundle.source !== "extension-capture") {
+    return false;
+  }
+
+  return bundle.items.some((item) => !isTextbookItem(item));
 }
 
 export function isSameCourse(left: CaptureBundle | null, right: CaptureBundle | null): boolean {
   if (!left || !right) {
     return false;
   }
-  return normalizedCourseIdentity(left) === normalizedCourseIdentity(right);
+  const leftIdentity = normalizedCourseIdentity(left);
+  const rightIdentity = normalizedCourseIdentity(right);
+  if (!leftIdentity || !rightIdentity) {
+    return false;
+  }
+  return leftIdentity === rightIdentity;
 }
 
 export function determineAppStage(input: {

@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../../../../node_modules/react/cjs/react.development.js
+// ../../node_modules/react/cjs/react.development.js
 var require_react_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react.development.js"(exports, module) {
+  "../../node_modules/react/cjs/react.development.js"(exports, module) {
     "use strict";
     if (true) {
       (function() {
@@ -1898,9 +1898,9 @@ var require_react_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/index.js
+// ../../node_modules/react/index.js
 var require_react = __commonJS({
-  "../../../../../node_modules/react/index.js"(exports, module) {
+  "../../node_modules/react/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -1910,9 +1910,9 @@ var require_react = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/cjs/scheduler.development.js
+// ../../node_modules/scheduler/cjs/scheduler.development.js
 var require_scheduler_development = __commonJS({
-  "../../../../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
+  "../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -2360,9 +2360,9 @@ var require_scheduler_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/index.js
+// ../../node_modules/scheduler/index.js
 var require_scheduler = __commonJS({
-  "../../../../../node_modules/scheduler/index.js"(exports, module) {
+  "../../node_modules/scheduler/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -2372,9 +2372,9 @@ var require_scheduler = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/cjs/react-dom.development.js
+// ../../node_modules/react-dom/cjs/react-dom.development.js
 var require_react_dom_development = __commonJS({
-  "../../../../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
+  "../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -23536,9 +23536,9 @@ var require_react_dom_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/index.js
+// ../../node_modules/react-dom/index.js
 var require_react_dom = __commonJS({
-  "../../../../../node_modules/react-dom/index.js"(exports, module) {
+  "../../node_modules/react-dom/index.js"(exports, module) {
     "use strict";
     if (false) {
       checkDCE();
@@ -23549,9 +23549,9 @@ var require_react_dom = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/client.js
+// ../../node_modules/react-dom/client.js
 var require_client = __commonJS({
-  "../../../../../node_modules/react-dom/client.js"(exports) {
+  "../../node_modules/react-dom/client.js"(exports) {
     "use strict";
     var m = require_react_dom();
     if (false) {
@@ -23580,9 +23580,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/cjs/react-jsx-runtime.development.js
+// ../../node_modules/react/cjs/react-jsx-runtime.development.js
 var require_react_jsx_runtime_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
+  "../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -24473,9 +24473,9 @@ var require_react_jsx_runtime_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/jsx-runtime.js
+// ../../node_modules/react/jsx-runtime.js
 var require_jsx_runtime = __commonJS({
-  "../../../../../node_modules/react/jsx-runtime.js"(exports, module) {
+  "../../node_modules/react/jsx-runtime.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -24488,6 +24488,9 @@ var require_jsx_runtime = __commonJS({
 // src/options.tsx
 var import_react2 = __toESM(require_react(), 1);
 var import_client = __toESM(require_client(), 1);
+
+// src/core/platform.ts
+var BRIDGE_URL_REQUIREMENT = "Direct handoff requires a GitHub Pages URL or a local URL on http://localhost/* or http://127.0.0.1/*.";
 
 // src/ui/shared.tsx
 var import_react = __toESM(require_react(), 1);
@@ -24565,7 +24568,7 @@ function Button({ children, variant = "primary", disabled, ...props }) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { ...props, disabled, className: `ae-btn ae-btn--${variant}`.trim(), children });
 }
 function Progress({ value }) {
-  const safe = Math.max(0, Math.min(100, value));
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ae-progress", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ae-progress__fill", style: { width: `${safe}%` } }) });
 }
 function useEditableSettings(state) {
@@ -24600,8 +24603,8 @@ function OptionsApp() {
     if (!draft) {
       return;
     }
-    await sendExtensionMessage({ type: "aeon:update-settings", settings: draft });
-    setStatusText("Settings saved.");
+    const response = await sendExtensionMessage({ type: "aeon:update-settings", settings: draft });
+    setStatusText(response.ok ? "Settings saved." : response.message ?? "Settings could not be saved.");
   };
   const clearCaptures = async () => {
     await sendExtensionMessage({ type: "aeon:clear-captures" });
@@ -24633,14 +24636,6 @@ function OptionsApp() {
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { type: "range", min: "400", max: "1200", step: "50", value: draft.requestDelay, onChange: (event) => setDraft({ ...draft, requestDelay: Number(event.target.value) }) })
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { className: "toggle", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { type: "checkbox", checked: draft.autoExpand, onChange: (event) => setDraft({ ...draft, autoExpand: event.target.checked }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "Auto-expand hidden content when AEONTHRA can reach it" })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { className: "toggle", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { type: "checkbox", checked: draft.includeFileMetadata, onChange: (event) => setDraft({ ...draft, includeFileMetadata: event.target.checked }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "Include file metadata in course captures" })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { className: "toggle", children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { type: "checkbox", checked: draft.autoHandoff, onChange: (event) => setDraft({ ...draft, autoHandoff: event.target.checked }) }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "Open AEONTHRA automatically after capture completes" })
             ] }),
@@ -24655,10 +24650,7 @@ function OptionsApp() {
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "AEONTHRA Classroom URL" }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { value: draft.aeonthraUrl, onChange: (event) => setDraft({ ...draft, aeonthraUrl: event.target.value }) })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { className: "toggle", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("input", { type: "checkbox", checked: draft.reduceMotion, onChange: (event) => setDraft({ ...draft, reduceMotion: event.target.checked }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: "Respect reduced motion inside the extension UI" })
-            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "ae-copy", children: BRIDGE_URL_REQUIREMENT }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("label", { className: "field", children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { children: [
                 "Retry backoff (",
@@ -24671,7 +24663,7 @@ function OptionsApp() {
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Card, { accent: "gold", children: [
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ae-card__title", children: "Storage" }),
             state ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Progress, { value: state.storage.usedBytes / state.storage.quotaBytes * 100 }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Progress, { value: state.storage.quotaBytes > 0 ? state.storage.usedBytes / state.storage.quotaBytes * 100 : 0 }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "ae-copy", children: [
                 formatBytes(state.storage.usedBytes),
                 " used of ",

@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../../../../node_modules/react/cjs/react.development.js
+// ../../node_modules/react/cjs/react.development.js
 var require_react_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react.development.js"(exports, module) {
+  "../../node_modules/react/cjs/react.development.js"(exports, module) {
     "use strict";
     if (true) {
       (function() {
@@ -1898,9 +1898,9 @@ var require_react_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/index.js
+// ../../node_modules/react/index.js
 var require_react = __commonJS({
-  "../../../../../node_modules/react/index.js"(exports, module) {
+  "../../node_modules/react/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -1910,9 +1910,9 @@ var require_react = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/cjs/scheduler.development.js
+// ../../node_modules/scheduler/cjs/scheduler.development.js
 var require_scheduler_development = __commonJS({
-  "../../../../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
+  "../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -2360,9 +2360,9 @@ var require_scheduler_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/index.js
+// ../../node_modules/scheduler/index.js
 var require_scheduler = __commonJS({
-  "../../../../../node_modules/scheduler/index.js"(exports, module) {
+  "../../node_modules/scheduler/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -2372,9 +2372,9 @@ var require_scheduler = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/cjs/react-dom.development.js
+// ../../node_modules/react-dom/cjs/react-dom.development.js
 var require_react_dom_development = __commonJS({
-  "../../../../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
+  "../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -23536,9 +23536,9 @@ var require_react_dom_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/index.js
+// ../../node_modules/react-dom/index.js
 var require_react_dom = __commonJS({
-  "../../../../../node_modules/react-dom/index.js"(exports, module) {
+  "../../node_modules/react-dom/index.js"(exports, module) {
     "use strict";
     if (false) {
       checkDCE();
@@ -23549,9 +23549,9 @@ var require_react_dom = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/client.js
+// ../../node_modules/react-dom/client.js
 var require_client = __commonJS({
-  "../../../../../node_modules/react-dom/client.js"(exports) {
+  "../../node_modules/react-dom/client.js"(exports) {
     "use strict";
     var m = require_react_dom();
     if (false) {
@@ -23580,9 +23580,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/cjs/react-jsx-runtime.development.js
+// ../../node_modules/react/cjs/react-jsx-runtime.development.js
 var require_react_jsx_runtime_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
+  "../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -24473,9 +24473,9 @@ var require_react_jsx_runtime_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/jsx-runtime.js
+// ../../node_modules/react/jsx-runtime.js
 var require_jsx_runtime = __commonJS({
-  "../../../../../node_modules/react/jsx-runtime.js"(exports, module) {
+  "../../node_modules/react/jsx-runtime.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -24488,6 +24488,43 @@ var require_jsx_runtime = __commonJS({
 // src/popup.tsx
 var import_react = __toESM(require_react(), 1);
 var import_client = __toESM(require_client(), 1);
+
+// src/core/platform.ts
+var COURSE_PATH_RE = /\/courses\/(\d+)(?:[/?#]|$)/i;
+function extractCourseId(pathname) {
+  return pathname.match(COURSE_PATH_RE)?.[1] ?? null;
+}
+function isKnownCanvasHost(hostname) {
+  return /(^|\.)instructure\.com$/i.test(hostname) || /^canvas\./i.test(hostname) || /\.canvas\./i.test(hostname);
+}
+function parseCourseContextFromUrl(urlValue, title = "Canvas Course", options = {}) {
+  if (!urlValue) {
+    return null;
+  }
+  try {
+    const url = new URL(urlValue);
+    if (options.requireKnownCanvasHost && !isKnownCanvasHost(url.hostname)) {
+      return null;
+    }
+    const courseId = extractCourseId(url.pathname);
+    if (!courseId) {
+      return null;
+    }
+    const courseName = title.split("|")[0].trim() || `Course ${courseId}`;
+    return {
+      courseId,
+      courseName,
+      origin: url.origin,
+      courseUrl: `${url.origin}/courses/${courseId}`,
+      modulesUrl: `${url.origin}/courses/${courseId}/modules`,
+      host: url.host
+    };
+  } catch {
+    return null;
+  }
+}
+
+// src/popup.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
 var RETRYABLE_RUNTIME_ERRORS = [
   "message channel closed",
@@ -24559,20 +24596,19 @@ function createOptionsTab(url) {
     }
   });
 }
-function isCanvasCourseUrl(url) {
-  return Boolean(url && /instructure\.com|canvas\./i.test(url) && /\/courses\/\d+/i.test(url));
-}
 async function detectTabFallback() {
   const tab = await queryActiveTab();
   const url = tab?.url || "";
-  const courseMatch = url.match(/\/courses\/(\d+)/);
   const courseName = tab?.title?.replace(/\s*-\s*Canvas.*$/i, "").trim() || "";
+  const fallbackCourse = parseCourseContextFromUrl(url, courseName || "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
   return {
     ok: true,
-    state: isCanvasCourseUrl(url) ? "course-detected" : "idle",
-    isCanvas: /instructure\.com|canvas\./i.test(url),
-    courseId: courseMatch?.[1] || null,
-    courseName,
+    state: fallbackCourse ? "course-detected" : "idle",
+    isCanvas: Boolean(fallbackCourse),
+    courseId: fallbackCourse?.courseId ?? null,
+    courseName: fallbackCourse?.courseName ?? courseName,
     url,
     tabId: tab?.id ?? null,
     history: []
@@ -24822,7 +24858,7 @@ function Popup() {
                 cursor: "pointer",
                 marginBottom: "10px"
               },
-              children: "\u26A1 CAPTURE ENTIRE COURSE"
+              children: "CAPTURE ENTIRE COURSE"
             }
           ),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -24854,7 +24890,7 @@ function Popup() {
               textAlign: "center"
             },
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: "1.5rem", marginBottom: "12px" }, children: "\u26A1" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: "1.5rem", marginBottom: "12px" }, children: "AE" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { fontSize: "0.85rem", color: "#b0b0d0", lineHeight: 1.6 }, children: "Navigate to any page of a Canvas course and I'll detect it automatically." })
             ]
           }
@@ -24875,7 +24911,7 @@ function Popup() {
               fontSize: "0.6rem",
               letterSpacing: "0.12em"
             },
-            children: "\u2699 OPTIONS"
+            children: "OPTIONS"
           }
         ) })
       ]

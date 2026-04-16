@@ -1,5 +1,95 @@
 # ERROR LEDGER
 
+## 2026-04-15
+
+### [WEB] Reader hints, highlights, and practice CTAs could bind to the wrong concept from a multi-concept reading
+
+**Status**: FIXED
+**Root cause**: the shell carried multiple candidate concept ids on a reading, but the reader/margin UI collapsed them by taking the first matching concept instead of resolving which concept the active section actually supported.
+**Symptom**: section badges, margin hints, saved highlight `conceptId`, mastery bumps, and Practice launches could all point at the wrong concept when overlapping concepts shared broad keywords.
+**Fix**: added a fail-closed dominant-concept resolver keyed to the active section text and routed reader hints/highlights/practice through it instead of `concepts[0]`.
+**Guard**: `apps/web/src/lib/shell-mapper.test.ts`.
+
+### [WEB] Unsolicited bridge packs could overwrite the current workspace
+
+**Status**: FIXED
+**Root cause**: `App.tsx` accepted any schema-valid `NF_PACK_READY` bridge message, even when no import request was active in the current session.
+**Symptom**: a stale or unsolicited extension handoff could replace the active Canvas workspace without the user explicitly requesting an import.
+**Fix**: introduced request-scoped bridge message resolution so `NF_PACK_READY` is ignored unless the request mode is `auto` or `manual`, and import-result handling now clears request state deterministically.
+**Guard**: `apps/web/src/App.test.ts` and `apps/web/src/lib/bridge.test.ts`.
+
+### [PIPELINE] Discussion scaffolds and wrapper variants could crowd out the true academic concept lane
+
+**Status**: FIXED
+**Root cause**: deterministic extraction still treated some discussion scaffolds (`initial post`, `reply to classmates`) and academic wrapper variants (`Overview of X`, `Principles of X`) as separate concept candidates instead of noise or aliases.
+**Symptom**: clone-heavy/admin-heavy captures could surface orientation/forum concepts or duplicate one real topic under several wrapper labels, reducing the quality of the stable concept set.
+**Fix**: added scaffold-label blocking, alias-aware concept dedupe, and broader source-quality/extraction fixtures for thin-discussion, clone-heavy, and full-academic bundle shapes.
+**Guard**: `packages/content-engine/src/golden-fixtures.test.ts`.
+
+### [WEB] Oracle depth panels could still surface negation-only scaffold text
+
+**Status**: FIXED
+**Root cause**: `shell-mapper.ts` filtered negation-only `commonConfusion` text out of the distinction path, but the depth candidate loop still allowed the same scaffold sentence to win when it was present in `primer` or `summary`.
+**Symptom**: concept cards could show a shallow `X is not Y. Keep their main moves separate.` sentence in Going Deeper / Core Idea panels even when a more explanatory sentence existed.
+**Fix**: applied the same negation-only filter in `conceptDepthText()` and added a shell-mapper regression test that verifies richer explanatory text wins instead.
+**Guard**: `apps/web/src/lib/shell-mapper.test.ts`.
+
+### [WEB] Messy textbook imports could still pass as meaningful content after extraction cleanup
+
+**Status**: FIXED
+**Root cause**: the textbook import path rejected completely empty inputs, but it still treated some OCR-heavy or front-matter-heavy extracts as meaningful enough to build a bundle. PDF and DOCX extractors also passed repeated page markers and boilerplate lines through unchanged.
+**Symptom**: OCR-noise-only dumps and front-matter-only extracts could slip through the intake gate, while duplicate page markers and boilerplate clutter made chapter/body extraction noisier than it should be.
+**Fix**: added textbook-import noise filtering for common boilerplate lines and page markers, tightened the meaningful-text threshold, and normalized PDF/DOCX extraction output to strip repeated page markers and front-matter lines before validation.
+**Guard**: `apps/web/src/lib/textbook-import.test.ts`, `apps/web/src/lib/docx-ingest.test.ts`, and `apps/web/src/lib/pdf-ingest.test.ts`.
+
+### [WEB] Canvas intake accepted non-Canvas bundles, textbook extraction could be empty, and notes were global
+
+**Status**: FIXED
+**Root cause**: Step 1 treated any schema-valid `CaptureBundle` as acceptable Canvas course input, textbook bundle creation would happily emit a `manual-import` bundle even when extracted text was effectively empty, note persistence lived in one unscoped local-storage key, and same-course preservation fell back to title-only matching when `courseId` was absent.
+**Symptom**: a manual-import/demo-shaped JSON file could unlock the Canvas gate, blank OCR-less textbook uploads could move the app to synthesis-ready, notes could appear in unrelated restored/demo workspaces, and missing-course-id imports could preserve stale textbooks across different offerings with the same title.
+**Fix**: restricted Canvas intake to real `extension-capture` bundles, rejected empty textbook imports during bundle creation, scoped notes to the synthesized workspace hash, and only preserve textbooks across Canvas imports when both bundles expose the same explicit course id.
+**Guard**: `apps/web/src/lib/source-workspace.test.ts`, `apps/web/src/lib/storage.test.ts`, and `apps/web/src/lib/textbook-import.test.ts`.
+
+### [EXTENSION] Popup copy mojibake and storage meter ratio were still unsafe
+
+**Status**: FIXED
+**Root cause**: the popup still contained mojibake in its CTA copy, and the options storage meter still divided by `quotaBytes` without guarding a zero or invalid quota estimate.
+**Symptom**: the popup rendered broken glyphs in the main action copy, and the settings page could compute a `NaN` storage percentage when Chrome reported zero quota.
+**Fix**: rewrote the popup copy in ASCII, changed the CTA label to a neutral `START CAPTURE`, guarded the settings storage ratio with a zero-quota check, and added a shared progress regression test for invalid values.
+**Guard**: `apps/extension/src/ui/shared.test.tsx`.
+
+### [EXTENSION] Course detection, discovery warnings, and handoff settings overstated what the extension could support
+
+**Status**: FIXED
+**Root cause**: the service worker and content script accepted any `/courses/<id>` URL as a Canvas course when fallback parsing kicked in, paginated discovery fetches suppressed endpoint failures as empty arrays, and the settings UI accepted AEONTHRA classroom URLs on origins where the bridge content script never loads. The extension source tree also still contained a stale popup implementation for the old `capture-selection` / `Done Learning` flow.
+**Symptom**: non-Canvas sites could surface course-capture actions, discovery could "succeed" while silently omitting categories after transient failures, and users could save a handoff URL that would never support direct import even though the UI implied otherwise.
+**Fix**: added shared platform guards for known-host fallback parsing and bridge-supported URL validation, retried thrown network failures in paginated discovery, emitted category warnings when discovery still has to continue without a collection, removed the dead popup source, and wired extension regression tests into root `npm test`.
+**Guard**: `apps/extension/src/core/platform.test.ts`, `docs/extension-handoff.md`, and `.omega/DIAGNOSTIC_PROTOCOL.md`.
+
+### [WEB] Reset Workspace left stale notes/progress behind and offline exports used synthesis time
+
+**Status**: FIXED
+**Root cause**: `resetWorkspace()` in `apps/web/src/App.tsx` only cleared bundle/source-workspace pointers, leaving `learning-freedom:notes` and all `learning-freedom:progress*` keys in local storage. Separately, `createOfflineSiteBundle()` in `apps/web/src/lib/offline-site.ts` populated `exportedAt` from `learningBundle.generatedAt`, which is the synthesis timestamp rather than the download/export time.
+**Symptom**: after Reset Workspace, re-importing the same course could resurrect old notes and mastery state; downloaded replay bundles displayed the synthesis date as if it were the export date.
+**Fix**: added storage helpers to clear notes and all progress scopes, wired Reset Workspace through them, and changed offline bundle creation to stamp `exportedAt` with the current time. Expanded storage regression coverage to lock the reset contract.
+**Guard**: `apps/web/src/lib/storage.test.ts` now verifies note clearing, default-progress clearing, scoped-progress clearing, and unrelated-key preservation.
+
+### [WEB] Legacy source splitting leaked Canvas capture metadata into textbook state
+
+**Status**: FIXED
+**Root cause**: `splitLegacyBundle()` rebuilt textbook bundles from the old merged bundle by spreading the original bundle object and only changing `source`/`title`. That preserved `captureMeta` from the Canvas capture, so textbook state inherited course-specific extension metadata it did not own.
+**Symptom**: legacy storage migration produced textbook bundles labeled as manual imports but still carrying Canvas course metadata, which risked misleading later logic and made the source boundary semantically inconsistent.
+**Fix**: explicitly cleared `captureMeta` on the reconstructed textbook bundle and added regression tests for source-workspace split/merge behavior, offline replay restore helpers, and bridge messaging.
+**Guard**: `apps/web/src/lib/source-workspace.test.ts`, `apps/web/src/lib/offline-site.test.ts`, and `apps/web/src/lib/bridge.test.ts`.
+
+### [MAINTENANCE] Contributor docs and verification drifted from runtime reality
+
+**Status**: FIXED
+**Root cause**: README, architecture docs, truth-boundary docs, and `.omega/TODO_NOW.md` were not updated after the dev-server port, course-capture workflow, and Vitest wiring changed. The web app's storage smoke check lived in `storage.test.mjs` as a standalone script instead of participating in root `npm test`.
+**Symptom**: onboarding pointed contributors to the wrong local URL, described obsolete highlight/visible-page capture behavior, and claimed test alias resolution was still broken even though the current workspace test run passed.
+**Fix**: updated contributor-facing docs to match the current AEONTHRA runtime and course-capture flow; added a naming bridge between AEONTHRA and the OMEGA FORGE codenames; replaced the standalone storage smoke script with a real Vitest workspace test and wired `apps/web` into root `npm test`.
+**Guard**: the verified dev URL and current capture claims now live in the checked-in docs, and root `npm test` exercises the web workspace instead of leaving that smoke coverage out-of-band.
+
 ## 2026-04-13
 
 ### [PIPELINE] Memory hooks exposing internal tokens

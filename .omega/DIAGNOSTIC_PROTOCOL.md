@@ -20,8 +20,8 @@
 
 ## Bridge-specific checks
 
-1. Capture at least one page or highlight in the extension.
-2. Click `Done Learning`.
+1. Run a course capture from the extension popup or side panel.
+2. Open AEONTHRA from the side panel/history, or let auto-handoff launch it.
 3. Confirm the workspace opens and either:
    - auto-imports the queued pack, or
    - leaves the export fallback available.

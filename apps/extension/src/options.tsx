@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BRIDGE_URL_REQUIREMENT } from "./core/platform";
 import { Button, Card, Progress, Shell, formatBytes, sendExtensionMessage, useEditableSettings, useExtensionState } from "./ui/shared";
 import "./styles/global.css";
 
@@ -11,8 +12,8 @@ function OptionsApp() {
     if (!draft) {
       return;
     }
-    await sendExtensionMessage({ type: "aeon:update-settings", settings: draft });
-    setStatusText("Settings saved.");
+    const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({ type: "aeon:update-settings", settings: draft });
+    setStatusText(response.ok ? "Settings saved." : (response.message ?? "Settings could not be saved."));
   };
 
   const clearCaptures = async () => {
@@ -43,14 +44,6 @@ function OptionsApp() {
               <input type="range" min="400" max="1200" step="50" value={draft.requestDelay} onChange={(event) => setDraft({ ...draft, requestDelay: Number(event.target.value) })} />
             </label>
             <label className="toggle">
-              <input type="checkbox" checked={draft.autoExpand} onChange={(event) => setDraft({ ...draft, autoExpand: event.target.checked })} />
-              <span>Auto-expand hidden content when AEONTHRA can reach it</span>
-            </label>
-            <label className="toggle">
-              <input type="checkbox" checked={draft.includeFileMetadata} onChange={(event) => setDraft({ ...draft, includeFileMetadata: event.target.checked })} />
-              <span>Include file metadata in course captures</span>
-            </label>
-            <label className="toggle">
               <input type="checkbox" checked={draft.autoHandoff} onChange={(event) => setDraft({ ...draft, autoHandoff: event.target.checked })} />
               <span>Open AEONTHRA automatically after capture completes</span>
             </label>
@@ -66,10 +59,7 @@ function OptionsApp() {
               <span>AEONTHRA Classroom URL</span>
               <input value={draft.aeonthraUrl} onChange={(event) => setDraft({ ...draft, aeonthraUrl: event.target.value })} />
             </label>
-            <label className="toggle">
-              <input type="checkbox" checked={draft.reduceMotion} onChange={(event) => setDraft({ ...draft, reduceMotion: event.target.checked })} />
-              <span>Respect reduced motion inside the extension UI</span>
-            </label>
+            <p className="ae-copy">{BRIDGE_URL_REQUIREMENT}</p>
             <label className="field">
               <span>Retry backoff ({draft.retryBackoffMs} ms)</span>
               <input type="range" min="600" max="3000" step="100" value={draft.retryBackoffMs} onChange={(event) => setDraft({ ...draft, retryBackoffMs: Number(event.target.value) })} />
@@ -80,7 +70,7 @@ function OptionsApp() {
             <div className="ae-card__title">Storage</div>
             {state ? (
               <>
-                <Progress value={(state.storage.usedBytes / state.storage.quotaBytes) * 100} />
+                <Progress value={state.storage.quotaBytes > 0 ? (state.storage.usedBytes / state.storage.quotaBytes) * 100 : 0} />
                 <p className="ae-copy">{formatBytes(state.storage.usedBytes)} used of {formatBytes(state.storage.quotaBytes)} allocated storage.</p>
               </>
             ) : null}

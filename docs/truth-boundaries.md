@@ -18,6 +18,6 @@
 
 ## Current known boundaries
 
-- The extension currently supports explicit highlight capture and visible-page capture.
+- The extension currently runs a course-scoped capture flow from a Canvas course context and only keeps what it can deterministically extract from reachable course items.
 - The handoff bridge is designed to be resilient, but JSON export remains the fallback path.
 - Learning quality still depends on the quality and breadth of the captured source material.

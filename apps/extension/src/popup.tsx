@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { parseCourseContextFromUrl } from "./core/platform";
 import "./styles/global.css";
 
 interface ExtState {
@@ -89,22 +90,20 @@ function createOptionsTab(url: string): Promise<void> {
   });
 }
 
-function isCanvasCourseUrl(url?: string): boolean {
-  return Boolean(url && /instructure\.com|canvas\./i.test(url) && /\/courses\/\d+/i.test(url));
-}
-
 async function detectTabFallback(): Promise<ExtState> {
   const tab = await queryActiveTab();
   const url = tab?.url || "";
-  const courseMatch = url.match(/\/courses\/(\d+)/);
   const courseName = tab?.title?.replace(/\s*-\s*Canvas.*$/i, "").trim() || "";
+  const fallbackCourse = parseCourseContextFromUrl(url, courseName || "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
 
   return {
     ok: true,
-    state: isCanvasCourseUrl(url) ? "course-detected" : "idle",
-    isCanvas: /instructure\.com|canvas\./i.test(url),
-    courseId: courseMatch?.[1] || null,
-    courseName,
+    state: fallbackCourse ? "course-detected" : "idle",
+    isCanvas: Boolean(fallbackCourse),
+    courseId: fallbackCourse?.courseId ?? null,
+    courseName: fallbackCourse?.courseName ?? courseName,
     url,
     tabId: tab?.id ?? null,
     history: []
@@ -361,7 +360,7 @@ function Popup() {
               marginBottom: "10px"
             }}
           >
-            ⚡ CAPTURE ENTIRE COURSE
+            CAPTURE ENTIRE COURSE
           </button>
 
           <button
@@ -392,7 +391,7 @@ function Popup() {
             textAlign: "center"
           }}
         >
-          <div style={{ fontSize: "1.5rem", marginBottom: "12px" }}>⚡</div>
+          <div style={{ fontSize: "1.5rem", marginBottom: "12px" }}>AE</div>
           <p style={{ fontSize: "0.85rem", color: "#b0b0d0", lineHeight: 1.6 }}>
             Navigate to any page of a Canvas course and I&apos;ll detect it automatically.
           </p>
@@ -415,7 +414,7 @@ function Popup() {
             letterSpacing: "0.12em"
           }}
         >
-          ⚙ OPTIONS
+          OPTIONS
         </button>
       </div>
     </div>

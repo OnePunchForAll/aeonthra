@@ -46,6 +46,7 @@ export type SourceQualityReport = {
  */
 const ACADEMIC_SIGNALS: RegExp[] = [
   /\b(is defined as|refers to|is described as|means that|involves|encompasses|consists of)\b/i,
+  /\b(explains how|describes how|is learning through|is learning shaped by|occurs when|results when)\b/i,
   /\b(theory|framework|principle|concept|approach|model|paradigm|methodology)\b/i,
   /\b(research|evidence|study|findings|literature|scholar|academic|journal)\b/i,
   /\b(analyze|evaluate|compare|contrast|apply|demonstrate|explain|argue|support)\b/i,

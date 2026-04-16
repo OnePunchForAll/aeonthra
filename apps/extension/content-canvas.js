@@ -4388,6 +4388,41 @@ function stableHash(input) {
   return `h${(hash >>> 0).toString(16)}`;
 }
 
+// src/core/platform.ts
+var COURSE_PATH_RE = /\/courses\/(\d+)(?:[/?#]|$)/i;
+function extractCourseId(pathname) {
+  return pathname.match(COURSE_PATH_RE)?.[1] ?? null;
+}
+function isKnownCanvasHost(hostname) {
+  return /(^|\.)instructure\.com$/i.test(hostname) || /^canvas\./i.test(hostname) || /\.canvas\./i.test(hostname);
+}
+function parseCourseContextFromUrl(urlValue, title = "Canvas Course", options = {}) {
+  if (!urlValue) {
+    return null;
+  }
+  try {
+    const url = new URL(urlValue);
+    if (options.requireKnownCanvasHost && !isKnownCanvasHost(url.hostname)) {
+      return null;
+    }
+    const courseId = extractCourseId(url.pathname);
+    if (!courseId) {
+      return null;
+    }
+    const courseName = title.split("|")[0].trim() || `Course ${courseId}`;
+    return {
+      courseId,
+      courseName,
+      origin: url.origin,
+      courseUrl: `${url.origin}/courses/${courseId}`,
+      modulesUrl: `${url.origin}/courses/${courseId}/modules`,
+      host: url.host
+    };
+  } catch {
+    return null;
+  }
+}
+
 // src/content-canvas.ts
 var CANVAS_CHROME_SELECTORS = [
   "script",
@@ -4436,6 +4471,8 @@ var state = window.__aeonthraCaptureState ??= {
   cancelled: false
 };
 var overlayNode = null;
+var sessionObservationTimer = null;
+var lastSessionObservationSignature = "";
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -4444,21 +4481,146 @@ function canonicalize(url) {
   parsed.hash = "";
   return parsed.toString();
 }
+function hasCanvasDomSignals() {
+  if (document.querySelector("#application.ic-app, .ic-app-main-content, .ic-app-nav-toggle-and-crumbs, .ic-Layout-body")) {
+    return true;
+  }
+  const bodyClassName = document.body?.className ?? "";
+  if (/\bic-/.test(bodyClassName)) {
+    return true;
+  }
+  const env = window.ENV;
+  return Boolean(env && (env.COURSE_ID || env.current_user_id || env.current_user_roles));
+}
 function parseCourseFromLocation() {
-  const match = window.location.pathname.match(/\/courses\/(\d+)/);
-  if (!match) {
+  const courseName = document.querySelector(".ellipsis")?.textContent?.trim() || document.querySelector("[data-testid='course-name']")?.textContent?.trim() || document.title.split("|")[0].trim() || "Canvas Course";
+  const course = parseCourseContextFromUrl(window.location.href, courseName, {
+    requireKnownCanvasHost: false
+  });
+  if (!course) {
     return null;
   }
-  const courseId = match[1];
-  const courseName = document.querySelector(".ellipsis")?.textContent?.trim() || document.querySelector("[data-testid='course-name']")?.textContent?.trim() || document.title.split("|")[0].trim() || `Course ${courseId}`;
+  if (isKnownCanvasHost(window.location.hostname) || hasCanvasDomSignals()) {
+    return course;
+  }
+  return null;
+}
+function inferCurrentQueueItemType(url) {
+  if (/\/assignments\/\d+/i.test(url)) {
+    return "assignment";
+  }
+  if (/\/discussion_topics\/\d+/i.test(url)) {
+    return "discussion";
+  }
+  if (/\/quizzes\/\d+/i.test(url)) {
+    return "quiz";
+  }
+  return "page";
+}
+function currentDocumentTitle(fallback) {
+  return normalizeWhitespace(
+    document.querySelector("h1.title, .assignment-title .title-content, h1.page-title, h1.discussion-title, h1.quiz-title, h1")?.textContent || fallback
+  );
+}
+function buildCurrentDocumentQueueItem(course) {
+  const type = inferCurrentQueueItemType(window.location.href);
   return {
-    courseId,
-    courseName,
-    origin: window.location.origin,
-    courseUrl: `${window.location.origin}/courses/${courseId}`,
-    modulesUrl: `${window.location.origin}/courses/${courseId}/modules`,
-    host: window.location.host
+    id: stableHash(`session:${type}:${canonicalize(window.location.href)}`),
+    type,
+    title: currentDocumentTitle(course.courseName),
+    url: canonicalize(window.location.href),
+    strategy: "html-fetch"
   };
+}
+function captureCurrentDocumentForSession(course) {
+  const queueItem = buildCurrentDocumentQueueItem(course);
+  const html = document.documentElement.outerHTML;
+  switch (queueItem.type) {
+    case "assignment":
+      return buildAssignmentPayload(queueItem, html, "learning");
+    case "discussion":
+      return buildDiscussionPayload(queueItem, html, "learning");
+    case "quiz":
+      return buildQuizPayload(queueItem, html, "learning");
+    default:
+      return buildPagePayload(queueItem, html, "learning");
+  }
+}
+async function observeCurrentPageForSession() {
+  if (state.running) {
+    return;
+  }
+  const course = parseCourseFromLocation();
+  if (!course) {
+    return;
+  }
+  const observation = captureCurrentDocumentForSession(course);
+  if (!observation.item && !observation.warning) {
+    return;
+  }
+  const signature = [
+    course.origin,
+    course.courseId,
+    observation.item?.canonicalUrl ?? canonicalize(window.location.href),
+    observation.item?.contentHash ?? "",
+    observation.warning?.message ?? ""
+  ].join("|");
+  if (signature === lastSessionObservationSignature) {
+    return;
+  }
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "aeon:session-observe-page",
+      course,
+      item: observation.item,
+      resources: observation.resources,
+      warning: observation.warning,
+      observedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (!response?.ignored) {
+      lastSessionObservationSignature = signature;
+    }
+  } catch {
+  }
+}
+function scheduleSessionObservation(delayMs = 900) {
+  if (sessionObservationTimer !== null) {
+    window.clearTimeout(sessionObservationTimer);
+  }
+  sessionObservationTimer = window.setTimeout(() => {
+    sessionObservationTimer = null;
+    void observeCurrentPageForSession();
+  }, delayMs);
+}
+function installSessionObserver() {
+  if (window.__aeonthraSessionObserverInstalled) {
+    return;
+  }
+  window.__aeonthraSessionObserverInstalled = true;
+  const scheduleAfterRouteChange = () => {
+    scheduleSessionObservation(700);
+    window.setTimeout(() => {
+      void observeCurrentPageForSession();
+    }, 2200);
+  };
+  const wrapHistoryMethod = (method) => {
+    const original = history[method];
+    history[method] = function wrappedHistoryMethod(...args) {
+      const result = original.apply(this, args);
+      scheduleAfterRouteChange();
+      return result;
+    };
+  };
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
+  window.addEventListener("popstate", () => scheduleAfterRouteChange());
+  window.addEventListener("load", () => scheduleAfterRouteChange());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleSessionObservation(500);
+    }
+  });
+  scheduleAfterRouteChange();
 }
 function overlayContainer() {
   if (overlayNode) {
@@ -4599,30 +4761,55 @@ async function fetchAllJson(url, settings) {
     let delay = settings.retryBackoffMs;
     let response = null;
     for (let attempt = 0; attempt <= settings.maxRetries; attempt += 1) {
-      response = await fetch(next, {
-        credentials: "include",
-        headers: {
-          Accept: "application/json"
+      try {
+        response = await fetch(next, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json"
+          }
+        });
+        if (response.status === 429) {
+          if (attempt === settings.maxRetries) {
+            throw new Error(`Canvas rate limited the request for ${next}.`);
+          }
+          await sleep(delay);
+          delay *= 2;
+          continue;
         }
-      });
-      if (response.status === 429) {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} for ${next}`);
+        }
+        break;
+      } catch (error) {
         if (attempt === settings.maxRetries) {
-          throw new Error(`Canvas rate limited the request for ${next}.`);
+          throw error;
         }
         await sleep(delay);
         delay *= 2;
-        continue;
       }
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} for ${next}`);
-      }
-      break;
     }
     const batch = await response.json();
     results.push(...batch);
     next = parseLinkHeader(response.headers.get("Link"));
   }
   return results;
+}
+async function loadDiscoveryCollection(url, settings, label) {
+  try {
+    return {
+      items: await fetchAllJson(url, settings),
+      warning: null
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? normalizeWhitespace(error.message) : "request failed";
+    return {
+      items: [],
+      warning: {
+        url,
+        message: `${label} could not be loaded after retries, so AEONTHRA continued without that category. ${reason}`
+      }
+    };
+  }
 }
 function collectLinks(root, sourceItemId) {
   return Array.from(root.querySelectorAll("a[href]")).slice(0, 80).flatMap((anchor, index) => {
@@ -4916,24 +5103,44 @@ async function discoverCourse(payload) {
   const base = `${payload.course.origin}/api/v1/courses/${payload.course.courseId}`;
   const [
     courseInfo,
-    modules,
-    assignments,
-    discussions,
-    pages,
-    quizzes,
-    files,
-    announcements
+    modulesResult,
+    assignmentsResult,
+    discussionsResult,
+    pagesResult,
+    quizzesResult,
+    filesResult,
+    announcementsResult
   ] = await Promise.all([
     fetchJson(`${base}?include[]=syllabus_body`, payload.settings),
-    fetchAllJson(`${base}/modules?include[]=items&per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${base}/assignments?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${base}/discussion_topics?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${base}/pages?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${base}/quizzes?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${base}/files?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson(`${payload.course.origin}/api/v1/announcements?context_codes[]=course_${payload.course.courseId}&per_page=100`, payload.settings).catch(() => [])
+    loadDiscoveryCollection(`${base}/modules?include[]=items&per_page=100`, payload.settings, "Modules"),
+    loadDiscoveryCollection(`${base}/assignments?per_page=100`, payload.settings, "Assignments"),
+    loadDiscoveryCollection(`${base}/discussion_topics?per_page=100`, payload.settings, "Discussions"),
+    loadDiscoveryCollection(`${base}/pages?per_page=100`, payload.settings, "Pages"),
+    loadDiscoveryCollection(`${base}/quizzes?per_page=100`, payload.settings, "Quizzes"),
+    loadDiscoveryCollection(`${base}/files?per_page=100`, payload.settings, "Files"),
+    loadDiscoveryCollection(
+      `${payload.course.origin}/api/v1/announcements?context_codes[]=course_${payload.course.courseId}&per_page=100`,
+      payload.settings,
+      "Announcements"
+    )
   ]);
+  const modules = modulesResult.items;
+  const assignments = assignmentsResult.items;
+  const discussions = discussionsResult.items;
+  const pages = pagesResult.items;
+  const quizzes = quizzesResult.items;
+  const files = filesResult.items;
+  const announcements = announcementsResult.items;
   const queue = [];
+  const warnings = [
+    modulesResult.warning,
+    assignmentsResult.warning,
+    discussionsResult.warning,
+    pagesResult.warning,
+    quizzesResult.warning,
+    filesResult.warning,
+    announcementsResult.warning
+  ].filter((warning) => Boolean(warning));
   queue.push({
     id: stableHash(`${payload.course.courseId}:syllabus`),
     type: "syllabus",
@@ -5033,6 +5240,7 @@ async function discoverCourse(payload) {
       courseName: normalizeWhitespace(String(courseInfo.name ?? payload.course.courseName))
     },
     queue,
+    warnings,
     counts
   };
 }
@@ -5088,6 +5296,9 @@ async function runCaptureJob(payload) {
       queue: discovery.queue,
       course: discovery.course
     });
+    for (const warning of discovery.warnings) {
+      await emitWarning(payload.jobId, warning);
+    }
     const totalQueued = discovery.queue.length;
     let index = 0;
     for (const queueItem of discovery.queue) {
@@ -5203,3 +5414,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return void 0;
 });
+installSessionObserver();

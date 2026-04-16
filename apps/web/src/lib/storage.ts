@@ -6,6 +6,7 @@ import { createEmptyProgress } from "./shell-runtime";
 const bundleKey = "learning-freedom:capture-bundle";
 const sourceStateKey = "learning-freedom:source-workspace";
 const notesKey = "learning-freedom:notes";
+const activeNotesScopeKey = "learning-freedom:notes:active-scope";
 const progressKey = "learning-freedom:progress";
 
 function scopedKey(baseKey: string, scope?: string): string {
@@ -46,12 +47,47 @@ export function clearStoredSourceWorkspace(): void {
   window.localStorage.removeItem(sourceStateKey);
 }
 
-export function loadNotes(): string {
-  return window.localStorage.getItem(notesKey) ?? "";
+function activeNotesScope(): string | null {
+  const scope = window.localStorage.getItem(activeNotesScopeKey);
+  return scope && scope.trim().length > 0 ? scope : null;
 }
 
-export function storeNotes(value: string): void {
-  window.localStorage.setItem(notesKey, value);
+function scopedNotesKey(scope?: string | null): string {
+  return scopedKey(notesKey, scope ?? activeNotesScope() ?? undefined);
+}
+
+export function setActiveNoteScope(scope: string | null): void {
+  if (!scope || !scope.trim()) {
+    window.localStorage.removeItem(activeNotesScopeKey);
+    return;
+  }
+
+  window.localStorage.setItem(activeNotesScopeKey, scope.trim());
+}
+
+export function loadNotes(scope?: string): string {
+  return window.localStorage.getItem(scopedNotesKey(scope)) ?? "";
+}
+
+export function storeNotes(value: string, scope?: string): void {
+  window.localStorage.setItem(scopedNotesKey(scope), value);
+}
+
+export function clearStoredNotes(scope?: string): void {
+  if (scope) {
+    window.localStorage.removeItem(scopedNotesKey(scope));
+    return;
+  }
+
+  const keysToClear: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key === notesKey || key === activeNotesScopeKey || key?.startsWith(`${notesKey}:`)) {
+      keysToClear.push(key);
+    }
+  }
+
+  keysToClear.forEach((key) => window.localStorage.removeItem(key));
 }
 
 export function loadProgress(scope?: string): AppProgress {
@@ -78,4 +114,21 @@ function storeProgress(progress: AppProgress, scope?: string): void {
 
 export function storeScopedProgress(progress: AppProgress, scope: string): void {
   storeProgress(progress, scope);
+}
+
+export function clearStoredProgress(scope?: string): void {
+  if (scope) {
+    window.localStorage.removeItem(scopedKey(progressKey, scope));
+    return;
+  }
+
+  const keysToClear: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key === progressKey || key?.startsWith(`${progressKey}:`)) {
+      keysToClear.push(key);
+    }
+  }
+
+  keysToClear.forEach((key) => window.localStorage.removeItem(key));
 }

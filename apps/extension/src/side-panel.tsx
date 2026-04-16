@@ -14,6 +14,7 @@ function SidePanelApp() {
   }, [state?.settings.defaultMode]);
 
   const activeCourse = state?.runtime.course ?? state?.activeCourse ?? null;
+  const activeSession = state?.session ?? null;
   const isBusy = state ? ["starting", "discovering", "capturing", "paused"].includes(state.runtime.status) : false;
   const latestCapture = useMemo(() => state?.history[0] ?? null, [state]);
 
@@ -48,10 +49,17 @@ function SidePanelApp() {
     setStatusText(
       response.ok
         ? response.bridgeReady
-          ? "AEONTHRA Classroom opened and the bundle was handed off."
+          ? "AEONTHRA Classroom opened and import was requested. The queued bundle should load automatically."
           : "AEONTHRA Classroom opened and the bundle was queued for import."
         : (response.message ?? "Unable to open AEONTHRA Classroom.")
     );
+  };
+
+  const openWorkspace = async () => {
+    const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({
+      type: "aeon:open-workspace"
+    });
+    setStatusText(response.ok ? "AEONTHRA Classroom opened." : (response.message ?? "Unable to open AEONTHRA Classroom."));
   };
 
   const downloadLatest = async (captureId?: string) => {
@@ -65,6 +73,28 @@ function SidePanelApp() {
   const deleteCapture = async (captureId: string) => {
     await sendExtensionMessage({ type: "aeon:delete-capture", captureId });
     setStatusText("Capture removed from local history.");
+  };
+
+  const saveSessionCapture = async () => {
+    const response = await sendExtensionMessage<{ ok: boolean; title?: string; itemCount?: number; message?: string }>({
+      type: "aeon:save-session-capture",
+      origin: activeSession?.origin ?? activeCourse?.origin ?? null,
+      courseId: activeSession?.courseId ?? activeCourse?.courseId ?? null
+    });
+    setStatusText(
+      response.ok
+        ? `${response.title ?? "Visited session"} saved with ${response.itemCount ?? 0} visited pages.`
+        : (response.message ?? "Unable to save the visited session.")
+    );
+  };
+
+  const clearSessionCapture = async () => {
+    const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({
+      type: "aeon:clear-session",
+      origin: activeSession?.origin ?? activeCourse?.origin ?? null,
+      courseId: activeSession?.courseId ?? activeCourse?.courseId ?? null
+    });
+    setStatusText(response.ok ? "Visited session cleared." : (response.message ?? "Unable to clear the visited session."));
   };
 
   return (
@@ -115,7 +145,7 @@ function SidePanelApp() {
               </div>
               <div className="ae-inline-actions">
                 <Button variant="primary" onClick={() => void startCapture()}>Capture Entire Course</Button>
-                <Button variant="ghost" onClick={() => void openClassroom()}>Open AEONTHRA</Button>
+                <Button variant="ghost" onClick={() => void openWorkspace()}>Open AEONTHRA</Button>
               </div>
             </>
           ) : null}
@@ -133,6 +163,32 @@ function SidePanelApp() {
             <Stat label="Files" value={state.runtime.discovered.files} />
             <Stat label="Total" value={state.runtime.discovered.total} />
           </div>
+        </Card>
+      ) : null}
+
+      {activeCourse ? (
+        <Card accent="purple">
+          <div className="ae-card__title">Visited Session</div>
+          <p className="ae-copy">
+            {activeSession
+              ? "AEONTHRA is accumulating the Canvas pages you actually visited in this course."
+              : "As you browse this course, AEONTHRA can accumulate visited pages locally and save them later as a lightweight learning capture."}
+          </p>
+          {activeSession ? (
+            <>
+              <div className="ae-stats-grid">
+                <Stat label="Visited" value={activeSession.itemCount} />
+                <Stat label="Resources" value={activeSession.resourceCount} />
+                <Stat label="Warnings" value={activeSession.warningCount} />
+                <Stat label="Updated" value={new Date(activeSession.lastSeenAt).toLocaleTimeString()} />
+              </div>
+              <p className="ae-copy">Latest page: {activeSession.latestItemTitle}</p>
+              <div className="ae-inline-actions">
+                <Button variant="teal" onClick={() => void saveSessionCapture()} disabled={isBusy}>Save Session Capture</Button>
+                <Button variant="ghost" onClick={() => void clearSessionCapture()} disabled={isBusy}>Clear Session</Button>
+              </div>
+            </>
+          ) : null}
         </Card>
       ) : null}
 
@@ -162,7 +218,7 @@ function SidePanelApp() {
                 <div>
                   <div className="history-item__title">{entry.title}</div>
                   <div className="history-item__meta">
-                    {entry.mode} · {entry.capturedItems} captured · {formatBytes(entry.sizeBytes)}
+                    {entry.mode} | {entry.capturedItems} captured | {formatBytes(entry.sizeBytes)}
                   </div>
                 </div>
                 <div className="history-item__actions">
@@ -181,7 +237,7 @@ function SidePanelApp() {
       {state ? (
         <Card accent="teal">
           <div className="ae-card__title">Storage</div>
-          <Progress value={(state.storage.usedBytes / state.storage.quotaBytes) * 100} />
+          <Progress value={state.storage.quotaBytes > 0 ? (state.storage.usedBytes / state.storage.quotaBytes) * 100 : 0} />
           <div className="ae-copy">{formatBytes(state.storage.usedBytes)} used of {formatBytes(state.storage.quotaBytes)} local AEONTHRA storage.</div>
         </Card>
       ) : null}

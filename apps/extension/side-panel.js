@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../../../../node_modules/react/cjs/react.development.js
+// ../../node_modules/react/cjs/react.development.js
 var require_react_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react.development.js"(exports, module) {
+  "../../node_modules/react/cjs/react.development.js"(exports, module) {
     "use strict";
     if (true) {
       (function() {
@@ -1898,9 +1898,9 @@ var require_react_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/index.js
+// ../../node_modules/react/index.js
 var require_react = __commonJS({
-  "../../../../../node_modules/react/index.js"(exports, module) {
+  "../../node_modules/react/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -1910,9 +1910,9 @@ var require_react = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/cjs/scheduler.development.js
+// ../../node_modules/scheduler/cjs/scheduler.development.js
 var require_scheduler_development = __commonJS({
-  "../../../../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
+  "../../node_modules/scheduler/cjs/scheduler.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -2360,9 +2360,9 @@ var require_scheduler_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/scheduler/index.js
+// ../../node_modules/scheduler/index.js
 var require_scheduler = __commonJS({
-  "../../../../../node_modules/scheduler/index.js"(exports, module) {
+  "../../node_modules/scheduler/index.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -2372,9 +2372,9 @@ var require_scheduler = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/cjs/react-dom.development.js
+// ../../node_modules/react-dom/cjs/react-dom.development.js
 var require_react_dom_development = __commonJS({
-  "../../../../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
+  "../../node_modules/react-dom/cjs/react-dom.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -23536,9 +23536,9 @@ var require_react_dom_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/index.js
+// ../../node_modules/react-dom/index.js
 var require_react_dom = __commonJS({
-  "../../../../../node_modules/react-dom/index.js"(exports, module) {
+  "../../node_modules/react-dom/index.js"(exports, module) {
     "use strict";
     if (false) {
       checkDCE();
@@ -23549,9 +23549,9 @@ var require_react_dom = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react-dom/client.js
+// ../../node_modules/react-dom/client.js
 var require_client = __commonJS({
-  "../../../../../node_modules/react-dom/client.js"(exports) {
+  "../../node_modules/react-dom/client.js"(exports) {
     "use strict";
     var m = require_react_dom();
     if (false) {
@@ -23580,9 +23580,9 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/cjs/react-jsx-runtime.development.js
+// ../../node_modules/react/cjs/react-jsx-runtime.development.js
 var require_react_jsx_runtime_development = __commonJS({
-  "../../../../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
+  "../../node_modules/react/cjs/react-jsx-runtime.development.js"(exports) {
     "use strict";
     if (true) {
       (function() {
@@ -24473,9 +24473,9 @@ var require_react_jsx_runtime_development = __commonJS({
   }
 });
 
-// ../../../../../node_modules/react/jsx-runtime.js
+// ../../node_modules/react/jsx-runtime.js
 var require_jsx_runtime = __commonJS({
-  "../../../../../node_modules/react/jsx-runtime.js"(exports, module) {
+  "../../node_modules/react/jsx-runtime.js"(exports, module) {
     "use strict";
     if (false) {
       module.exports = null;
@@ -24575,7 +24575,7 @@ function Button({ children, variant = "primary", disabled, ...props }) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { ...props, disabled, className: `ae-btn ae-btn--${variant}`.trim(), children });
 }
 function Progress({ value }) {
-  const safe = Math.max(0, Math.min(100, value));
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ae-progress", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ae-progress__fill", style: { width: `${safe}%` } }) });
 }
 function Stat({ label, value }) {
@@ -24590,15 +24590,15 @@ function ModeCard({
   onSelect
 }) {
   const descriptor = mode === "complete" ? {
-    icon: "\u{1F4E6}",
+    icon: "FULL",
     title: "Complete Snapshot",
     body: "Archive the whole course with raw HTML, metadata, files, discussions, and the broadest recovery path.",
-    meta: "Large output \xB7 slower capture \xB7 backup-grade"
+    meta: "Large output - slower capture - backup-grade"
   } : {
-    icon: "\u26A1",
+    icon: "FAST",
     title: "Learning Content Only",
     body: "Strip Canvas chrome, keep meaningful teaching text, and build the cleanest forge-ready AEONTHRA bundle.",
-    meta: "Smaller output \xB7 faster capture \xB7 recommended"
+    meta: "Smaller output - faster capture - recommended"
   };
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", { type: "button", className: "mode-card", "data-selected": selected, onClick: () => onSelect(mode), children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "mode-card__icon", children: descriptor.icon }),
@@ -24619,6 +24619,7 @@ function SidePanelApp() {
     }
   }, [state?.settings.defaultMode]);
   const activeCourse = state?.runtime.course ?? state?.activeCourse ?? null;
+  const activeSession = state?.session ?? null;
   const isBusy = state ? ["starting", "discovering", "capturing", "paused"].includes(state.runtime.status) : false;
   const latestCapture = (0, import_react2.useMemo)(() => state?.history[0] ?? null, [state]);
   const startCapture = async () => {
@@ -24646,8 +24647,14 @@ function SidePanelApp() {
       captureId: captureId ?? null
     });
     setStatusText(
-      response.ok ? response.bridgeReady ? "AEONTHRA Classroom opened and the bundle was handed off." : "AEONTHRA Classroom opened and the bundle was queued for import." : response.message ?? "Unable to open AEONTHRA Classroom."
+      response.ok ? response.bridgeReady ? "AEONTHRA Classroom opened and import was requested. The queued bundle should load automatically." : "AEONTHRA Classroom opened and the bundle was queued for import." : response.message ?? "Unable to open AEONTHRA Classroom."
     );
+  };
+  const openWorkspace = async () => {
+    const response = await sendExtensionMessage({
+      type: "aeon:open-workspace"
+    });
+    setStatusText(response.ok ? "AEONTHRA Classroom opened." : response.message ?? "Unable to open AEONTHRA Classroom.");
   };
   const downloadLatest = async (captureId) => {
     const response = await sendExtensionMessage({
@@ -24659,6 +24666,24 @@ function SidePanelApp() {
   const deleteCapture = async (captureId) => {
     await sendExtensionMessage({ type: "aeon:delete-capture", captureId });
     setStatusText("Capture removed from local history.");
+  };
+  const saveSessionCapture = async () => {
+    const response = await sendExtensionMessage({
+      type: "aeon:save-session-capture",
+      origin: activeSession?.origin ?? activeCourse?.origin ?? null,
+      courseId: activeSession?.courseId ?? activeCourse?.courseId ?? null
+    });
+    setStatusText(
+      response.ok ? `${response.title ?? "Visited session"} saved with ${response.itemCount ?? 0} visited pages.` : response.message ?? "Unable to save the visited session."
+    );
+  };
+  const clearSessionCapture = async () => {
+    const response = await sendExtensionMessage({
+      type: "aeon:clear-session",
+      origin: activeSession?.origin ?? activeCourse?.origin ?? null,
+      courseId: activeSession?.courseId ?? activeCourse?.courseId ?? null
+    });
+    setStatusText(response.ok ? "Visited session cleared." : response.message ?? "Unable to clear the visited session.");
   };
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
     Shell,
@@ -24693,7 +24718,7 @@ function SidePanelApp() {
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ae-inline-actions", children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button, { variant: "primary", onClick: () => void startCapture(), children: "Capture Entire Course" }),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button, { variant: "ghost", onClick: () => void openClassroom(), children: "Open AEONTHRA" })
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button, { variant: "ghost", onClick: () => void openWorkspace(), children: "Open AEONTHRA" })
             ] })
           ] }) : null
         ] }) : null,
@@ -24707,6 +24732,26 @@ function SidePanelApp() {
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Files", value: state.runtime.discovered.files }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Total", value: state.runtime.discovered.total })
           ] })
+        ] }) : null,
+        activeCourse ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Card, { accent: "purple", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ae-card__title", children: "Visited Session" }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "ae-copy", children: activeSession ? "AEONTHRA is accumulating the Canvas pages you actually visited in this course." : "As you browse this course, AEONTHRA can accumulate visited pages locally and save them later as a lightweight learning capture." }),
+          activeSession ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ae-stats-grid", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Visited", value: activeSession.itemCount }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Resources", value: activeSession.resourceCount }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Warnings", value: activeSession.warningCount }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Stat, { label: "Updated", value: new Date(activeSession.lastSeenAt).toLocaleTimeString() })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "ae-copy", children: [
+              "Latest page: ",
+              activeSession.latestItemTitle
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ae-inline-actions", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button, { variant: "teal", onClick: () => void saveSessionCapture(), disabled: isBusy, children: "Save Session Capture" }),
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button, { variant: "ghost", onClick: () => void clearSessionCapture(), disabled: isBusy, children: "Clear Session" })
+            ] })
+          ] }) : null
         ] }) : null,
         latestCapture ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Card, { accent: "gold", children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ae-card__title", children: "Latest Capture" }),
@@ -24729,9 +24774,9 @@ function SidePanelApp() {
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "history-item__title", children: entry.title }),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "history-item__meta", children: [
                 entry.mode,
-                " \xB7 ",
+                " | ",
                 entry.capturedItems,
-                " captured \xB7 ",
+                " captured | ",
                 formatBytes(entry.sizeBytes)
               ] })
             ] }),
@@ -24744,7 +24789,7 @@ function SidePanelApp() {
         ] }),
         state ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Card, { accent: "teal", children: [
           /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ae-card__title", children: "Storage" }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Progress, { value: state.storage.usedBytes / state.storage.quotaBytes * 100 }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Progress, { value: state.storage.quotaBytes > 0 ? state.storage.usedBytes / state.storage.quotaBytes * 100 : 0 }),
           /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ae-copy", children: [
             formatBytes(state.storage.usedBytes),
             " used of ",

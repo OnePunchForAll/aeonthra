@@ -22,6 +22,97 @@ export type TextbookImportInput = {
   format: "pdf" | "docx" | "text" | "paste";
 };
 
+export const EMPTY_TEXTBOOK_IMPORT_MESSAGE =
+  "Textbook import was empty after extraction. Use a text-based PDF or DOCX, or paste readable textbook text.";
+
+const BOILERPLATE_LINE_PATTERNS = [
+  /^table of contents$/i,
+  /^contents$/i,
+  /^copyright(?:\s+\d{4})?$/i,
+  /^all rights reserved$/i,
+  /^isbn(?:[:\s-].*)?$/i,
+  /^published by .+/i,
+  /^preface$/i,
+  /^acknowledg(?:e)?ments?$/i,
+  /^dedication$/i,
+  /^about the author$/i,
+  /^references$/i,
+  /^bibliography$/i,
+  /^index$/i
+];
+
+const PAGE_MARKER_PATTERN = /^(?:page\s*)?\d+(?:\s*of\s*\d+)?$/i;
+
+function alphaNumericCount(text: string): number {
+  const matches = text.match(/[A-Za-z0-9]/g);
+  return matches ? matches.length : 0;
+}
+
+function isBoilerplateLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (PAGE_MARKER_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (BOILERPLATE_LINE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return true;
+  }
+
+  if (/^[\W_]+$/.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function stripTextbookNoise(text: string): string {
+  const lines = sanitizeImportedText(text)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isBoilerplateLine(line));
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function hasSentenceLikeLine(text: string): boolean {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .some((line) => line.length >= 32 && /[.!?]/.test(line));
+}
+
+function hasMeaningfulText(text: string): boolean {
+  const words = text.match(/\b[A-Za-z][A-Za-z'-]{2,}\b/g) ?? [];
+  return hasSentenceLikeLine(text) || (alphaNumericCount(text) >= 45 && words.length >= 5);
+}
+
+function normalizeTextbookImport(input: TextbookImportInput): {
+  title: string;
+  text: string;
+  segments: TextbookSegment[];
+} {
+  const title = sanitizeImportedTitle(input.title);
+  const text = stripTextbookNoise(input.text);
+  const segments = (input.segments ?? [])
+    .map((segment) => ({
+      ...segment,
+      title: sanitizeImportedTitle(segment.title),
+      text: stripTextbookNoise(segment.text)
+    }))
+    .filter((segment) => segment.text.length > 0);
+
+  const combinedText = [text, ...segments.map((segment) => segment.text)].join("\n\n");
+  if (!hasMeaningfulText(combinedText)) {
+    throw new Error(EMPTY_TEXTBOOK_IMPORT_MESSAGE);
+  }
+
+  return { title, text, segments };
+}
+
 function createManifest(items: CaptureItem[]) {
   return {
     itemCount: items.length,
@@ -59,17 +150,12 @@ function buildTextbookItem(input: {
 }
 
 export function createTextbookCaptureBundle(input: TextbookImportInput): CaptureBundle {
-  const title = sanitizeImportedTitle(input.title);
-  const trimmedText = sanitizeImportedText(input.text);
+  const normalized = normalizeTextbookImport(input);
+  const title = normalized.title;
+  const trimmedText = normalized.text;
   const sourceSlug = slugify(title) || "textbook";
   const capturedAt = new Date().toISOString();
-  const validSegments = (input.segments ?? [])
-    .map((segment) => ({
-      ...segment,
-      title: sanitizeImportedTitle(segment.title),
-      text: sanitizeImportedText(segment.text)
-    }))
-    .filter((segment) => segment.text.length > 0);
+  const validSegments = normalized.segments;
 
   if (validSegments.length <= 1) {
     const bundle = createManualCaptureBundle({

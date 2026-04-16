@@ -93,7 +93,8 @@ const CHROME_FRAGMENT_PATTERNS = [
 const GENERIC_TOPIC_WORDS = new Set([
   "support", "services", "resources", "personnel", "processes", "policies", "module", "student",
   "success", "skills", "navigation", "section", "items", "classroom", "opportunity", "complete",
-  "review", "introduction", "transcript", "explore", "university", "information", "education", "activity", "submission"
+  "review", "introduction", "transcript", "explore", "university", "information", "education", "activity", "submission",
+  "association", "condition"
 ]);
 const UPLOAD_UI_BLOCKLIST = new Set([
   "imported source",
@@ -305,6 +306,15 @@ const normalizeCandidateName = (text: string): string =>
     .replace(/^module\s+\d+\s+/i, "")
     .trim();
 
+const normalizeConceptAlias = (text: string): string =>
+  normalizePhrase(text)
+    .replace(/^(overview|introduction|foundations?|basics|principles?)\s+(?:of|to|for)\s+/i, "")
+    .replace(/\s+(overview|introduction|foundations?|basics)$/i, "")
+    .replace(/\b(doctrine|theory|principle|concept)\s+of\s+the\b/gi, "")
+    .replace(/\b(kant'?s|john|jeremy|student|online)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const ensureSentence = (text: string): string => {
   const cleaned = truncateReadable(text);
   return /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
@@ -336,6 +346,7 @@ const blockedLabel = (label: string): boolean => {
   if (/^week\s+\d+\s*[-–]/i.test(label)) return true;
   if (/^(while|if|why|how|and|because)\b/i.test(normalized)) return true;
   if (/\b(response|assignment|discussion|demo|bundle|primer)\b/i.test(normalized)) return true;
+  if (/^(reply to classmates|respond to classmates|initial post|classmate response)$/i.test(normalized)) return true;
   if (/\bis the (framework|approach|view|theory) that\b/i.test(normalized)) return true;
   if (/^(welcome to|why this|orientation design|student success)/i.test(normalized)) return true;
   if (/^(course syllabus|description this|orientation expectations|course experience objectives|today orientation syllabus|expectations this|objectives this)/i.test(normalized)) return true;
@@ -393,6 +404,33 @@ const pruneRedundantConcepts = (concepts: LearningConcept[]): LearningConcept[] 
     otherIndex !== index
     && redundantSpecificityShadow(concept, other)
   ));
+
+const dedupeConceptAliases = (concepts: LearningConcept[]): LearningConcept[] => {
+  const aliases = new Map<string, LearningConcept>();
+  for (const concept of concepts) {
+    const aliasKey = normalizeConceptAlias(concept.label) || normalizePhrase(concept.label);
+    const existing = aliases.get(aliasKey);
+    if (!existing) {
+      aliases.set(aliasKey, concept);
+      continue;
+    }
+    const conceptHasWrapper = normalizeConceptAlias(concept.label) !== normalizePhrase(concept.label);
+    const existingHasWrapper = normalizeConceptAlias(existing.label) !== normalizePhrase(existing.label);
+    const keepCandidate =
+      (!conceptHasWrapper && existingHasWrapper)
+      || (conceptHasWrapper === existingHasWrapper && (concept.score > existing.score || (concept.score === existing.score && concept.label.length < existing.label.length)));
+    const preferred = keepCandidate ? concept : existing;
+    const secondary = keepCandidate ? existing : concept;
+    aliases.set(aliasKey, {
+      ...preferred,
+      score: Math.max(preferred.score, secondary.score),
+      sourceItemIds: Array.from(new Set([...preferred.sourceItemIds, ...secondary.sourceItemIds])),
+      relatedConceptIds: Array.from(new Set([...preferred.relatedConceptIds, ...secondary.relatedConceptIds])),
+      keywords: Array.from(new Set([...preferred.keywords, ...secondary.keywords])).slice(0, 8)
+    });
+  }
+  return [...aliases.values()];
+};
 
 const isBundleEchoLabel = (label: string, bundle: CaptureBundle): boolean => {
   if (bundle.items.length !== 1) return false;
@@ -636,7 +674,7 @@ const topicCandidatesFromBlock = (block: ContentBlock): ConceptCandidate[] => {
   const candidates: ConceptCandidate[] = [];
   const topicSentences = findTopicSentences(block);
   const subjectMatch = splitIntoSentences(block.text)
-    .map((sentence) => ({ sentence, match: sentence.match(/^([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s+(asks|weighs|helps|guides|shows|reveals|supports|offers|provides)\b/) }))
+    .map((sentence) => ({ sentence, match: sentence.match(/^([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s+(asks|weighs|helps|guides|shows|reveals|supports|offers|provides|increases|decreases|reduces|weakens|strengthens)\b/) }))
     .find((entry) => entry.match);
   for (const sentence of topicSentences) {
     for (const pattern of DEFINITION_PATTERNS) {
@@ -695,19 +733,15 @@ const mergeCandidates = (candidates: ConceptCandidate[]): Seed[] => {
   for (const candidate of candidates) {
     const normalized = normalizePhrase(candidate.name);
     if (!normalized || blockedLabel(candidate.name)) continue;
-    const aliasKey = normalized
-      .replace(/\b(kant'?s|john|jeremy|student|online)\b/g, "")
-      // Collapse "Doctrine/Theory/Principle of the X" → "X" to merge variants
-      // e.g. "Doctrine Of The Mean" and "Mean" should deduplicate
-      .replace(/\b(doctrine|theory|principle|concept)\s+of\s+the\b/gi, "")
-      .replace(/\s+/g, " ")
-      .trim() || normalized;
+    const aliasKey = normalizeConceptAlias(candidate.name) || normalized;
     const existing = seeds.get(aliasKey);
     const score = candidate.confidence * 100 + candidate.evidence.length * 10 + candidate.keywords.length * 2 + (candidate.extractionMethod === "explicit-definition" ? 30 : 0) + (candidate.extractionMethod === "bold-term" ? 20 : 0);
     if (!existing) { seeds.set(aliasKey, { name: candidate.name, score, category: candidate.category, sourceItemIds: new Set([candidate.sourceItemId]), definition: candidate.definition, detail: candidate.detail, evidence: candidate.evidence.filter(isValidSentence), keywords: new Set(candidate.keywords) }); continue; }
     existing.score += score;
     existing.sourceItemIds.add(candidate.sourceItemId);
-    if (candidate.name.length > existing.name.length && candidate.confidence >= 0.7) existing.name = candidate.name;
+    const candidateHasWrapper = normalizeConceptAlias(candidate.name) !== normalized;
+    const existingHasWrapper = normalizeConceptAlias(existing.name) !== normalizePhrase(existing.name);
+    if ((!candidateHasWrapper && existingHasWrapper && candidate.confidence >= 0.7) || (candidate.name.length > existing.name.length && candidate.confidence >= 0.7 && candidateHasWrapper === existingHasWrapper)) existing.name = candidate.name;
     if (candidate.confidence >= 0.9 || existing.definition.length < candidate.definition.length) { existing.definition = candidate.definition; existing.detail = candidate.detail; existing.category = candidate.category; }
     candidate.evidence.forEach((entry) => { if (isValidSentence(entry)) existing.evidence.push(entry); });
     candidate.keywords.forEach((keyword) => existing.keywords.add(keyword));
@@ -961,7 +995,8 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     }));
   const mergedConcepts = [...validConcepts, ...supplements];
   const filteredConcepts = mergedConcepts.filter((concept) => !isBundleEchoLabel(concept.label, bundle));
-  const deDuplicatedConcepts = pruneRedundantConcepts(filteredConcepts.length > 0 ? filteredConcepts : mergedConcepts);
+  const aliasDedupedConcepts = dedupeConceptAliases(filteredConcepts.length > 0 ? filteredConcepts : mergedConcepts);
+  const deDuplicatedConcepts = pruneRedundantConcepts(aliasDedupedConcepts);
   return deDuplicatedConcepts.slice(0, MAX_CONCEPTS);
 }
 

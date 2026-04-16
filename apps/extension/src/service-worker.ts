@@ -14,6 +14,7 @@ import {
   DEFAULT_SETTINGS,
   clearAllCaptures,
   clearPendingBundle,
+  clearSessionState,
   deleteCaptureRecord,
   estimateStorageUsage,
   latestCaptureId,
@@ -22,13 +23,20 @@ import {
   readHistorySummaries,
   readPendingBundle,
   readRuntimeState,
+  readSessionState,
+  readSessionSummary,
   readSettings,
   resetRuntimeState,
+  upsertSessionObservation,
   upsertHistory,
   writePendingBundle,
   writeRuntimeState,
   writeSettings
 } from "./core/storage";
+import {
+  parseCourseContextFromUrl,
+  validateAeonthraUrl
+} from "./core/platform";
 import type {
   CaptureMode,
   CaptureStats,
@@ -37,6 +45,8 @@ import type {
   ExtensionStatusPayload,
   QueueItem,
   RuntimeState,
+  SessionCaptureState,
+  SessionObservation,
   StoredCaptureRecord
 } from "./core/types";
 
@@ -296,37 +306,6 @@ function randomJobId(): string {
   return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
 }
 
-function parseCourseContextFromUrl(urlValue?: string, title = "Canvas Course"): CourseContext | null {
-  if (!urlValue) {
-    return null;
-  }
-
-  try {
-    const url = new URL(urlValue);
-    const match = url.pathname.match(/\/courses\/(\d+)/);
-    if (!match) {
-      return null;
-    }
-
-    const courseId = match[1]!;
-    const courseName = title.split("|")[0]!.trim() || `Course ${courseId}`;
-    return {
-      courseId,
-      courseName,
-      origin: url.origin,
-      courseUrl: `${url.origin}/courses/${courseId}`,
-      modulesUrl: `${url.origin}/courses/${courseId}/modules`,
-      host: url.host
-    };
-  } catch {
-    return null;
-  }
-}
-
-function isCanvasUrl(urlValue?: string): boolean {
-  return Boolean(parseCourseContextFromUrl(urlValue));
-}
-
 async function activeTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await tabsQuery({ active: true, currentWindow: true });
   return tab ?? null;
@@ -361,11 +340,20 @@ async function sendCanvasMessage<T>(tabId: number, payload: Record<string, unkno
 }
 
 async function detectCourseContext(tab: chrome.tabs.Tab | null): Promise<CourseContext | null> {
-  if (!tab?.id || !isCanvasUrl(tab.url)) {
+  if (!tab?.id) {
     return null;
   }
 
-  const fallback = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course");
+  const candidate = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
+    requireKnownCanvasHost: false
+  });
+  if (!candidate) {
+    return null;
+  }
+
+  const fallback = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
   try {
     const response = await sendCanvasMessage<CanvasTabContextResponse>(tab.id, { type: "aeon:get-course-context" });
     if (response?.ok && response.course) {
@@ -401,6 +389,10 @@ async function updateRuntime(patch: Partial<RuntimeState>): Promise<RuntimeState
   return next;
 }
 
+function runtimeIsBusy(runtime: RuntimeState): boolean {
+  return ["starting", "discovering", "capturing", "paused"].includes(runtime.status);
+}
+
 async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
   const tab = await activeTab();
   const [course, runtime, settings, history, latestId, storage] = await Promise.all([
@@ -411,6 +403,7 @@ async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
     latestCaptureId(),
     estimateStorageUsage()
   ]);
+  const session = await readSessionSummary(course ?? runtime.course ?? "").catch(() => null);
 
   return {
     ok: true,
@@ -419,7 +412,8 @@ async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
     settings,
     history,
     latestCaptureId: latestId,
-    storage
+    storage,
+    session
   };
 }
 
@@ -462,13 +456,144 @@ async function requestWorkspaceImport(tabId: number): Promise<boolean> {
 
 async function queueBundleForWorkspace(bundle: CaptureBundle): Promise<{ bridgeReady: boolean; queuedPackId: string }> {
   const settings = await readSettings();
+  const validatedUrl = validateAeonthraUrl(settings.aeonthraUrl);
+  if (!validatedUrl.ok) {
+    throw new Error(validatedUrl.message);
+  }
   await writePendingBundle(bundle);
-  const tab = await openOrFocusWorkspace(settings.aeonthraUrl);
+  const tab = await openOrFocusWorkspace(validatedUrl.normalizedUrl);
   const bridgeReady = tab.id ? await requestWorkspaceImport(tab.id) : false;
   return {
     bridgeReady,
     queuedPackId: captureBundleId(bundle)
   };
+}
+
+async function openWorkspaceOnly(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const settings = await readSettings();
+  const validatedUrl = validateAeonthraUrl(settings.aeonthraUrl);
+  if (!validatedUrl.ok) {
+    return { ok: false, message: validatedUrl.message };
+  }
+
+  await openOrFocusWorkspace(validatedUrl.normalizedUrl);
+  return { ok: true };
+}
+
+function buildStoredRecordFromSession(session: SessionCaptureState): StoredCaptureRecord {
+  const durationMs = Math.max(0, Date.parse(session.lastSeenAt) - Date.parse(session.firstSeenAt));
+  const title = `${session.course.courseName} Visited Session`;
+  const provisional: CaptureBundle = {
+    ...session.bundle,
+    source: "extension-capture",
+    title,
+    capturedAt: session.lastSeenAt,
+    captureMeta: {
+      mode: "learning",
+      courseId: session.course.courseId,
+      courseName: session.course.courseName,
+      sourceHost: session.course.host,
+      stats: {
+        totalItemsVisited: session.bundle.items.length,
+        totalItemsCaptured: session.bundle.items.length,
+        totalItemsSkipped: 0,
+        totalItemsFailed: 0,
+        durationMs,
+        sizeBytes: 0
+      },
+      warnings: session.warnings
+    }
+  };
+  const sizeBytes = new Blob([JSON.stringify(provisional)]).size;
+  const finalized: CaptureBundle = {
+    ...provisional,
+    captureMeta: {
+      ...provisional.captureMeta,
+      stats: {
+        ...provisional.captureMeta!.stats!,
+        sizeBytes
+      }
+    }
+  };
+
+  return {
+    id: captureBundleId(finalized),
+    title,
+    capturedAt: finalized.capturedAt,
+    courseId: session.course.courseId,
+    courseName: session.course.courseName,
+    mode: "learning",
+    sizeBytes,
+    stats: finalized.captureMeta!.stats!,
+    warnings: session.warnings,
+    bundle: finalized
+  };
+}
+
+function explicitSessionTarget(message: unknown): Pick<CourseContext, "origin" | "courseId"> | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const candidate = message as { origin?: unknown; courseId?: unknown };
+  return typeof candidate.origin === "string" && typeof candidate.courseId === "string"
+    ? { origin: candidate.origin, courseId: candidate.courseId }
+    : null;
+}
+
+async function resolveSessionTarget(message: unknown): Promise<Pick<CourseContext, "origin" | "courseId"> | null> {
+  const explicit = explicitSessionTarget(message);
+  if (explicit) {
+    return explicit;
+  }
+
+  const runtime = await readRuntimeState();
+  if (runtime.course) {
+    return {
+      origin: runtime.course.origin,
+      courseId: runtime.course.courseId
+    };
+  }
+
+  const tab = await activeTab();
+  const course = await detectCourseContext(tab);
+  if (!course) {
+    return null;
+  }
+
+  return {
+    origin: course.origin,
+    courseId: course.courseId
+  };
+}
+
+async function saveSessionCapture(target: Pick<CourseContext, "origin" | "courseId"> | null): Promise<{ ok: true; captureId: string; title: string; itemCount: number } | { ok: false; message: string }> {
+  if (!target) {
+    return { ok: false, message: "Open a Canvas course with a visited session before saving it." };
+  }
+
+  const session = await readSessionState(target);
+  if (!session || session.bundle.items.length === 0) {
+    return { ok: false, message: "No visited session pages are available to save yet." };
+  }
+
+  const record = buildStoredRecordFromSession(session);
+  await upsertHistory(record);
+  await clearSessionState(session.sessionKey);
+  return {
+    ok: true,
+    captureId: record.id,
+    title: record.title,
+    itemCount: record.bundle.items.length
+  };
+}
+
+async function clearSessionCapture(target: Pick<CourseContext, "origin" | "courseId"> | null): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!target) {
+    return { ok: false, message: "No active course session is available to clear." };
+  }
+
+  await clearSessionState(target);
+  return { ok: true };
 }
 
 async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseContext, stats: Omit<CaptureStats, "sizeBytes">, cancelled = false): Promise<void> {
@@ -533,7 +658,15 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
 
   const settings = await readSettings();
   if (!cancelled && settings.autoHandoff) {
-    await queueBundleForWorkspace(finalized);
+    try {
+      await queueBundleForWorkspace(finalized);
+    } catch (error) {
+      await updateRuntime({
+        status: "completed",
+        phaseLabel: "Capture Saved",
+        errorMessage: error instanceof Error ? error.message : "Auto handoff could not start."
+      });
+    }
   }
 }
 
@@ -685,8 +818,15 @@ async function openClassroom(captureId: string | null): Promise<{ ok: true; brid
     return { ok: false, message: "That capture no longer exists in history." };
   }
 
-  const result = await queueBundleForWorkspace(record.bundle);
-  return { ok: true, bridgeReady: result.bridgeReady };
+  try {
+    const result = await queueBundleForWorkspace(record.bundle);
+    return { ok: true, bridgeReady: result.bridgeReady };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Unable to open AEONTHRA Classroom."
+    };
+  }
 }
 
 async function handleContentProgress(message: ContentProgressMessage): Promise<void> {
@@ -818,8 +958,6 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
 }> {
   const [tab] = await tabsQuery({ active: true, currentWindow: true });
   const url = tab?.url || "";
-  const isCanvas = /instructure\.com|canvas\./i.test(url);
-  const courseMatch = url.match(/\/courses\/(\d+)/);
   const courseName = tab?.title?.replace(/\s*-\s*Canvas.*$/i, "").trim() || "";
 
   let fallbackHistory = [] as Awaited<ReturnType<typeof readHistorySummaries>>;
@@ -836,6 +974,7 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
     const history = await readHistorySummaries().catch(() => fallbackHistory);
     const fallbackLatestCaptureId = await latestCaptureId().catch(() => null);
     const storage = await estimateStorageUsage().catch(() => ({ usedBytes: 0, quotaBytes: 0 }));
+    const session = runtime.course ? await readSessionSummary(runtime.course).catch(() => null) : null;
     return {
       ok: true as const,
       activeCourse: null,
@@ -843,20 +982,22 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
       settings,
       history,
       latestCaptureId: fallbackLatestCaptureId,
-      storage
+      storage,
+      session
     };
   });
 
-  const activeCourse = courseMatch
-    ? status.activeCourse ?? parseCourseContextFromUrl(url, courseName || `Course ${courseMatch[1]}`) ?? null
-    : null;
+  const fallbackCourse = parseCourseContextFromUrl(url, courseName || "Canvas Course", {
+    requireKnownCanvasHost: true
+  });
+  const activeCourse = status.activeCourse ?? fallbackCourse;
 
   return {
     ...status,
     activeCourse,
-    state: isCanvas && courseMatch ? "course-detected" : "idle",
-    isCanvas,
-    courseId: courseMatch?.[1] || null,
+    state: activeCourse ? "course-detected" : "idle",
+    isCanvas: Boolean(activeCourse),
+    courseId: activeCourse?.courseId ?? null,
     courseName: activeCourse?.courseName || courseName,
     url,
     tabId: tab?.id || null,
@@ -876,6 +1017,31 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
   if (type.startsWith("aeon:job-")) {
     await handleContentProgress(message as ContentProgressMessage);
     return { state: "ok" };
+  }
+
+  if (type === "aeon:session-observe-page") {
+    const runtime = await readRuntimeState();
+    if (runtimeIsBusy(runtime)) {
+      return { ok: true, ignored: true };
+    }
+
+    const observation = message as Partial<SessionObservation>;
+    if (!observation.course || typeof observation.course.courseId !== "string" || typeof observation.course.origin !== "string") {
+      return { ok: false, message: "Session observation was missing a valid course." };
+    }
+    if (!observation.item && !observation.warning) {
+      return { ok: true, ignored: true };
+    }
+
+    await upsertSessionObservation({
+      course: observation.course,
+      item: observation.item ?? null,
+      resources: Array.isArray(observation.resources) ? observation.resources : [],
+      warning: observation.warning,
+      observedAt: typeof observation.observedAt === "string" ? observation.observedAt : new Date().toISOString(),
+      sourceTabId: sender.tab?.id ?? null
+    });
+    return { ok: true };
   }
 
   if (type === "GET_STATE" || type === "aeon:get-extension-state" || type === "getState") {
@@ -930,12 +1096,37 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
     return downloadCapture(((message as { captureId?: string | null }).captureId) ?? null);
   }
 
+  if (type === "aeon:save-session-capture") {
+    return saveSessionCapture(await resolveSessionTarget(message));
+  }
+
+  if (type === "aeon:clear-session") {
+    return clearSessionCapture(await resolveSessionTarget(message));
+  }
+
   if (type === "HANDOFF" || type === "aeon:open-classroom") {
     return openClassroom(((message as { captureId?: string | null }).captureId) ?? null);
   }
 
+  if (type === "aeon:open-workspace") {
+    return openWorkspaceOnly();
+  }
+
   if (type === "aeon:update-settings") {
-    const settings = { ...(await readSettings()), ...(((message as { settings?: Record<string, unknown> }).settings) ?? {}) };
+    const nextPartial = ((message as { settings?: Record<string, unknown> }).settings) ?? {};
+    const currentSettings = await readSettings();
+    const rawAeonthraUrl = typeof nextPartial.aeonthraUrl === "string"
+      ? nextPartial.aeonthraUrl
+      : currentSettings.aeonthraUrl;
+    const validatedUrl = validateAeonthraUrl(rawAeonthraUrl);
+    if (!validatedUrl.ok) {
+      return { ok: false, message: validatedUrl.message };
+    }
+    const settings = {
+      ...currentSettings,
+      ...nextPartial,
+      aeonthraUrl: validatedUrl.normalizedUrl
+    };
     await writeSettings(settings);
     return { ok: true };
   }

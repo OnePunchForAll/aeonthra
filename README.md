@@ -2,6 +2,8 @@
 
 AEONTHRA is a local-first Canvas learning workspace: a Chrome extension captures course material, a static web app forges it into deterministic study systems, and the student keeps control of everything without a backend or runtime AI calls.
 
+Repo docs also use the OMEGA FORGE mission codenames: `SENTINEL` for the extension, `ATLAS` for the web app, and `FOUNDRY` for the shared contracts. The shipped product/UI name in this repo is `AEONTHRA`.
+
 ## What it does
 
 - Captures Canvas assignments, discussions, quizzes, pages, modules, and supporting metadata through a Manifest V3 extension
@@ -50,7 +52,7 @@ npm run dev:web
 
 The local classroom is commonly available at:
 
-`http://127.0.0.1:5180/`
+`http://127.0.0.1:5176/`
 
 ### Build the extension
 
@@ -78,7 +80,7 @@ URL rules:
 
 Until Pages is live, point the extension's AEONTHRA URL setting to your local app:
 
-`http://127.0.0.1:5180/`
+`http://127.0.0.1:5176/`
 
 ## Privacy note before going public
 
@@ -107,6 +109,7 @@ If you do not have a Canvas capture yet, open the web app and click `OPEN NEURAL
 ## Current scripts
 
 - `npm run dev:web`
+- `npm run test:web`
 - `npm run build:web`
 - `npm run build:extension`
 - `npm run build`

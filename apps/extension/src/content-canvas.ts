@@ -1,4 +1,5 @@
 import { stableHash, type CaptureItem, type CaptureResource } from "@learning/schema";
+import { isKnownCanvasHost, parseCourseContextFromUrl } from "./core/platform";
 import type { CaptureMode, CaptureWarning, CourseContext, ExtensionSettings, QueueItem } from "./core/types";
 
 type CaptureJobPayload = {
@@ -11,6 +12,7 @@ type CaptureJobPayload = {
 type CourseDiscovery = {
   course: CourseContext;
   queue: QueueItem[];
+  warnings: CaptureWarning[];
   counts: {
     assignments: number;
     discussions: number;
@@ -31,6 +33,7 @@ declare global {
       paused: boolean;
       cancelled: boolean;
     };
+    __aeonthraSessionObserverInstalled?: boolean;
   }
 }
 
@@ -84,6 +87,8 @@ const state = (window.__aeonthraCaptureState ??= {
 });
 
 let overlayNode: HTMLDivElement | null = null;
+let sessionObservationTimer: number | null = null;
+let lastSessionObservationSignature = "";
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -95,27 +100,181 @@ function canonicalize(url: string): string {
   return parsed.toString();
 }
 
-function parseCourseFromLocation(): CourseContext | null {
-  const match = window.location.pathname.match(/\/courses\/(\d+)/);
-  if (!match) {
-    return null;
+function hasCanvasDomSignals(): boolean {
+  if (
+    document.querySelector("#application.ic-app, .ic-app-main-content, .ic-app-nav-toggle-and-crumbs, .ic-Layout-body")
+  ) {
+    return true;
   }
 
-  const courseId = match[1]!;
+  const bodyClassName = document.body?.className ?? "";
+  if (/\bic-/.test(bodyClassName)) {
+    return true;
+  }
+
+  const env = (window as Window & { ENV?: Record<string, unknown> }).ENV;
+  return Boolean(env && (env.COURSE_ID || env.current_user_id || env.current_user_roles));
+}
+
+function parseCourseFromLocation(): CourseContext | null {
   const courseName =
     document.querySelector<HTMLElement>(".ellipsis")?.textContent?.trim() ||
     document.querySelector<HTMLElement>("[data-testid='course-name']")?.textContent?.trim() ||
     document.title.split("|")[0]!.trim() ||
-    `Course ${courseId}`;
+    "Canvas Course";
 
+  const course = parseCourseContextFromUrl(window.location.href, courseName, {
+    requireKnownCanvasHost: false
+  });
+  if (!course) {
+    return null;
+  }
+
+  if (isKnownCanvasHost(window.location.hostname) || hasCanvasDomSignals()) {
+    return course;
+  }
+
+  return null;
+}
+
+function inferCurrentQueueItemType(url: string): QueueItem["type"] {
+  if (/\/assignments\/\d+/i.test(url)) {
+    return "assignment";
+  }
+  if (/\/discussion_topics\/\d+/i.test(url)) {
+    return "discussion";
+  }
+  if (/\/quizzes\/\d+/i.test(url)) {
+    return "quiz";
+  }
+  return "page";
+}
+
+function currentDocumentTitle(fallback: string): string {
+  return normalizeWhitespace(
+    document.querySelector("h1.title, .assignment-title .title-content, h1.page-title, h1.discussion-title, h1.quiz-title, h1")?.textContent ||
+    fallback
+  );
+}
+
+function buildCurrentDocumentQueueItem(course: CourseContext): QueueItem {
+  const type = inferCurrentQueueItemType(window.location.href);
   return {
-    courseId,
-    courseName,
-    origin: window.location.origin,
-    courseUrl: `${window.location.origin}/courses/${courseId}`,
-    modulesUrl: `${window.location.origin}/courses/${courseId}/modules`,
-    host: window.location.host
+    id: stableHash(`session:${type}:${canonicalize(window.location.href)}`),
+    type,
+    title: currentDocumentTitle(course.courseName),
+    url: canonicalize(window.location.href),
+    strategy: "html-fetch"
   };
+}
+
+function captureCurrentDocumentForSession(course: CourseContext): {
+  item: CaptureItem | null;
+  resources: CaptureResource[];
+  warning?: CaptureWarning;
+} {
+  const queueItem = buildCurrentDocumentQueueItem(course);
+  const html = document.documentElement.outerHTML;
+
+  switch (queueItem.type) {
+    case "assignment":
+      return buildAssignmentPayload(queueItem, html, "learning");
+    case "discussion":
+      return buildDiscussionPayload(queueItem, html, "learning");
+    case "quiz":
+      return buildQuizPayload(queueItem, html, "learning");
+    default:
+      return buildPagePayload(queueItem, html, "learning");
+  }
+}
+
+async function observeCurrentPageForSession(): Promise<void> {
+  if (state.running) {
+    return;
+  }
+
+  const course = parseCourseFromLocation();
+  if (!course) {
+    return;
+  }
+
+  const observation = captureCurrentDocumentForSession(course);
+  if (!observation.item && !observation.warning) {
+    return;
+  }
+
+  const signature = [
+    course.origin,
+    course.courseId,
+    observation.item?.canonicalUrl ?? canonicalize(window.location.href),
+    observation.item?.contentHash ?? "",
+    observation.warning?.message ?? ""
+  ].join("|");
+
+  if (signature === lastSessionObservationSignature) {
+    return;
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "aeon:session-observe-page",
+      course,
+      item: observation.item,
+      resources: observation.resources,
+      warning: observation.warning,
+      observedAt: new Date().toISOString()
+    });
+    if (!response?.ignored) {
+      lastSessionObservationSignature = signature;
+    }
+  } catch {
+    // Ignore passive observation failures; they should never block the page.
+  }
+}
+
+function scheduleSessionObservation(delayMs = 900): void {
+  if (sessionObservationTimer !== null) {
+    window.clearTimeout(sessionObservationTimer);
+  }
+  sessionObservationTimer = window.setTimeout(() => {
+    sessionObservationTimer = null;
+    void observeCurrentPageForSession();
+  }, delayMs);
+}
+
+function installSessionObserver(): void {
+  if (window.__aeonthraSessionObserverInstalled) {
+    return;
+  }
+  window.__aeonthraSessionObserverInstalled = true;
+
+  const scheduleAfterRouteChange = () => {
+    scheduleSessionObservation(700);
+    window.setTimeout(() => {
+      void observeCurrentPageForSession();
+    }, 2200);
+  };
+
+  const wrapHistoryMethod = <T extends "pushState" | "replaceState">(method: T) => {
+    const original = history[method];
+    history[method] = function wrappedHistoryMethod(this: History, ...args: Parameters<History[T]>) {
+      const result = original.apply(this, args);
+      scheduleAfterRouteChange();
+      return result;
+    } as History[T];
+  };
+
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
+  window.addEventListener("popstate", () => scheduleAfterRouteChange());
+  window.addEventListener("load", () => scheduleAfterRouteChange());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleSessionObservation(500);
+    }
+  });
+
+  scheduleAfterRouteChange();
 }
 
 function overlayContainer(): HTMLDivElement {
@@ -291,27 +450,35 @@ async function fetchAllJson<T>(url: string, settings: ExtensionSettings): Promis
     let response: Response | null = null;
 
     for (let attempt = 0; attempt <= settings.maxRetries; attempt += 1) {
-      response = await fetch(next, {
-        credentials: "include",
-        headers: {
-          Accept: "application/json"
-        }
-      });
+      try {
+        response = await fetch(next, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json"
+          }
+        });
 
-      if (response.status === 429) {
+        if (response.status === 429) {
+          if (attempt === settings.maxRetries) {
+            throw new Error(`Canvas rate limited the request for ${next}.`);
+          }
+          await sleep(delay);
+          delay *= 2;
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} for ${next}`);
+        }
+
+        break;
+      } catch (error) {
         if (attempt === settings.maxRetries) {
-          throw new Error(`Canvas rate limited the request for ${next}.`);
+          throw error;
         }
         await sleep(delay);
         delay *= 2;
-        continue;
       }
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} for ${next}`);
-      }
-
-      break;
     }
 
     const batch = await response!.json() as T[];
@@ -320,6 +487,28 @@ async function fetchAllJson<T>(url: string, settings: ExtensionSettings): Promis
   }
 
   return results;
+}
+
+async function loadDiscoveryCollection<T>(
+  url: string,
+  settings: ExtensionSettings,
+  label: string
+): Promise<{ items: T[]; warning: CaptureWarning | null }> {
+  try {
+    return {
+      items: await fetchAllJson<T>(url, settings),
+      warning: null
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? normalizeWhitespace(error.message) : "request failed";
+    return {
+      items: [],
+      warning: {
+        url,
+        message: `${label} could not be loaded after retries, so AEONTHRA continued without that category. ${reason}`
+      }
+    };
+  }
 }
 
 function collectLinks(root: ParentNode, sourceItemId: string): CaptureResource[] {
@@ -705,25 +894,45 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
   const base = `${payload.course.origin}/api/v1/courses/${payload.course.courseId}`;
   const [
     courseInfo,
-    modules,
-    assignments,
-    discussions,
-    pages,
-    quizzes,
-    files,
-    announcements
+    modulesResult,
+    assignmentsResult,
+    discussionsResult,
+    pagesResult,
+    quizzesResult,
+    filesResult,
+    announcementsResult
   ] = await Promise.all([
     fetchJson<Record<string, unknown>>(`${base}?include[]=syllabus_body`, payload.settings),
-    fetchAllJson<Record<string, unknown>>(`${base}/modules?include[]=items&per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${base}/assignments?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${base}/discussion_topics?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${base}/pages?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${base}/quizzes?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${base}/files?per_page=100`, payload.settings).catch(() => []),
-    fetchAllJson<Record<string, unknown>>(`${payload.course.origin}/api/v1/announcements?context_codes[]=course_${payload.course.courseId}&per_page=100`, payload.settings).catch(() => [])
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/modules?include[]=items&per_page=100`, payload.settings, "Modules"),
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/assignments?per_page=100`, payload.settings, "Assignments"),
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/discussion_topics?per_page=100`, payload.settings, "Discussions"),
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/pages?per_page=100`, payload.settings, "Pages"),
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/quizzes?per_page=100`, payload.settings, "Quizzes"),
+    loadDiscoveryCollection<Record<string, unknown>>(`${base}/files?per_page=100`, payload.settings, "Files"),
+    loadDiscoveryCollection<Record<string, unknown>>(
+      `${payload.course.origin}/api/v1/announcements?context_codes[]=course_${payload.course.courseId}&per_page=100`,
+      payload.settings,
+      "Announcements"
+    )
   ]);
 
+  const modules = modulesResult.items;
+  const assignments = assignmentsResult.items;
+  const discussions = discussionsResult.items;
+  const pages = pagesResult.items;
+  const quizzes = quizzesResult.items;
+  const files = filesResult.items;
+  const announcements = announcementsResult.items;
   const queue: QueueItem[] = [];
+  const warnings = [
+    modulesResult.warning,
+    assignmentsResult.warning,
+    discussionsResult.warning,
+    pagesResult.warning,
+    quizzesResult.warning,
+    filesResult.warning,
+    announcementsResult.warning
+  ].filter((warning): warning is CaptureWarning => Boolean(warning));
 
   queue.push({
     id: stableHash(`${payload.course.courseId}:syllabus`),
@@ -833,6 +1042,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       courseName: normalizeWhitespace(String(courseInfo.name ?? payload.course.courseName))
     },
     queue,
+    warnings,
     counts
   };
 }
@@ -911,6 +1121,9 @@ async function runCaptureJob(payload: CaptureJobPayload): Promise<void> {
       queue: discovery.queue,
       course: discovery.course
     });
+    for (const warning of discovery.warnings) {
+      await emitWarning(payload.jobId, warning);
+    }
 
     const totalQueued = discovery.queue.length;
     let index = 0;
@@ -1039,3 +1252,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return undefined;
 });
+
+installSessionObserver();

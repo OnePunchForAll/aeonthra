@@ -65,7 +65,7 @@ export function createOfflineSiteBundle(input: {
 
   return OfflineSiteBundleSchema.parse({
     schemaVersion: input.learningBundle.schemaVersion,
-    exportedAt: input.learningBundle.generatedAt,
+    exportedAt: new Date().toISOString(),
     title: input.mergedBundle.title,
     ...serialized,
     deterministicHash: stableHash(JSON.stringify(serialized))

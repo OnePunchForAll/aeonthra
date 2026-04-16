@@ -1,4 +1,4 @@
-import type { CaptureBundle } from "@learning/schema";
+import type { CaptureBundle, CaptureItem, CaptureResource } from "@learning/schema";
 
 export type CaptureMode = "complete" | "learning";
 export type JobStatus =
@@ -24,17 +24,11 @@ export type QueueItemType =
 export interface ExtensionSettings {
   defaultMode: CaptureMode;
   requestDelay: number;
-  autoExpand: boolean;
-  includeFileMetadata: boolean;
   autoHandoff: boolean;
   autoDeleteAfterImport: boolean;
   maxRetries: number;
   retryBackoffMs: number;
   aeonthraUrl: string;
-  concurrentTabs: number;
-  excludeModuleItemTypes: string[];
-  theme: "default" | "high-contrast";
-  reduceMotion: boolean;
 }
 
 export interface CourseContext {
@@ -50,6 +44,40 @@ export interface CourseContext {
 export interface CaptureWarning {
   url: string;
   message: string;
+}
+
+export interface SessionCaptureState {
+  sessionKey: string;
+  course: CourseContext;
+  bundle: CaptureBundle;
+  warnings: CaptureWarning[];
+  firstSeenAt: string;
+  lastSeenAt: string;
+  sourceTabIds: number[];
+}
+
+export interface SessionCaptureSummary {
+  sessionKey: string;
+  origin: string;
+  courseId: string;
+  courseName: string;
+  sourceHost: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  itemCount: number;
+  resourceCount: number;
+  warningCount: number;
+  sourceTabIds: number[];
+  latestItemTitle: string;
+}
+
+export interface SessionObservation {
+  course: CourseContext;
+  item: CaptureItem | null;
+  resources: CaptureResource[];
+  warning?: CaptureWarning;
+  observedAt: string;
+  sourceTabId?: number | null;
 }
 
 export interface DiscoveryCounts {
@@ -146,4 +174,5 @@ export type ExtensionStatusPayload = {
   history: CaptureHistorySummary[];
   latestCaptureId: string | null;
   storage: StorageUsage;
+  session: SessionCaptureSummary | null;
 };

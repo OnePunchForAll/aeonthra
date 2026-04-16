@@ -1,8 +1,5 @@
-import * as pdfjsLib from "pdfjs-dist";
 // @ts-expect-error Vite resolves worker assets via ?url.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 export type ExtractedPdfChapter = {
   title: string;
@@ -22,11 +19,83 @@ function inferTitleFromName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Untitled PDF";
 }
 
+let pdfJsLoader: Promise<typeof import("pdfjs-dist")> | null = null;
+
+async function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
+  if (!pdfJsLoader) {
+    pdfJsLoader = import("pdfjs-dist").then((pdfjsLib) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+      return pdfjsLib;
+    });
+  }
+
+  return pdfJsLoader;
+}
+
+const BOILERPLATE_LINE_PATTERNS = [
+  /^table of contents$/i,
+  /^contents$/i,
+  /^copyright(?:\s+\d{4})?$/i,
+  /^all rights reserved$/i,
+  /^isbn(?:[:\s-].*)?$/i,
+  /^preface$/i,
+  /^acknowledg(?:e)?ments?$/i,
+  /^dedication$/i,
+  /^references$/i,
+  /^bibliography$/i,
+  /^index$/i,
+  /^about the author$/i
+];
+
+const PAGE_MARKER_PATTERN = /^(?:page\s*)?\d+(?:\s*of\s*\d+)?$/i;
+
+function isBoilerplateLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (PAGE_MARKER_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  if (BOILERPLATE_LINE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return true;
+  }
+
+  if (/^[\W_]+$/.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function normalizePdfPageText(pageText: string): string {
+  const lines = pageText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isBoilerplateLine(line));
+
+  const deduped: string[] = [];
+  for (const line of lines) {
+    if (deduped[deduped.length - 1] === line) {
+      continue;
+    }
+    deduped.push(line);
+  }
+
+  return deduped.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function detectChapters(pageTexts: string[]): ExtractedPdfChapter[] {
   const chapters: Array<{ title: string; startPage: number }> = [];
 
   pageTexts.forEach((pageText, index) => {
-    const lines = pageText.split(/\n+/).map((entry) => entry.trim()).filter(Boolean).slice(0, 12);
+    const lines = normalizePdfPageText(pageText)
+      .split(/\n+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 12);
     lines.forEach((line) => {
       const match = line.match(/^(?:chapter|unit|module)\s+(\d+)(?:[:.\-\s]+(.+))?$/i);
       if (match) {
@@ -66,6 +135,7 @@ export async function extractTextFromPdf(
   file: File,
   onProgress?: (page: number, total: number) => void
 ): Promise<ExtractedPdf> {
+  const pdfjsLib = await loadPdfJs();
   const arrayBuffer = await file.arrayBuffer();
   const document = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const pageTexts: string[] = [];
@@ -99,7 +169,7 @@ export async function extractTextFromPdf(
       lines.push(currentLine.trim());
     }
 
-    pageTexts.push(lines.join("\n"));
+    pageTexts.push(normalizePdfPageText(lines.join("\n")));
     onProgress?.(pageNumber, document.numPages);
 
     if (pageNumber % 4 === 0) {

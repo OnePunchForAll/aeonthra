@@ -1,9 +1,12 @@
-import type { CaptureBundle } from "@learning/schema";
+import { createEmptyBundle, mergeCaptureBundle, type CaptureBundle } from "@learning/schema";
 import type {
   CaptureHistorySummary,
   CourseContext,
   ExtensionSettings,
   RuntimeState,
+  SessionCaptureState,
+  SessionCaptureSummary,
+  SessionObservation,
   StorageUsage,
   StoredCaptureRecord
 } from "./types";
@@ -13,6 +16,7 @@ const SETTINGS_FALLBACK_KEY = "aeonthra:settings:local";
 const RUNTIME_KEY = "aeonthra:runtime";
 const HISTORY_KEY = "aeonthra:history";
 const PENDING_BUNDLE_KEY = "aeonthra:pending-bundle";
+const SESSION_STATES_KEY = "aeonthra:sessions";
 const QUOTA_BYTES = 100 * 1024 * 1024;
 
 function storageGet(area: chrome.storage.StorageArea, keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> {
@@ -69,17 +73,11 @@ function storageRemove(area: chrome.storage.StorageArea, keys: string | string[]
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   defaultMode: "learning",
   requestDelay: 650,
-  autoExpand: true,
-  includeFileMetadata: true,
   autoHandoff: false,
   autoDeleteAfterImport: true,
   maxRetries: 3,
   retryBackoffMs: 1200,
-  aeonthraUrl: "https://aeonthra.github.io/aeonthra/",
-  concurrentTabs: 1,
-  excludeModuleItemTypes: ["external-tool"],
-  theme: "default",
-  reduceMotion: false
+  aeonthraUrl: "https://aeonthra.github.io/aeonthra/"
 };
 
 export const EMPTY_RUNTIME_STATE: RuntimeState = {
@@ -109,31 +107,92 @@ function captureRecordKey(id: string): string {
   return `aeonthra:capture:${id}`;
 }
 
+export function sessionKeyForCourse(course: Pick<CourseContext, "origin" | "courseId">): string {
+  return `${course.origin}::${course.courseId}`;
+}
+
 function byteSize(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
+}
+
+function normalizeSettings(value: unknown): ExtensionSettings {
+  const next = value && typeof value === "object" ? value as Partial<ExtensionSettings> : {};
+  return {
+    defaultMode: next.defaultMode === "complete" ? "complete" : DEFAULT_SETTINGS.defaultMode,
+    requestDelay: typeof next.requestDelay === "number" ? next.requestDelay : DEFAULT_SETTINGS.requestDelay,
+    autoHandoff: typeof next.autoHandoff === "boolean" ? next.autoHandoff : DEFAULT_SETTINGS.autoHandoff,
+    autoDeleteAfterImport:
+      typeof next.autoDeleteAfterImport === "boolean"
+        ? next.autoDeleteAfterImport
+        : DEFAULT_SETTINGS.autoDeleteAfterImport,
+    maxRetries: typeof next.maxRetries === "number" ? next.maxRetries : DEFAULT_SETTINGS.maxRetries,
+    retryBackoffMs: typeof next.retryBackoffMs === "number" ? next.retryBackoffMs : DEFAULT_SETTINGS.retryBackoffMs,
+    aeonthraUrl: typeof next.aeonthraUrl === "string" && next.aeonthraUrl.trim().length > 0
+      ? next.aeonthraUrl
+      : DEFAULT_SETTINGS.aeonthraUrl
+  };
+}
+
+function normalizeSessionStateMap(value: unknown): Record<string, SessionCaptureState> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, SessionCaptureState>)
+      .filter(([, state]) => state && typeof state === "object" && state.course && state.bundle)
+  );
+}
+
+function baseSessionBundle(course: CourseContext, observedAt: string): CaptureBundle {
+  return {
+    ...createEmptyBundle(course.courseName || "AEONTHRA Session"),
+    source: "extension-capture",
+    title: course.courseName || "AEONTHRA Session",
+    capturedAt: observedAt
+  };
+}
+
+function summarizeSession(state: SessionCaptureState): SessionCaptureSummary {
+  const latestItem = state.bundle.items[state.bundle.items.length - 1];
+  return {
+    sessionKey: state.sessionKey,
+    origin: state.course.origin,
+    courseId: state.course.courseId,
+    courseName: state.course.courseName,
+    sourceHost: state.course.host,
+    firstSeenAt: state.firstSeenAt,
+    lastSeenAt: state.lastSeenAt,
+    itemCount: state.bundle.items.length,
+    resourceCount: state.bundle.resources.length,
+    warningCount: state.warnings.length,
+    sourceTabIds: state.sourceTabIds,
+    latestItemTitle: latestItem?.title ?? state.course.courseName
+  };
 }
 
 export async function readSettings(): Promise<ExtensionSettings> {
   try {
     const stored = await storageGet(chrome.storage.sync, SETTINGS_KEY);
     if (stored[SETTINGS_KEY]) {
-      return { ...DEFAULT_SETTINGS, ...(stored[SETTINGS_KEY] as Partial<ExtensionSettings>) };
+      return normalizeSettings(stored[SETTINGS_KEY]);
     }
   } catch {
     // Fall through to local storage.
   }
 
   const fallback = await storageGet(chrome.storage.local, SETTINGS_FALLBACK_KEY);
-  return { ...DEFAULT_SETTINGS, ...(fallback[SETTINGS_FALLBACK_KEY] as Partial<ExtensionSettings> | undefined) };
+  return normalizeSettings(fallback[SETTINGS_FALLBACK_KEY]);
 }
 
 export async function writeSettings(settings: ExtensionSettings): Promise<void> {
+  const normalized = normalizeSettings(settings);
   const writes: Promise<unknown>[] = [
-    storageSet(chrome.storage.local, { [SETTINGS_FALLBACK_KEY]: settings })
+    storageSet(chrome.storage.local, { [SETTINGS_FALLBACK_KEY]: normalized })
   ];
 
   try {
-    writes.push(storageSet(chrome.storage.sync, { [SETTINGS_KEY]: settings }));
+    writes.push(storageSet(chrome.storage.sync, { [SETTINGS_KEY]: normalized }));
   } catch {
     // sync storage may be unavailable; local storage remains the source of truth.
   }
@@ -144,6 +203,88 @@ export async function writeSettings(settings: ExtensionSettings): Promise<void> 
 export async function readRuntimeState(): Promise<RuntimeState> {
   const stored = await storageGet(chrome.storage.local, RUNTIME_KEY);
   return { ...EMPTY_RUNTIME_STATE, ...(stored[RUNTIME_KEY] as Partial<RuntimeState> | undefined) };
+}
+
+export async function readSessionStates(): Promise<Record<string, SessionCaptureState>> {
+  const stored = await storageGet(chrome.storage.local, SESSION_STATES_KEY);
+  return normalizeSessionStateMap(stored[SESSION_STATES_KEY]);
+}
+
+export async function readSessionState(target: Pick<CourseContext, "origin" | "courseId"> | string): Promise<SessionCaptureState | null> {
+  const states = await readSessionStates();
+  const key = typeof target === "string" ? target : sessionKeyForCourse(target);
+  return states[key] ?? null;
+}
+
+export async function readSessionSummary(target: Pick<CourseContext, "origin" | "courseId"> | string): Promise<SessionCaptureSummary | null> {
+  const state = await readSessionState(target);
+  return state ? summarizeSession(state) : null;
+}
+
+export async function writeSessionStates(states: Record<string, SessionCaptureState>): Promise<void> {
+  await storageSet(chrome.storage.local, { [SESSION_STATES_KEY]: states });
+}
+
+export async function clearSessionState(target: Pick<CourseContext, "origin" | "courseId"> | string): Promise<void> {
+  const states = await readSessionStates();
+  const key = typeof target === "string" ? target : sessionKeyForCourse(target);
+  if (!(key in states)) {
+    return;
+  }
+  delete states[key];
+  if (Object.keys(states).length === 0) {
+    await storageRemove(chrome.storage.local, SESSION_STATES_KEY);
+    return;
+  }
+  await writeSessionStates(states);
+}
+
+export async function upsertSessionObservation(observation: SessionObservation): Promise<SessionCaptureState> {
+  const key = sessionKeyForCourse(observation.course);
+  const states = await readSessionStates();
+  const current = states[key];
+  const warningKey = (warning: { url: string; message: string }) => `${warning.url}::${warning.message}`;
+  const nextWarnings = [
+    ...(current?.warnings ?? []),
+    ...(observation.warning ? [observation.warning] : [])
+  ]
+    .filter((warning, index, warnings) => warnings.findIndex((entry) => warningKey(entry) === warningKey(warning)) === index)
+    .slice(-30);
+
+  const nextSourceTabs = Array.from(
+    new Set(
+      [
+        ...(current?.sourceTabIds ?? []),
+        ...(typeof observation.sourceTabId === "number" ? [observation.sourceTabId] : [])
+      ]
+    )
+  ).slice(-8);
+
+  const nextBundle = observation.item
+    ? mergeCaptureBundle(current?.bundle ?? baseSessionBundle(observation.course, observation.observedAt), observation.item, observation.resources)
+    : {
+        ...(current?.bundle ?? baseSessionBundle(observation.course, observation.observedAt)),
+        title: observation.course.courseName
+      };
+
+  const nextState: SessionCaptureState = {
+    sessionKey: key,
+    course: observation.course,
+    bundle: {
+      ...nextBundle,
+      title: observation.course.courseName,
+      source: "extension-capture",
+      capturedAt: observation.observedAt
+    },
+    warnings: nextWarnings,
+    firstSeenAt: current?.firstSeenAt ?? observation.observedAt,
+    lastSeenAt: observation.observedAt,
+    sourceTabIds: nextSourceTabs
+  };
+
+  states[key] = nextState;
+  await writeSessionStates(states);
+  return nextState;
 }
 
 export async function writeRuntimeState(state: RuntimeState): Promise<void> {
@@ -223,11 +364,13 @@ export async function upsertHistory(record: StoredCaptureRecord): Promise<void> 
   const nextHistory = [summary, ...history.filter((entry) => entry.id !== record.id)].slice(0, 20);
   await Promise.all([writeCaptureRecord(record), writeHistorySummaries(nextHistory)]);
 
-  if (history.length >= 20) {
-    const removed = history.slice(19);
-    if (removed.length > 0) {
-      await storageRemove(chrome.storage.local, removed.map((entry) => captureRecordKey(entry.id)));
-    }
+  const retainedIds = new Set(nextHistory.map((entry) => entry.id));
+  const removedKeys = history
+    .filter((entry) => !retainedIds.has(entry.id))
+    .map((entry) => captureRecordKey(entry.id));
+
+  if (removedKeys.length > 0) {
+    await storageRemove(chrome.storage.local, removedKeys);
   }
 }
 
@@ -246,6 +389,7 @@ export async function clearAllCaptures(): Promise<void> {
     ...keys,
     HISTORY_KEY,
     PENDING_BUNDLE_KEY,
+    SESSION_STATES_KEY,
     "aeonthra:partial-bundle",
     "aeonthra:partial-warnings",
     "aeonthra:partial-raw-html"
@@ -272,6 +416,7 @@ export async function latestCaptureId(): Promise<string | null> {
 
 export async function estimateStorageUsage(): Promise<StorageUsage> {
   const history = await readHistorySummaries();
+  const sessions = await readSessionStates();
   let usedBytes = byteSize(history);
   for (const entry of history) {
     const record = await readCaptureRecord(entry.id);
@@ -279,6 +424,7 @@ export async function estimateStorageUsage(): Promise<StorageUsage> {
       usedBytes += byteSize(record);
     }
   }
+  usedBytes += byteSize(sessions);
   return {
     usedBytes,
     quotaBytes: QUOTA_BYTES

@@ -328,6 +328,7 @@ function conceptDepthText(concept: LearningConcept): string {
   const candidates = [concept.primer, concept.summary, concept.excerpt, concept.transferHook];
   for (const candidate of candidates) {
     if (!isRenderableConceptText(candidate)) continue;
+    if (isNegationOnlyText(candidate)) continue;
     if (!isCompleteThought(candidate)) continue;
     if (!isDistinctFrom(core, candidate)) continue;
     return normalizeShellText(candidate);
@@ -389,10 +390,131 @@ function conceptHookText(concept: LearningConcept): string {
 }
 
 function conceptTrapText(concept: LearningConcept): string {
-  if (isRenderableConceptText(concept.commonConfusion)) {
+  if (isRenderableConceptText(concept.commonConfusion) && !isNegationOnlyText(concept.commonConfusion)) {
     return normalizeShellText(concept.commonConfusion);
   }
   return `Do not flatten ${concept.label} into a generic course prompt. Explain the concept's main move before you apply it.`;
+}
+
+const DOMINANT_CONCEPT_STOPWORDS = new Set([
+  "about",
+  "action",
+  "actions",
+  "analysis",
+  "apply",
+  "argument",
+  "assignment",
+  "chapter",
+  "compare",
+  "concept",
+  "concepts",
+  "course",
+  "discussion",
+  "evidence",
+  "example",
+  "examples",
+  "explain",
+  "framework",
+  "frameworks",
+  "guide",
+  "idea",
+  "ideas",
+  "learning",
+  "lesson",
+  "module",
+  "moral",
+  "practice",
+  "reading",
+  "reasoning",
+  "section",
+  "source",
+  "student",
+  "students",
+  "study",
+  "topic",
+  "topics",
+  "week"
+]);
+
+function tokenizeConceptEvidence(text: string | null | undefined): string[] {
+  return normalizeComparisonText(text)
+    .split(" ")
+    .filter((token) => token.length >= 4 && !DOMINANT_CONCEPT_STOPWORDS.has(token));
+}
+
+function containsNormalizedPhrase(haystack: string, phrase: string | null | undefined): boolean {
+  const normalizedPhrase = normalizeComparisonText(phrase);
+  if (!normalizedPhrase) {
+    return false;
+  }
+  return ` ${haystack} `.includes(` ${normalizedPhrase} `);
+}
+
+function conceptEvidenceTokens(concept: ShellConcept): string[] {
+  return [
+    ...new Set([
+      ...tokenizeConceptEvidence(concept.name),
+      ...concept.kw.flatMap((keyword) => tokenizeConceptEvidence(keyword)),
+      ...tokenizeConceptEvidence(concept.core),
+      ...tokenizeConceptEvidence(concept.depth),
+      ...tokenizeConceptEvidence(concept.hook),
+      ...tokenizeConceptEvidence(concept.trap)
+    ])
+  ];
+}
+
+export function resolveDominantShellConceptId(
+  reading: Pick<ShellReading, "title" | "concepts">,
+  section: ShellReadingSection | null | undefined,
+  concepts: ShellConcept[]
+): string | null {
+  if (!section || reading.concepts.length === 0 || concepts.length === 0) {
+    return null;
+  }
+
+  const haystack = normalizeComparisonText([reading.title, section.heading, section.body].join(" "));
+  if (!haystack) {
+    return null;
+  }
+
+  const haystackTokens = new Set(tokenizeConceptEvidence(haystack));
+  const scores = reading.concepts
+    .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+    .filter((concept): concept is ShellConcept => Boolean(concept))
+    .map((concept) => {
+      const labelPhraseHit = containsNormalizedPhrase(haystack, concept.name);
+      const keywordPhraseHits = concept.kw.filter((keyword) => containsNormalizedPhrase(haystack, keyword)).length;
+      const labelTokenHits = tokenizeConceptEvidence(concept.name).filter((token) => haystackTokens.has(token)).length;
+      const evidenceTokenHits = conceptEvidenceTokens(concept).filter((token) => haystackTokens.has(token)).length;
+      return {
+        conceptId: concept.id,
+        score:
+          (labelPhraseHit ? 10 : 0)
+          + Math.min(8, keywordPhraseHits * 4)
+          + Math.min(6, labelTokenHits * 2)
+          + Math.min(6, evidenceTokenHits),
+        directSignal: labelPhraseHit || keywordPhraseHits > 0
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const top = scores[0];
+  const runnerUp = scores[1];
+
+  if (!top) {
+    return null;
+  }
+  if (top.score < 7) {
+    return null;
+  }
+  if (!top.directSignal && top.score < 10) {
+    return null;
+  }
+  if (runnerUp && top.score - runnerUp.score < 3) {
+    return null;
+  }
+
+  return top.conceptId;
 }
 
 // ─── Question generators ───────────────────────────────────────────────────────
@@ -797,11 +919,11 @@ function mapReadingFromChapters(chapters: ForgeChapter[], tasks: CourseTask[]): 
   });
 }
 
-function generateMargins(reading: ShellReading[], learning: LearningBundle): Record<string, ShellMarginAnnotation[]> {
+function generateMargins(reading: ShellReading[], concepts: ShellConcept[]): Record<string, ShellMarginAnnotation[]> {
   const margins: Record<string, ShellMarginAnnotation[]> = {};
 
   reading.forEach((r) => {
-    r.sections.forEach((_, sIdx) => {
+    r.sections.forEach((section, sIdx) => {
       const key = `${r.id}:${sIdx}`;
       const annotations: ShellMarginAnnotation[] = [];
 
@@ -813,10 +935,12 @@ function generateMargins(reading: ShellReading[], learning: LearningBundle): Rec
         });
       }
 
-      // Find related concepts for this reading
-      const relatedConcept = learning.concepts.find((c) => r.concepts.includes(c.id));
+      const relatedConceptId = resolveDominantShellConceptId(r, section, concepts);
+      const relatedConcept = relatedConceptId
+        ? concepts.find((concept) => concept.id === relatedConceptId)
+        : null;
       if (relatedConcept && sIdx < 2) {
-        const hookText = relatedConcept.mnemonic || relatedConcept.transferHook;
+        const hookText = relatedConcept.hook;
         if (hookText) {
           annotations.push({
             type: "plain",
@@ -824,10 +948,10 @@ function generateMargins(reading: ShellReading[], learning: LearningBundle): Rec
             color: "#06d6a0"
           });
         }
-        if (relatedConcept.commonConfusion && !isNegationOnlyText(relatedConcept.commonConfusion)) {
+        if (relatedConcept.trap) {
           annotations.push({
             type: "confusion",
-            text: `⚠ Common trap: ${relatedConcept.commonConfusion}`,
+            text: `⚠ Common trap: ${relatedConcept.trap}`,
             color: "#ff4466"
           });
         }
@@ -1110,7 +1234,7 @@ export function mapToShellData(
   // (e.g. skills courses where most items are discussions/quizzes, not pages)
   const modules = cleanedChapters.length >= 2 ? mapModulesFromChapters(cleanedChapters) : mapModulesFromTasks(cleanedTasks);
   const reading = cleanedChapters.length >= 2 ? mapReadingFromChapters(cleanedChapters, cleanedTasks) : mapReadingFromTasks(cleanedTasks);
-  const margins = generateMargins(reading, learning);
+  const margins = generateMargins(reading, concepts);
   const transcripts = mapTranscriptsFromBundle(bundle);
   const dists = mapDistinctions(learning.relations, learning.concepts);
   const philosophers = mapKeyFigures(bundle, learning);
