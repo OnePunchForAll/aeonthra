@@ -54,6 +54,22 @@ export function parseCourseContextFromUrl(
   }
 }
 
+export function normalizeCourseUrlToDetectedOrigin(
+  urlValue: string,
+  course: Pick<CourseContext, "origin" | "courseId">
+): string {
+  try {
+    const resolved = new URL(urlValue, course.origin);
+    const resolvedCourseId = extractCourseId(resolved.pathname);
+    if (resolvedCourseId && resolvedCourseId === course.courseId) {
+      return new URL(`${resolved.pathname}${resolved.search}${resolved.hash}`, course.origin).toString();
+    }
+    return resolved.toString();
+  } catch {
+    return urlValue;
+  }
+}
+
 export function validateAeonthraUrl(value: string): { ok: true; normalizedUrl: string } | { ok: false; message: string } {
   try {
     const url = new URL(value.trim());

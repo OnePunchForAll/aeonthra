@@ -3,13 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_RUNTIME_STATE,
   readCaptureRecord,
+  readCaptureForensics,
   readHistorySummaries,
   readRuntimeState,
   readSessionState,
   upsertSessionObservation,
+  writeCaptureForensics,
   writeRuntimeState
 } from "./storage";
-import type { CourseContext, RuntimeState } from "./types";
+import type { CaptureForensics, CourseContext, RuntimeState } from "./types";
 
 type StorageMap = Map<string, unknown>;
 
@@ -94,6 +96,27 @@ function makeQueuedCanvasBundle(input: {
   };
 }
 
+function makeForensics(jobId: string, course: CourseContext): CaptureForensics {
+  return {
+    jobId,
+    status: "capturing",
+    mode: "learning",
+    course,
+    startedAt: "2026-04-17T00:00:00.000Z",
+    discovered: null,
+    queueTotal: 0,
+    itemVerdicts: [],
+    warnings: [],
+    partialBundleItemCount: 0,
+    partialBundleSourceUrlCount: 0,
+    lastPersistedCanonicalUrl: null,
+    finalInspection: null,
+    finalPhaseLabel: null,
+    finalErrorMessage: null,
+    finalCaptureId: null
+  };
+}
+
 async function dispatchMessage(message: unknown, sender: Partial<chrome.runtime.MessageSender> = {}): Promise<any> {
   const handler = messageHandler;
   if (!handler) {
@@ -118,6 +141,7 @@ describe("extension service-worker session flow", () => {
     (globalThis as typeof globalThis & { chrome: typeof chrome; addEventListener: typeof globalThis.addEventListener }).chrome = {
       runtime: {
         lastError: undefined,
+        getURL: vi.fn((path: string) => `chrome-extension://test/${path}`),
         onInstalled: {
           addListener(callback: () => void) {
             installedHandler = callback;
@@ -137,23 +161,54 @@ describe("extension service-worker session flow", () => {
         onRemoved: {
           addListener: vi.fn()
         },
-        query: vi.fn(),
-        get: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        sendMessage: vi.fn()
+        query: vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => callback([])),
+        get: vi.fn((_tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => callback(undefined)),
+        create: vi.fn((createProperties: chrome.tabs.CreateProperties, callback: (tab?: chrome.tabs.Tab) => void) => {
+          callback({ id: 1, url: createProperties.url } as chrome.tabs.Tab);
+        }),
+        update: vi.fn((tabId: number, updateProperties: chrome.tabs.UpdateProperties, callback: (tab?: chrome.tabs.Tab) => void) => {
+          callback({ id: tabId, url: updateProperties.url } as chrome.tabs.Tab);
+        }),
+        sendMessage: vi.fn((_tabId: number, _message: unknown, callback: (response?: unknown) => void) => callback(undefined))
       },
       windows: {
-        update: vi.fn()
+        update: vi.fn((_windowId: number, _updateInfo: chrome.windows.UpdateInfo, callback?: () => void) => callback?.())
       },
       downloads: {
-        download: vi.fn()
+        download: vi.fn((_options: chrome.downloads.DownloadOptions, callback?: (downloadId?: number) => void) => callback?.(1))
       },
       sidePanel: {
-        open: vi.fn()
+        open: vi.fn((_target: chrome.sidePanel.OpenOptions, callback?: () => void) => callback?.())
       }
     } as unknown as typeof chrome;
     (globalThis as typeof globalThis & { addEventListener: typeof globalThis.addEventListener }).addEventListener = vi.fn();
+    (globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      if (url.endsWith("/build-info.json")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              version: "1.2.3",
+              builtAt: "2026-04-17T00:00:00.000Z",
+              sourceHash: "source-hash",
+              unpackedPath: "apps/extension/dist",
+              markerPath: "build-info.json"
+            };
+          }
+        } as Response;
+      }
+      return {
+        ok: false,
+        async json() {
+          return {};
+        }
+      } as Response;
+    });
 
     const module = await import("../service-worker");
     void module;
@@ -354,6 +409,171 @@ describe("extension service-worker session flow", () => {
     expect(localStoreRef.has("aeonthra:pending-bundle")).toBe(false);
   });
 
+  it("persists aeon:item-captured messages into the partial bundle and forensic record", async () => {
+    const course = makeCourse("42");
+    const itemBundle = createManualCaptureBundle({
+      title: "Assignment 7",
+      text: "Assignment body with enough detail to prove the item persisted.",
+      canonicalUrl: `${course.courseUrl}/assignments/7`,
+      kind: "assignment"
+    });
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-captured",
+      mode: "learning",
+      course,
+      startedAt: "2026-04-16T00:10:00.000Z"
+    });
+    await writeCaptureForensics(makeForensics("job-captured", course));
+
+    const response = await dispatchMessage({
+      type: "aeon:item-captured",
+      jobId: "job-captured",
+      item: itemBundle.items[0]!,
+      resources: [],
+      rawHtml: "<article>Assignment body</article>"
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: "ok",
+      persistedItemCount: 1,
+      sourceUrlCount: 1,
+      canonicalUrl: `${course.courseUrl}/assignments/7`
+    });
+
+    expect(localStoreRef.get("aeonthra:partial-raw-html")).toEqual({
+      [`${course.courseUrl}/assignments/7`]: "<article>Assignment body</article>"
+    });
+    expect(localStoreRef.get("aeonthra:partial-bundle")).toMatchObject({
+      items: [
+        expect.objectContaining({
+          canonicalUrl: `${course.courseUrl}/assignments/7`,
+          title: "Assignment 7"
+        })
+      ],
+      manifest: expect.objectContaining({
+        itemCount: 1
+      })
+    });
+    expect(await readCaptureForensics()).toMatchObject({
+      jobId: "job-captured",
+      partialBundleItemCount: 1,
+      partialBundleSourceUrlCount: 1,
+      lastPersistedCanonicalUrl: `${course.courseUrl}/assignments/7`
+    });
+  });
+
+  it("returns build identity and capture forensics in extension state", async () => {
+    const course = makeCourse("42");
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-state",
+      mode: "learning",
+      course,
+      startedAt: "2026-04-16T00:15:00.000Z"
+    });
+    await writeCaptureForensics({
+      ...makeForensics("job-state", course),
+      queueTotal: 37,
+      partialBundleItemCount: 12,
+      partialBundleSourceUrlCount: 12
+    });
+
+    const response = await dispatchMessage({ type: "aeon:get-extension-state" });
+
+    expect(response).toMatchObject({
+      ok: true,
+      build: {
+        version: "1.2.3",
+        sourceHash: "source-hash",
+        unpackedPath: "apps/extension/dist",
+        markerPath: "build-info.json"
+      },
+      forensics: {
+        jobId: "job-state",
+        queueTotal: 37,
+        partialBundleItemCount: 12,
+        partialBundleSourceUrlCount: 12
+      }
+    });
+  });
+
+  it("records top rejection reasons when a capture still finalizes as empty", async () => {
+    const course = makeCourse("course-empty-reasons");
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-empty-reasons",
+      mode: "learning",
+      course,
+      startedAt: "2026-04-16T00:20:00.000Z"
+    });
+    await writeCaptureForensics({
+      ...makeForensics("job-empty-reasons", course),
+      itemVerdicts: [
+        {
+          queueItemId: "discussion-1",
+          type: "discussion",
+          title: "Week 1 Debate",
+          url: `${course.courseUrl}/discussion_topics/1`,
+          strategy: "html-fetch",
+          status: "skipped",
+          message: "Discussion \"Week 1 Debate\" did not preserve enough importable prompt text after filtering."
+        },
+        {
+          queueItemId: "discussion-2",
+          type: "discussion",
+          title: "Week 2 Debate",
+          url: `${course.courseUrl}/discussion_topics/2`,
+          strategy: "html-fetch",
+          status: "skipped",
+          message: "Discussion \"Week 1 Debate\" did not preserve enough importable prompt text after filtering."
+        },
+        {
+          queueItemId: "assignment-1",
+          type: "assignment",
+          title: "Essay 1",
+          url: `${course.courseUrl}/assignments/9`,
+          strategy: "html-fetch",
+          status: "failed",
+          message: "AEONTHRA could not persist \"Essay 1\" into the partial bundle."
+        }
+      ]
+    });
+    localStoreRef.set("aeonthra:partial-bundle", createEmptyBundle("AEONTHRA Capture"));
+
+    await dispatchMessage({
+      type: "aeon:job-complete",
+      jobId: "job-empty-reasons",
+      mode: "learning",
+      course,
+      stats: {
+        totalItemsVisited: 3,
+        totalItemsCaptured: 0,
+        totalItemsSkipped: 2,
+        totalItemsFailed: 1,
+        durationMs: 400
+      }
+    });
+
+    const runtime = await readRuntimeState();
+    const forensics = await readCaptureForensics();
+
+    expect(runtime.errorMessage).toContain("Top rejection reasons:");
+    expect(runtime.errorMessage).toContain("2x Discussion \"Week 1 Debate\" did not preserve enough importable prompt text after filtering.");
+    expect(forensics).toMatchObject({
+      jobId: "job-empty-reasons",
+      finalPhaseLabel: "No Importable Pages Captured",
+      finalInspection: {
+        code: "empty-bundle"
+      }
+    });
+    expect(forensics?.finalErrorMessage).toContain("Top rejection reasons:");
+  });
+
   it("does not save empty extension captures into history", async () => {
     const course = makeCourse("course-empty");
     await writeRuntimeState({
@@ -386,7 +606,69 @@ describe("extension service-worker session flow", () => {
     const runtime = await readRuntimeState();
     expect(runtime).toMatchObject({
       status: "error",
+      phaseLabel: "No Importable Pages Captured",
       errorMessage: "Capture finished without any importable Canvas pages, so nothing was saved or queued."
+    });
+    expect(localStoreRef.has("aeonthra:partial-bundle")).toBe(false);
+  });
+
+  it("reports identity rejection when a captured bundle mixes equivalent same-course hosts", async () => {
+    const course = makeCourse("42");
+    const syllabusBundle = createManualCaptureBundle({
+      title: "Canvas Course Syllabus",
+      text: "Syllabus content with enough body text to save the capture.",
+      canonicalUrl: `${course.courseUrl}/assignments/syllabus`,
+      kind: "syllabus"
+    });
+    const mixedHostAssignment = createManualCaptureBundle({
+      title: "Assignment 1",
+      text: "Assignment body with enough content to preserve in the capture bundle.",
+      canonicalUrl: "https://school.instructure.com/courses/42/assignments/7",
+      kind: "assignment"
+    });
+    const partialBundle = {
+      ...syllabusBundle,
+      source: "extension-capture" as const,
+      title: "Canvas Course"
+    };
+    partialBundle.items = [...partialBundle.items, mixedHostAssignment.items[0]!];
+    partialBundle.manifest = {
+      itemCount: partialBundle.items.length,
+      resourceCount: 0,
+      captureKinds: partialBundle.items.map((item) => item.kind),
+      sourceUrls: partialBundle.items.map((item) => item.canonicalUrl)
+    };
+
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-mixed-hosts",
+      mode: "learning",
+      course,
+      startedAt: "2026-04-16T00:05:00.000Z"
+    });
+    localStoreRef.set("aeonthra:partial-bundle", partialBundle);
+
+    await dispatchMessage({
+      type: "aeon:job-complete",
+      jobId: "job-mixed-hosts",
+      mode: "learning",
+      course,
+      stats: {
+        totalItemsVisited: 2,
+        totalItemsCaptured: 2,
+        totalItemsSkipped: 0,
+        totalItemsFailed: 0,
+        durationMs: 450
+      }
+    });
+
+    expect(await readHistorySummaries()).toHaveLength(0);
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "error",
+      phaseLabel: "Capture Identity Rejected",
+      errorMessage: "Capture finished without one resolved Canvas course identity, so nothing was saved or queued."
     });
     expect(localStoreRef.has("aeonthra:partial-bundle")).toBe(false);
   });

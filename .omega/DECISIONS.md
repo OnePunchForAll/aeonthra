@@ -1,5 +1,17 @@
 # DECISIONS
 
+## 2026-04-17
+
+### The worker persistence boundary must accept `aeon:item-captured`, not just `aeon:job-*`
+
+- Decision: retained page payloads emitted by the Canvas content script are part of the canonical live capture contract and must be routed explicitly by the service worker.
+- Why: the real failure path was not only "final bundle importability." The worker dropped retained items before they ever reached the partial bundle, which made later classifier diagnoses incomplete.
+
+### Canonicalize same-course Canvas URLs onto the detected course origin before importability validation
+
+- Decision: extension discovery should rewrite same-course Canvas URLs returned on alternate but equivalent hosts onto the detected active course origin before the bundle is finalized.
+- Why: importability validation is intentionally host-aware. When Canvas APIs emit mixed hosts for one course, preserving those URLs verbatim makes an otherwise valid capture look ambiguous or mismatched at the final handoff boundary.
+
 ## 2026-04-16
 
 ### Do not track ephemeral worktrees or disposable QA artifacts in the repo root

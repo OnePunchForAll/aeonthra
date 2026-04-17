@@ -1,4 +1,9 @@
-import type { CaptureBundle, CaptureItem, CaptureResource } from "@learning/schema";
+import type {
+  CanvasCourseKnowledgePackTrace,
+  CaptureBundle,
+  CaptureItem,
+  CaptureResource
+} from "@learning/schema";
 
 export type CaptureMode = "complete" | "learning";
 export type JobStatus =
@@ -166,6 +171,46 @@ export interface StorageUsage {
   quotaBytes: number;
 }
 
+export interface ExtensionBuildIdentity {
+  version: string;
+  builtAt: string;
+  sourceHash: string;
+  unpackedPath: string;
+  markerPath: string;
+}
+
+export interface CaptureItemVerdict {
+  queueItemId: string;
+  type: QueueItemType;
+  title: string;
+  url: string;
+  strategy: QueueItem["strategy"];
+  status: "captured" | "skipped" | "failed";
+  message?: string;
+  canonicalUrl?: string;
+  persistedItemCount?: number;
+  sourceUrlCount?: number;
+}
+
+export interface CaptureForensics {
+  jobId: string | null;
+  status: JobStatus | null;
+  mode: CaptureMode;
+  course: CourseContext | null;
+  startedAt: string | null;
+  discovered: DiscoveryCounts | null;
+  queueTotal: number;
+  itemVerdicts: CaptureItemVerdict[];
+  warnings: CaptureWarning[];
+  partialBundleItemCount: number;
+  partialBundleSourceUrlCount: number;
+  lastPersistedCanonicalUrl: string | null;
+  finalInspection: CanvasCourseKnowledgePackTrace | null;
+  finalPhaseLabel: string | null;
+  finalErrorMessage: string | null;
+  finalCaptureId: string | null;
+}
+
 export type ExtensionStatusPayload = {
   ok: true;
   activeCourse: CourseContext | null;
@@ -174,5 +219,7 @@ export type ExtensionStatusPayload = {
   history: CaptureHistorySummary[];
   latestCaptureId: string | null;
   storage: StorageUsage;
+  build: ExtensionBuildIdentity | null;
+  forensics: CaptureForensics | null;
   session: SessionCaptureSummary | null;
 };

@@ -6,6 +6,7 @@ import {
   createEmptyBundle,
   inspectCanvasCourseKnowledgePack,
   mergeCaptureBundle,
+  traceCanvasCourseKnowledgePack,
   type CanvasCourseKnowledgePackIssueCode,
   type BridgeMessage,
   type CaptureBundle,
@@ -15,6 +16,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   clearAllCaptures,
+  writeCaptureForensics,
   clearPendingHandoff,
   clearPendingHandoffs,
   clearSessionState,
@@ -24,6 +26,7 @@ import {
   latestCaptureId,
   patchRuntimeState,
   readCaptureRecord,
+  readCaptureForensics,
   readHistorySummaries,
   readRuntimeState,
   readSessionState,
@@ -42,9 +45,12 @@ import {
 } from "./core/platform";
 import type {
   CaptureMode,
+  CaptureForensics,
+  CaptureItemVerdict,
   CaptureStats,
   CaptureWarning,
   CourseContext,
+  ExtensionBuildIdentity,
   ExtensionStatusPayload,
   QueueItem,
   RuntimeState,
@@ -69,6 +75,7 @@ type CaptureStartPayload = {
 type ContentProgressMessage =
   | { type: "aeon:job-discovered"; jobId: string; counts: RuntimeState["discovered"]; queue: QueueItem[]; course: CourseContext }
   | { type: "aeon:item-captured"; jobId: string; item: CaptureItem; resources: CaptureResource[]; rawHtml?: string }
+  | { type: "aeon:job-item-verdict"; jobId: string; verdict: CaptureItemVerdict }
   | { type: "aeon:job-progress"; jobId: string; phaseLabel: string; currentTitle: string; currentUrl: string; completedCount: number; skippedCount: number; failedCount: number; totalQueued: number; progressPct: number }
   | { type: "aeon:job-warning"; jobId: string; warning: CaptureWarning }
   | { type: "aeon:job-complete"; jobId: string; stats: Omit<CaptureStats, "sizeBytes">; mode: CaptureMode; course: CourseContext; cancelled?: boolean }
@@ -303,6 +310,86 @@ async function clearPartialState(): Promise<void> {
   await storageLocalRemove([PARTIAL_BUNDLE_KEY, PARTIAL_WARNINGS_KEY, PARTIAL_RAW_HTML_KEY]);
 }
 
+let buildIdentityPromise: Promise<ExtensionBuildIdentity | null> | null = null;
+
+async function readBuildIdentity(): Promise<ExtensionBuildIdentity | null> {
+  if (!buildIdentityPromise) {
+    buildIdentityPromise = (async () => {
+      try {
+        const response = await fetch(chrome.runtime.getURL("build-info.json"));
+        if (!response.ok) {
+          return null;
+        }
+        const parsed = await response.json() as Partial<ExtensionBuildIdentity>;
+        if (
+          typeof parsed.version !== "string" ||
+          typeof parsed.builtAt !== "string" ||
+          typeof parsed.sourceHash !== "string" ||
+          typeof parsed.unpackedPath !== "string" ||
+          typeof parsed.markerPath !== "string"
+        ) {
+          return null;
+        }
+        return {
+          version: parsed.version,
+          builtAt: parsed.builtAt,
+          sourceHash: parsed.sourceHash,
+          unpackedPath: parsed.unpackedPath,
+          markerPath: parsed.markerPath
+        };
+      } catch {
+        return null;
+      }
+    })();
+  }
+
+  return buildIdentityPromise;
+}
+
+function createInitialForensics(jobId: string, mode: CaptureMode, course: CourseContext): CaptureForensics {
+  return {
+    jobId,
+    status: "starting",
+    mode,
+    course,
+    startedAt: new Date().toISOString(),
+    discovered: null,
+    queueTotal: 0,
+    itemVerdicts: [],
+    warnings: [],
+    partialBundleItemCount: 0,
+    partialBundleSourceUrlCount: 0,
+    lastPersistedCanonicalUrl: null,
+    finalInspection: null,
+    finalPhaseLabel: null,
+    finalErrorMessage: null,
+    finalCaptureId: null
+  };
+}
+
+async function updateCaptureForensicsRecord(
+  updater: (current: CaptureForensics | null) => CaptureForensics | null
+): Promise<void> {
+  const current = await readCaptureForensics();
+  await writeCaptureForensics(updater(current));
+}
+
+function summarizeTopVerdictReasons(verdicts: CaptureItemVerdict[], limit = 3): string[] {
+  const counts = new Map<string, number>();
+  for (const verdict of verdicts) {
+    if (verdict.status === "captured") {
+      continue;
+    }
+    const key = verdict.message?.trim() || "No importable content survived extraction.";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([message, count]) => `${count}x ${message}`);
+}
+
 let jobCounter = 0;
 
 function randomJobId(): string {
@@ -384,6 +471,22 @@ function describeQueueableCanvasBundleIssue(
       return "Capture metadata recorded a Canvas host that did not match the captured Canvas URLs, so nothing was saved or queued.";
     case "course-identity-mismatch":
       return "Capture metadata recorded a Canvas course id that did not match the captured Canvas URLs, so nothing was saved or queued.";
+  }
+}
+
+function describeCaptureFailurePhase(code: CanvasCourseKnowledgePackIssueCode): string {
+  switch (code) {
+    case "empty-bundle":
+      return "No Importable Pages Captured";
+    case "missing-course-id":
+    case "missing-source-host":
+    case "missing-course-url":
+    case "ambiguous-course-identity":
+    case "host-mismatch":
+    case "course-identity-mismatch":
+      return "Capture Identity Rejected";
+    default:
+      return "Capture Rejected";
   }
 }
 
@@ -476,13 +579,15 @@ function runtimeIsBusy(runtime: RuntimeState): boolean {
 
 async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
   const tab = await activeTab();
-  const [course, runtime, settings, history, latestId, storage] = await Promise.all([
+  const [course, runtime, settings, history, latestId, storage, build, forensics] = await Promise.all([
     detectCourseContext(tab),
     readRuntimeState(),
     readSettings(),
     readHistorySummaries(),
     latestCaptureId(),
-    estimateStorageUsage()
+    estimateStorageUsage(),
+    readBuildIdentity(),
+    readCaptureForensics()
   ]);
   const session = await readSessionSummary(course ?? runtime.course ?? "").catch(() => null);
 
@@ -494,6 +599,8 @@ async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
     history,
     latestCaptureId: latestId,
     storage,
+    build,
+    forensics,
     session
   };
 }
@@ -713,28 +820,67 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
     }
   };
 
+  const trace = traceCanvasCourseKnowledgePack(finalized);
   const inspection = inspectCanvasCourseKnowledgePack(finalized);
   if (!inspection.ok) {
+    const existingForensics = await readCaptureForensics();
+    const rejectionSummary = inspection.code === "empty-bundle"
+      ? summarizeTopVerdictReasons(existingForensics?.itemVerdicts ?? [])
+      : [];
+    const errorMessage = rejectionSummary.length > 0
+      ? `${describeQueueableCanvasBundleIssue(inspection.code, "capture")} Top rejection reasons: ${rejectionSummary.join("; ")}`
+      : describeQueueableCanvasBundleIssue(inspection.code, "capture");
     await clearPartialState();
+    await writeCaptureForensics({
+      ...(existingForensics ?? createInitialForensics(jobId, mode, course)),
+      jobId,
+      status: cancelled ? "cancelled" : "error",
+      mode,
+      course,
+      discovered: existingForensics?.discovered ?? runtime.discovered,
+      queueTotal: runtime.totalQueued,
+      warnings,
+      partialBundleItemCount: finalized.items.length,
+      partialBundleSourceUrlCount: finalized.manifest.sourceUrls.length,
+      lastPersistedCanonicalUrl: existingForensics?.lastPersistedCanonicalUrl ?? null,
+      finalInspection: trace,
+      finalPhaseLabel: cancelled ? "Partial Capture Discarded" : describeCaptureFailurePhase(inspection.code),
+      finalErrorMessage: errorMessage,
+      finalCaptureId: null
+    });
     await updateRuntime({
       status: cancelled ? "cancelled" : "error",
       progressPct: 100,
-      phaseLabel: cancelled ? "Partial Capture Discarded" : "No Importable Pages Captured",
+      phaseLabel: cancelled ? "Partial Capture Discarded" : describeCaptureFailurePhase(inspection.code),
       finishedAt: new Date().toISOString(),
       captureId: null,
       warningCount: warnings.length,
-      errorMessage: describeQueueableCanvasBundleIssue(inspection.code, "capture")
+      errorMessage
     });
     return;
   }
 
   const importableBundle = inspection.bundle;
-  const captureId = captureBundleId(importableBundle);
   const sizeBytes = new Blob([JSON.stringify(importableBundle)]).size;
+  const sizedImportableBundle: CaptureBundle = {
+    ...importableBundle,
+    captureMeta: importableBundle.captureMeta
+      ? {
+          ...importableBundle.captureMeta,
+          stats: importableBundle.captureMeta.stats
+            ? {
+                ...importableBundle.captureMeta.stats,
+                sizeBytes
+              }
+            : importableBundle.captureMeta.stats
+        }
+      : importableBundle.captureMeta
+  };
+  const captureId = captureBundleId(sizedImportableBundle);
   const record: StoredCaptureRecord = {
     id: captureId,
-    title: importableBundle.title,
-    capturedAt: importableBundle.capturedAt,
+    title: sizedImportableBundle.title,
+    capturedAt: sizedImportableBundle.capturedAt,
     courseId: course.courseId,
     courseName: course.courseName,
     mode,
@@ -744,11 +890,25 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
       sizeBytes
     },
     warnings,
-    bundle: importableBundle
+    bundle: sizedImportableBundle
   };
 
   await upsertHistory(record);
   await clearPartialState();
+  await writeCaptureForensics({
+    ...((await readCaptureForensics()) ?? createInitialForensics(jobId, mode, course)),
+    jobId,
+    status: cancelled ? "cancelled" : "completed",
+    mode,
+    course,
+    warnings,
+    partialBundleItemCount: sizedImportableBundle.items.length,
+    partialBundleSourceUrlCount: sizedImportableBundle.manifest.sourceUrls.length,
+    finalInspection: traceCanvasCourseKnowledgePack(sizedImportableBundle),
+    finalPhaseLabel: cancelled ? "Partial Capture Saved" : "Capture Complete",
+    finalErrorMessage: null,
+    finalCaptureId: captureId
+  });
   await updateRuntime({
     status: cancelled ? "cancelled" : "completed",
     progressPct: 100,
@@ -762,7 +922,7 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
   const settings = await readSettings();
   if (!cancelled && settings.autoHandoff) {
     try {
-      await queueBundleForWorkspace(importableBundle);
+      await queueBundleForWorkspace(sizedImportableBundle);
     } catch (error) {
       await updateRuntime({
         status: "completed",
@@ -826,7 +986,8 @@ async function startCapture(mode: CaptureMode): Promise<{ ok: true } | { ok: fal
       sourceTabId: course.sourceTabId ?? null,
       captureId: null,
       errorMessage: null
-    })
+    }),
+    writeCaptureForensics(createInitialForensics(jobId, mode, course))
   ]);
 
   await broadcastOverlay(await readRuntimeState());
@@ -932,7 +1093,7 @@ async function openClassroom(captureId: string | null): Promise<{ ok: true; brid
   }
 }
 
-async function handleContentProgress(message: ContentProgressMessage): Promise<void> {
+async function handleContentProgress(message: ContentProgressMessage): Promise<Record<string, unknown> | void> {
   const runtime = await readRuntimeState();
   if (runtime.jobId !== message.jobId) {
     return;
@@ -946,6 +1107,15 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<v
       totalQueued: message.queue.length,
       course: message.course
     });
+    await updateCaptureForensicsRecord((current) => current && current.jobId === message.jobId
+      ? {
+          ...current,
+          status: "discovering",
+          discovered: message.counts,
+          queueTotal: message.queue.length,
+          course: message.course
+        }
+      : current);
     return;
   }
 
@@ -956,6 +1126,28 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<v
     if (message.rawHtml) {
       await appendPartialRawHtml(message.item.canonicalUrl, message.rawHtml);
     }
+    await updateCaptureForensicsRecord((current) => current && current.jobId === message.jobId
+      ? {
+          ...current,
+          partialBundleItemCount: merged.items.length,
+          partialBundleSourceUrlCount: merged.manifest.sourceUrls.length,
+          lastPersistedCanonicalUrl: message.item.canonicalUrl
+        }
+      : current);
+    return {
+      persistedItemCount: merged.items.length,
+      sourceUrlCount: merged.manifest.sourceUrls.length,
+      canonicalUrl: message.item.canonicalUrl
+    };
+  }
+
+  if (message.type === "aeon:job-item-verdict") {
+    await updateCaptureForensicsRecord((current) => current && current.jobId === message.jobId
+      ? {
+          ...current,
+          itemVerdicts: [...current.itemVerdicts, message.verdict].slice(-200)
+        }
+      : current);
     return;
   }
 
@@ -971,12 +1163,25 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<v
       totalQueued: message.totalQueued,
       progressPct: message.progressPct
     });
+    await updateCaptureForensicsRecord((current) => current && current.jobId === message.jobId
+      ? {
+          ...current,
+          status: runtime.status === "paused" ? "paused" : "capturing",
+          queueTotal: message.totalQueued
+        }
+      : current);
     return;
   }
 
   if (message.type === "aeon:job-warning") {
     await appendPartialWarning(message.warning);
     await updateRuntime({ warningCount: runtime.warningCount + 1 });
+    await updateCaptureForensicsRecord((current) => current && current.jobId === message.jobId
+      ? {
+          ...current,
+          warnings: [...current.warnings, message.warning].slice(-200)
+        }
+      : current);
     return;
   }
 
@@ -1077,6 +1282,8 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
     const history = await readHistorySummaries().catch(() => fallbackHistory);
     const fallbackLatestCaptureId = await latestCaptureId().catch(() => null);
     const storage = await estimateStorageUsage().catch(() => ({ usedBytes: 0, quotaBytes: 0 }));
+    const build = await readBuildIdentity().catch(() => null);
+    const forensics = await readCaptureForensics().catch(() => null);
     const session = runtime.course ? await readSessionSummary(runtime.course).catch(() => null) : null;
     return {
       ok: true as const,
@@ -1086,6 +1293,8 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
       history,
       latestCaptureId: fallbackLatestCaptureId,
       storage,
+      build,
+      forensics,
       session
     };
   });
@@ -1117,9 +1326,9 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
     return { state: "idle", message: "Extension message was missing a valid type." };
   }
 
-  if (type.startsWith("aeon:job-")) {
-    await handleContentProgress(message as ContentProgressMessage);
-    return { state: "ok" };
+  if (type === "aeon:item-captured" || type.startsWith("aeon:job-")) {
+    const result = await handleContentProgress(message as ContentProgressMessage);
+    return { state: "ok", ...(result ?? {}) };
   }
 
   if (type === "aeon:session-observe-page") {

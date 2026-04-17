@@ -1,5 +1,5 @@
 import { stableHash, type CaptureItem, type CaptureResource } from "@learning/schema";
-import { isKnownCanvasHost, parseCourseContextFromUrl } from "./core/platform";
+import { isKnownCanvasHost, normalizeCourseUrlToDetectedOrigin, parseCourseContextFromUrl } from "./core/platform";
 import type { CaptureMode, CaptureWarning, CourseContext, ExtensionSettings, QueueItem } from "./core/types";
 
 type CaptureJobPayload = {
@@ -98,6 +98,13 @@ function canonicalize(url: string): string {
   const parsed = new URL(url, window.location.origin);
   parsed.hash = "";
   return parsed.toString();
+}
+
+function normalizeDiscoveredCourseUrl(urlValue: string, course: CourseContext): string {
+  return normalizeCourseUrlToDetectedOrigin(urlValue, {
+    origin: course.origin,
+    courseId: course.courseId
+  });
 }
 
 function hasCanvasDomSignals(): boolean {
@@ -338,7 +345,7 @@ function renderOverlay(runtime: {
   const countEl = node.querySelector<HTMLElement>("[data-count]");
   if (phaseEl) phaseEl.textContent = runtime.phaseLabel;
   if (titleEl) titleEl.textContent = runtime.currentTitle || "Preparing course capture...";
-  if (countEl) countEl.textContent = `${runtime.completedCount}/${runtime.totalQueued || "?"} items processed`;
+  if (countEl) countEl.textContent = `${runtime.completedCount}/${runtime.totalQueued || "?"} items captured`;
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -948,14 +955,17 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       id: stableHash(`module:${moduleEntry.id ?? moduleEntry.name}`),
       type: "module",
       title: normalizeWhitespace(String(moduleEntry.name ?? "Module")),
-      url: `${payload.course.modulesUrl}#module_${moduleEntry.id ?? stableHash(JSON.stringify(moduleEntry))}`,
+      url: `${payload.course.modulesUrl}?module_id=${moduleEntry.id ?? stableHash(JSON.stringify(moduleEntry))}`,
       strategy: "api-only",
       raw: moduleEntry
     });
   }
 
   for (const assignment of assignments) {
-    const url = String(assignment.html_url ?? `${payload.course.courseUrl}/assignments/${assignment.id}`);
+    const url = normalizeDiscoveredCourseUrl(
+      String(assignment.html_url ?? `${payload.course.courseUrl}/assignments/${assignment.id}`),
+      payload.course
+    );
     queue.push({
       id: stableHash(`assignment:${assignment.id ?? url}`),
       type: "assignment",
@@ -967,7 +977,10 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
   }
 
   for (const discussion of discussions) {
-    const url = String(discussion.html_url ?? `${payload.course.courseUrl}/discussion_topics/${discussion.id}`);
+    const url = normalizeDiscoveredCourseUrl(
+      String(discussion.html_url ?? `${payload.course.courseUrl}/discussion_topics/${discussion.id}`),
+      payload.course
+    );
     queue.push({
       id: stableHash(`discussion:${discussion.id ?? url}`),
       type: "discussion",
@@ -979,7 +992,10 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
   }
 
   for (const page of pages) {
-    const url = String(page.html_url ?? `${payload.course.courseUrl}/pages/${page.url}`);
+    const url = normalizeDiscoveredCourseUrl(
+      String(page.html_url ?? `${payload.course.courseUrl}/pages/${page.url}`),
+      payload.course
+    );
     queue.push({
       id: stableHash(`page:${page.page_id ?? page.url ?? url}`),
       type: "page",
@@ -991,7 +1007,10 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
   }
 
   for (const quiz of quizzes) {
-    const url = String(quiz.html_url ?? `${payload.course.courseUrl}/quizzes/${quiz.id}`);
+    const url = normalizeDiscoveredCourseUrl(
+      String(quiz.html_url ?? `${payload.course.courseUrl}/quizzes/${quiz.id}`),
+      payload.course
+    );
     queue.push({
       id: stableHash(`quiz:${quiz.id ?? url}`),
       type: "quiz",
@@ -1007,7 +1026,10 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       id: stableHash(`file:${file.id ?? file.display_name}`),
       type: "file",
       title: normalizeWhitespace(String(file.display_name ?? file.filename ?? "File")),
-      url: String(file.url ?? file.html_url ?? payload.course.courseUrl),
+      url: normalizeDiscoveredCourseUrl(
+        String(file.html_url ?? `${payload.course.courseUrl}/files/${file.id ?? stableHash(JSON.stringify(file))}`),
+        payload.course
+      ),
       strategy: "api-only",
       raw: file
     });
@@ -1018,7 +1040,10 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       id: stableHash(`announcement:${announcement.id ?? announcement.title}`),
       type: "announcement",
       title: normalizeWhitespace(String(announcement.title ?? "Announcement")),
-      url: String(announcement.html_url ?? `${payload.course.courseUrl}/announcements`),
+      url: normalizeDiscoveredCourseUrl(
+        String(announcement.html_url ?? `${payload.course.courseUrl}/announcements/${announcement.id ?? stableHash(JSON.stringify(announcement))}`),
+        payload.course
+      ),
       strategy: "api-only",
       raw: announcement
     });
@@ -1049,6 +1074,48 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
 
 async function emitWarning(jobId: string, warning: CaptureWarning): Promise<void> {
   await chrome.runtime.sendMessage({ type: "aeon:job-warning", jobId, warning });
+}
+
+function defaultSkipMessage(queueItem: QueueItem): string {
+  switch (queueItem.type) {
+    case "discussion":
+      return `Discussion "${queueItem.title}" did not preserve enough importable prompt text after filtering.`;
+    case "quiz":
+      return `Quiz "${queueItem.title}" did not preserve enough importable text after filtering.`;
+    case "assignment":
+      return `Assignment "${queueItem.title}" did not preserve enough importable text after filtering.`;
+    case "page":
+      return `Page "${queueItem.title}" did not preserve enough importable text after filtering.`;
+    default:
+      return `${queueItem.type} "${queueItem.title}" did not preserve enough importable content to retain.`;
+  }
+}
+
+async function emitItemVerdict(input: {
+  jobId: string;
+  queueItem: QueueItem;
+  status: "captured" | "skipped" | "failed";
+  message?: string;
+  canonicalUrl?: string;
+  persistedItemCount?: number;
+  sourceUrlCount?: number;
+}): Promise<void> {
+  await chrome.runtime.sendMessage({
+    type: "aeon:job-item-verdict",
+    jobId: input.jobId,
+    verdict: {
+      queueItemId: input.queueItem.id,
+      type: input.queueItem.type,
+      title: input.queueItem.title,
+      url: input.queueItem.url,
+      strategy: input.queueItem.strategy,
+      status: input.status,
+      message: input.message,
+      canonicalUrl: input.canonicalUrl,
+      persistedItemCount: input.persistedItemCount,
+      sourceUrlCount: input.sourceUrlCount
+    }
+  });
 }
 
 async function emitProgress(input: {
@@ -1158,21 +1225,53 @@ async function runCaptureJob(payload: CaptureJobPayload): Promise<void> {
         }
         if (!result.item) {
           skippedCount += 1;
+          await emitItemVerdict({
+            jobId: payload.jobId,
+            queueItem,
+            status: "skipped",
+            message: result.warning?.message ?? defaultSkipMessage(queueItem)
+          });
         } else {
-          completedCount += 1;
-          await chrome.runtime.sendMessage({
+          const persistResponse = await chrome.runtime.sendMessage({
             type: "aeon:item-captured",
             jobId: payload.jobId,
             item: result.item,
             resources: result.resources,
             rawHtml: result.rawHtml
           });
+          if (!persistResponse?.ok) {
+            throw new Error(
+              typeof persistResponse?.error === "string"
+                ? persistResponse.error
+                : `AEONTHRA could not persist "${queueItem.title}" into the partial bundle.`
+            );
+          }
+          completedCount += 1;
+          await emitItemVerdict({
+            jobId: payload.jobId,
+            queueItem,
+            status: "captured",
+            canonicalUrl: result.item.canonicalUrl,
+            persistedItemCount: typeof persistResponse.persistedItemCount === "number"
+              ? persistResponse.persistedItemCount
+              : undefined,
+            sourceUrlCount: typeof persistResponse.sourceUrlCount === "number"
+              ? persistResponse.sourceUrlCount
+              : undefined
+          });
         }
       } catch (error) {
         failedCount += 1;
+        const message = error instanceof Error ? error.message : `Unable to capture ${queueItem.title}.`;
         await emitWarning(payload.jobId, {
           url: queueItem.url,
-          message: error instanceof Error ? error.message : `Unable to capture ${queueItem.title}.`
+          message
+        });
+        await emitItemVerdict({
+          jobId: payload.jobId,
+          queueItem,
+          status: "failed",
+          message
         });
       }
 

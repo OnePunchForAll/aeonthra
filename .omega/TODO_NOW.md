@@ -2,9 +2,9 @@
 
 ## Highest leverage next work
 
-- Add a checked-in browser proof path for `capture -> open AEONTHRA -> import -> NF_PACK_ACK -> queue clear`, or keep the manual proof sequence current if a harness is still infeasible.
-- Decide whether hostless legacy same-course compatibility should eventually be tightened behind an explicit migration instead of the current compatibility rule.
-- Continue splitting `apps/web/src/AeonthraShell.tsx` after the Atlas extraction, starting with reader/transcript state and helpers.
+- Re-run the exact previously failing authenticated Canvas course flow with the new side-panel forensics visible, then record the real page URLs, verdicts, and final inspection result.
+- Turn the first real post-fix live run into checked-in `content-canvas` fixtures for discussion-heavy, page-heavy, or iframe-heavy captures if any still skip.
+- Add a checked-in browser proof path for `capture -> open AEONTHRA -> import -> NF_PACK_ACK -> queue clear` once a valid authenticated harness or repeatable manual evidence path exists.
 
 ## Repo hygiene and determinism
 
@@ -13,5 +13,5 @@
 
 ## Product hardening
 
-- Add mounted UI coverage for shell remount behavior on explicit offline restores if a lightweight render test harness is introduced.
+- Add mounted UI coverage for extension-side `Build Identity` and `Live Capture Forensics` cards.
 - Strengthen regression coverage for visited-session save and clear targeting plus interrupted partial-capture cleanup.

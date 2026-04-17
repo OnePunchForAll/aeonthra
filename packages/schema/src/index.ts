@@ -166,6 +166,25 @@ type SchemaCaptureBundle = z.infer<typeof CaptureBundleSchema>;
 export type CanvasCourseKnowledgePackIssueCode =
   (typeof canvasCourseKnowledgePackIssueCodes)[number];
 
+export type CanvasCourseIdentityCandidate = {
+  courseId: string;
+  sourceHost: string;
+  url: string;
+};
+
+export type CanvasCourseKnowledgePackTrace = {
+  parsed: boolean;
+  code: CanvasCourseKnowledgePackIssueCode | null;
+  bundle: SchemaCaptureBundle | null;
+  totalItemCount: number;
+  canvasItemCount: number;
+  textbookItemCount: number;
+  expectedCourseId: string;
+  expectedSourceHost: string;
+  identityCandidates: CanvasCourseIdentityCandidate[];
+  distinctIdentities: Array<{ courseId: string; sourceHost: string }>;
+};
+
 export type CanvasCourseKnowledgePackInspection =
   | {
       ok: true;
@@ -229,111 +248,108 @@ function parseCanvasCourseIdentityFromUrl(
 
 function collectCanvasCourseIdentityCandidates(
   bundle: SchemaCaptureBundle
-): Array<{ courseId: string; sourceHost: string }> {
+): CanvasCourseIdentityCandidate[] {
   const itemUrls = bundle.items
     .filter((item) => !isTextbookCaptureItem(item))
     .map((item) => item.canonicalUrl);
   const manifestUrls = bundle.manifest.sourceUrls;
   const candidates = [...itemUrls, ...manifestUrls]
-    .map((value) => parseCanvasCourseIdentityFromUrl(value))
-    .filter((value): value is { courseId: string; sourceHost: string } => value !== null);
+    .map((value) => {
+      const parsed = parseCanvasCourseIdentityFromUrl(value);
+      return parsed
+        ? {
+            ...parsed,
+            url: value
+          }
+        : null;
+    })
+    .filter((value): value is CanvasCourseIdentityCandidate => value !== null);
 
   return Array.from(
     new Map(
       candidates.map((candidate) => [
-        `${candidate.sourceHost}::${candidate.courseId}`,
+        `${candidate.sourceHost}::${candidate.courseId}::${candidate.url}`,
         candidate
       ])
     ).values()
   );
 }
 
-function inspectParsedCanvasCourseKnowledgePack(
-  bundle: SchemaCaptureBundle
-): CanvasCourseKnowledgePackInspection {
-  if (bundle.source !== "extension-capture") {
-    return {
-      ok: false,
-      code: "wrong-source",
-      bundle
-    };
-  }
-
-  if (bundle.items.length === 0) {
-    return {
-      ok: false,
-      code: "empty-bundle",
-      bundle
-    };
-  }
-
-  const canvasItemCount = bundle.items.filter(
-    (item) => !isTextbookCaptureItem(item)
-  ).length;
-  if (canvasItemCount === 0) {
-    return {
-      ok: false,
-      code: "textbook-only",
-      bundle
-    };
-  }
-
-  const courseId = normalizeCourseIdPart(bundle.captureMeta?.courseId);
-  if (!courseId) {
-    return {
-      ok: false,
-      code: "missing-course-id",
-      bundle
-    };
-  }
-
-  const sourceHost = normalizeSourceHostPart(bundle.captureMeta?.sourceHost);
-  if (!sourceHost) {
-    return {
-      ok: false,
-      code: "missing-source-host",
-      bundle
-    };
-  }
-
-  const identityCandidates = collectCanvasCourseIdentityCandidates(bundle);
-  if (identityCandidates.length === 0) {
-    return {
-      ok: false,
-      code: "missing-course-url",
-      bundle
-    };
-  }
-
-  const distinctIdentities = Array.from(
+function distinctCanvasCourseIdentities(
+  candidates: CanvasCourseIdentityCandidate[]
+): Array<{ courseId: string; sourceHost: string }> {
+  return Array.from(
     new Map(
-      identityCandidates.map((candidate) => [
+      candidates.map((candidate) => [
         `${candidate.sourceHost}::${candidate.courseId}`,
-        candidate
+        {
+          courseId: candidate.courseId,
+          sourceHost: candidate.sourceHost
+        }
       ])
     ).values()
   );
-  if (distinctIdentities.length > 1) {
-    return {
-      ok: false,
-      code: "ambiguous-course-identity",
-      bundle
-    };
+}
+
+function traceParsedCanvasCourseKnowledgePack(
+  bundle: SchemaCaptureBundle
+): CanvasCourseKnowledgePackTrace {
+  const totalItemCount = bundle.items.length;
+  const canvasItemCount = bundle.items.filter(
+    (item) => !isTextbookCaptureItem(item)
+  ).length;
+  const textbookItemCount = totalItemCount - canvasItemCount;
+  const expectedCourseId = normalizeCourseIdPart(bundle.captureMeta?.courseId);
+  const expectedSourceHost = normalizeSourceHostPart(bundle.captureMeta?.sourceHost);
+  const identityCandidates = collectCanvasCourseIdentityCandidates(bundle);
+  const distinctIdentities = distinctCanvasCourseIdentities(identityCandidates);
+
+  let code: CanvasCourseKnowledgePackIssueCode | null = null;
+  if (bundle.source !== "extension-capture") {
+    code = "wrong-source";
+  } else if (totalItemCount === 0) {
+    code = "empty-bundle";
+  } else if (canvasItemCount === 0) {
+    code = "textbook-only";
+  } else if (!expectedCourseId) {
+    code = "missing-course-id";
+  } else if (!expectedSourceHost) {
+    code = "missing-source-host";
+  } else if (identityCandidates.length === 0) {
+    code = "missing-course-url";
+  } else if (distinctIdentities.length > 1) {
+    code = "ambiguous-course-identity";
+  } else {
+    const [resolvedIdentity] = distinctIdentities;
+    if (!resolvedIdentity || resolvedIdentity.sourceHost !== expectedSourceHost) {
+      code = "host-mismatch";
+    } else if (resolvedIdentity.courseId !== expectedCourseId) {
+      code = "course-identity-mismatch";
+    }
   }
 
-  const [resolvedIdentity] = distinctIdentities;
-  if (!resolvedIdentity || resolvedIdentity.sourceHost !== sourceHost) {
-    return {
-      ok: false,
-      code: "host-mismatch",
-      bundle
-    };
-  }
+  return {
+    parsed: true,
+    code,
+    bundle,
+    totalItemCount,
+    canvasItemCount,
+    textbookItemCount,
+    expectedCourseId,
+    expectedSourceHost,
+    identityCandidates,
+    distinctIdentities
+  };
+}
 
-  if (resolvedIdentity.courseId !== courseId) {
+function inspectParsedCanvasCourseKnowledgePack(
+  bundle: SchemaCaptureBundle
+): CanvasCourseKnowledgePackInspection {
+  const trace = traceParsedCanvasCourseKnowledgePack(bundle);
+  if (trace.code) {
     return {
       ok: false,
-      code: "course-identity-mismatch",
+      code: trace.code,
       bundle
     };
   }
@@ -341,9 +357,9 @@ function inspectParsedCanvasCourseKnowledgePack(
   return {
     ok: true,
     bundle,
-    canvasItemCount,
-    courseId,
-    sourceHost
+    canvasItemCount: trace.canvasItemCount,
+    courseId: trace.expectedCourseId,
+    sourceHost: trace.expectedSourceHost
   };
 }
 
@@ -360,6 +376,28 @@ export function inspectCanvasCourseKnowledgePack(
   }
 
   return inspectParsedCanvasCourseKnowledgePack(parsed.data);
+}
+
+export function traceCanvasCourseKnowledgePack(
+  input: unknown
+): CanvasCourseKnowledgePackTrace {
+  const parsed = CaptureBundleSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      parsed: false,
+      code: "invalid-bundle",
+      bundle: null,
+      totalItemCount: 0,
+      canvasItemCount: 0,
+      textbookItemCount: 0,
+      expectedCourseId: "",
+      expectedSourceHost: "",
+      identityCandidates: [],
+      distinctIdentities: []
+    };
+  }
+
+  return traceParsedCanvasCourseKnowledgePack(parsed.data);
 }
 
 export function isCanvasCourseKnowledgePack(

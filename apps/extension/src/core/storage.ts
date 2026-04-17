@@ -1,6 +1,7 @@
 import {
   CaptureBundleSchema,
   captureBundleId,
+  createBridgeHandoffEnvelope,
   createEmptyBundle,
   inspectCanvasCourseKnowledgePack,
   mergeCaptureBundle,
@@ -10,6 +11,7 @@ import {
   type CaptureBundle
 } from "@learning/schema";
 import type {
+  CaptureForensics,
   CaptureHistorySummary,
   CourseContext,
   ExtensionSettings,
@@ -27,6 +29,7 @@ const RUNTIME_KEY = "aeonthra:runtime";
 const HISTORY_KEY = "aeonthra:history";
 const LEGACY_PENDING_BUNDLE_KEY = "aeonthra:pending-bundle";
 const PENDING_HANDOFFS_KEY = "aeonthra:pending-handoffs";
+const CAPTURE_FORENSICS_KEY = "aeonthra:capture-forensics";
 const SESSION_STATES_KEY = "aeonthra:sessions";
 const QUOTA_BYTES = 100 * 1024 * 1024;
 const PENDING_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
@@ -128,13 +131,6 @@ function byteSize(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
 }
 
-function normalizeQueuedAt(value: string | undefined): string {
-  const parsed = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(parsed)
-    ? new Date(parsed).toISOString()
-    : new Date().toISOString();
-}
-
 function isFreshPendingHandoff(handoff: BridgeHandoffEnvelope): boolean {
   const queuedAtMs = Date.parse(handoff.queuedAt);
   return Number.isFinite(queuedAtMs) && queuedAtMs >= Date.now() - PENDING_HANDOFF_TTL_MS;
@@ -146,17 +142,7 @@ function createPendingHandoffEnvelope(bundle: CaptureBundle): BridgeHandoffEnvel
     throw new Error(inspection.code);
   }
 
-  const queuedAt = normalizeQueuedAt(inspection.bundle.capturedAt);
-  const packId = captureBundleId(inspection.bundle);
-
-  return {
-    handoffId: stableHash(`${packId}:${queuedAt}`),
-    packId,
-    queuedAt,
-    courseId: inspection.courseId,
-    sourceHost: inspection.sourceHost,
-    pack: inspection.bundle
-  };
+  return createBridgeHandoffEnvelope(inspection.bundle);
 }
 
 function coerceStoredPendingHandoff(value: unknown): BridgeHandoffEnvelope | null {
@@ -250,7 +236,16 @@ async function sanitizePendingHandoffQueue(): Promise<PendingHandoffQueueSnapsho
           changed = true;
           continue;
         }
-        nextQueue.push(parsed);
+        const inspection = inspectCanvasCourseKnowledgePack(parsed.pack);
+        if (!inspection.ok) {
+          markInvalid(inspection.code);
+          continue;
+        }
+        nextQueue.push({
+          ...parsed,
+          courseId: inspection.courseId,
+          sourceHost: inspection.sourceHost
+        });
       }
     }
   }
@@ -381,6 +376,21 @@ export async function writeSettings(settings: ExtensionSettings): Promise<void> 
 export async function readRuntimeState(): Promise<RuntimeState> {
   const stored = await storageGet(chrome.storage.local, RUNTIME_KEY);
   return { ...EMPTY_RUNTIME_STATE, ...(stored[RUNTIME_KEY] as Partial<RuntimeState> | undefined) };
+}
+
+export async function readCaptureForensics(): Promise<CaptureForensics | null> {
+  const stored = await storageGet(chrome.storage.local, CAPTURE_FORENSICS_KEY);
+  const value = stored[CAPTURE_FORENSICS_KEY];
+  return value && typeof value === "object" ? value as CaptureForensics : null;
+}
+
+export async function writeCaptureForensics(forensics: CaptureForensics | null): Promise<void> {
+  if (!forensics) {
+    await storageRemove(chrome.storage.local, CAPTURE_FORENSICS_KEY);
+    return;
+  }
+
+  await storageSet(chrome.storage.local, { [CAPTURE_FORENSICS_KEY]: forensics });
 }
 
 export async function readSessionStates(): Promise<Record<string, SessionCaptureState>> {
@@ -566,6 +576,7 @@ export async function clearAllCaptures(): Promise<void> {
   await storageRemove(chrome.storage.local, [
     ...keys,
     HISTORY_KEY,
+    CAPTURE_FORENSICS_KEY,
     PENDING_HANDOFFS_KEY,
     LEGACY_PENDING_BUNDLE_KEY,
     SESSION_STATES_KEY,

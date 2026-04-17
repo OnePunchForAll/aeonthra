@@ -1,12 +1,14 @@
+import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { build } from "esbuild";
-import { access, copyFile, mkdir, readFile, rm } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const extensionRoot = resolve(currentDir, "..");
 const outDir = resolve(extensionRoot, "dist");
+export const buildInfoFilename = "build-info.json";
 
 export const buildEntryPoints = [
   {
@@ -66,6 +68,38 @@ export const copiedAssets = [
   }
 ];
 
+function sourceFingerprintInputFiles() {
+  return [
+    ...buildEntryPoints.map((entry) => entry.entryPoint),
+    ...copiedAssets.map((asset) => asset.from),
+    resolve(currentDir, "build.mjs")
+  ].sort();
+}
+
+async function createBuildInfo(baseOutDir = outDir) {
+  const manifest = JSON.parse(await readFile(resolve(extensionRoot, "manifest.json"), "utf8"));
+  const hash = createHash("sha256");
+  for (const path of sourceFingerprintInputFiles()) {
+    hash.update(path);
+    hash.update(await readFile(path));
+  }
+
+  const buildInfo = {
+    version: typeof manifest.version === "string" ? manifest.version : "0.0.0",
+    builtAt: new Date().toISOString(),
+    sourceHash: hash.digest("hex"),
+    unpackedPath: "apps/extension/dist",
+    markerPath: buildInfoFilename
+  };
+
+  await writeFile(
+    resolve(baseOutDir, buildInfoFilename),
+    JSON.stringify(buildInfo, null, 2)
+  );
+
+  return buildInfo;
+}
+
 export function collectManifestReferencedFiles(manifest) {
   const referencedFiles = new Set();
 
@@ -115,8 +149,11 @@ function resolveDistPath(baseOutDir, relativePath) {
 export async function validateBuiltExtensionDist(baseOutDir = outDir) {
   const manifestPath = resolve(baseOutDir, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const buildInfoPath = resolve(baseOutDir, buildInfoFilename);
+  const buildInfo = JSON.parse(await readFile(buildInfoPath, "utf8"));
   const expectedFiles = new Set([
     "manifest.json",
+    buildInfoFilename,
     ...buildEntryPoints.map((entry) => entry.output),
     ...copiedAssets.map((asset) => asset.output),
     ...collectManifestReferencedFiles(manifest)
@@ -138,8 +175,19 @@ export async function validateBuiltExtensionDist(baseOutDir = outDir) {
     );
   }
 
+  if (
+    typeof buildInfo.version !== "string" ||
+    typeof buildInfo.builtAt !== "string" ||
+    typeof buildInfo.sourceHash !== "string" ||
+    typeof buildInfo.unpackedPath !== "string" ||
+    typeof buildInfo.markerPath !== "string"
+  ) {
+    throw new Error("Extension build info marker is malformed.");
+  }
+
   return {
     manifest,
+    buildInfo,
     expectedFiles: [...expectedFiles].sort()
   };
 }
@@ -167,6 +215,8 @@ export async function buildExtensionDist() {
       copyFile(from, resolve(outDir, output))
     )
   );
+
+  await createBuildInfo(outDir);
 
   return validateBuiltExtensionDist(outDir);
 }

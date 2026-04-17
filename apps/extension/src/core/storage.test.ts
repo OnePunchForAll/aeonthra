@@ -298,6 +298,17 @@ describe("extension storage", () => {
     expect(queue[0]?.pack).toEqual(bundle);
   });
 
+  it("stamps queued handoffs with queue time instead of the bundle capture timestamp", async () => {
+    const bundle = makeQueuedCanvasBundle({
+      capturedAt: "2000-01-01T00:00:00.000Z"
+    });
+
+    const handoff = await queuePendingHandoff(bundle);
+
+    expect(handoff.queuedAt).not.toBe(bundle.capturedAt);
+    expect(Date.parse(handoff.queuedAt)).toBeGreaterThan(Date.parse(bundle.capturedAt));
+  });
+
   it("expires stale handoffs older than twenty four hours", async () => {
     const store = new Map<string, unknown>();
     (globalThis as typeof globalThis & { chrome: typeof chrome }).chrome.storage.local = createStorageArea(store);
@@ -328,6 +339,46 @@ describe("extension storage", () => {
     expect((await readPendingHandoffQueue()).map((handoff) => handoff.packId)).toEqual([second.packId]);
     await clearPendingHandoffs();
     expect(await inspectPendingHandoff()).toEqual({ state: "missing" });
+  });
+
+  it("drops schema-valid but import-invalid queued handoffs before they poison a fresh import", async () => {
+    const store = new Map<string, unknown>();
+    (globalThis as typeof globalThis & { chrome: typeof chrome }).chrome.storage.local = createStorageArea(store);
+    const validQueuedAt = new Date().toISOString();
+    const invalidQueuedAt = new Date(Date.now() + 1_000).toISOString();
+    const validBundle = makeQueuedCanvasBundle({
+      title: "Valid Queue",
+      capturedAt: validQueuedAt
+    });
+    const invalidBundle: CaptureBundle = {
+      ...makeQueuedCanvasBundle({
+        title: "Empty Queue",
+        capturedAt: invalidQueuedAt
+      }),
+      items: [],
+      manifest: {
+        itemCount: 0,
+        resourceCount: 0,
+        captureKinds: [],
+        sourceUrls: []
+      }
+    };
+    store.set("aeonthra:pending-handoffs", [
+      createBridgeHandoffEnvelope(invalidBundle, invalidQueuedAt),
+      createBridgeHandoffEnvelope(validBundle, validQueuedAt)
+    ]);
+
+    const queue = await readPendingHandoffQueue();
+    const inspection = await inspectPendingHandoff();
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.pack.title).toBe("Valid Queue");
+    expect(store.get("aeonthra:pending-handoffs")).toEqual(queue);
+    expect(inspection.state).toBe("ok");
+    if (inspection.state !== "ok") {
+      throw new Error("Expected valid handoff after sanitizing the poisoned queue.");
+    }
+    expect(inspection.handoff.pack.title).toBe("Valid Queue");
   });
 
   it("flags malformed queue entries as invalid when no valid handoff remains", async () => {

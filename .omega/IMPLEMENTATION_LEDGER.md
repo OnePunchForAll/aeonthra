@@ -1,5 +1,39 @@
 # IMPLEMENTATION LEDGER
 
+## 2026-04-17
+
+### Live capture zero-failure repair: route retained items, expose forensics, scrub poisoned queue state, and stamp the real unpacked build
+
+**Files changed**: `.agents/skills/canvas-live-zero-failure/SKILL.md`, `LIVE_CAPTURE_FORENSICS.md`, `IMPORTABILITY_DECISION_TABLE.md`, `BRIDGE_CONTRACT_TRACE.md`, `CANONICAL_EXTENSION_PATH.md`, `LIVE_PROOF_CHECKLIST.md`, `REGRESSION_GAP_REPORT.md`, `packages/schema/src/index.ts`, `apps/extension/src/service-worker.ts`, `apps/extension/src/content-canvas.ts`, `apps/extension/src/core/storage.ts`, `apps/extension/src/core/types.ts`, `apps/extension/src/side-panel.tsx`, `apps/extension/scripts/build.mjs`, `apps/extension/scripts/build.test.mjs`, `apps/extension/src/core/storage.test.ts`, `apps/extension/src/core/service-worker.test.ts`
+
+**What changed**
+- Proved that the live capture path was broken before final bridge importability: `content-canvas.ts` emitted `aeon:item-captured`, but `service-worker.ts` only auto-routed `aeon:job-*`, so retained pages never reached the partial bundle.
+- Routed `aeon:item-captured` through the worker persistence path and added regression coverage that would have failed on the old live behavior.
+- Added capture forensics storage plus side-panel visibility for item verdicts, partial-bundle counts, final inspection traces, final rejection text, and build identity.
+- Added `traceCanvasCourseKnowledgePack()` so the extension can surface the exact final inspection inputs instead of only a pass/fail code.
+- Revalidated queued handoffs for real importability on every read and dropped schema-valid but import-invalid queue poison before relay/import.
+- Stamped and validated `apps/extension/dist/build-info.json`, then rebuilt the canonical unpacked extension so the live loaded build can be proven from inside Chrome.
+- Repaired several capture metadata drifts discovered during the forensic audit, including per-page verdict reporting, queue-time response acknowledgements, file/announcement/module URL canonicality, and clearer overlay/status wording.
+
+**Why**: the literal live symptom `No Importable Pages Captured` remained after an earlier mixed-host theory because the worker was dropping the retained-item persistence message entirely. That made every later diagnosis incomplete whenever the real run never built a non-empty partial bundle.
+
+**Downstream effects**: the same live failure path now has a code-level repair, a runtime-visible proof surface, a canonical unpacked build marker, and regression coverage around the exact worker/queue/build seams that previously allowed green tests to coexist with a broken live run.
+
+### Repair mixed-host Canvas importability rejection in the extension capture path
+
+**Files changed**: `IMPORTABILITY_ROOT_CAUSE.md`, `IMPORTABILITY_FIX_PLAN.md`, `apps/extension/src/content-canvas.ts`, `apps/extension/src/core/platform.ts`, `apps/extension/src/core/platform.test.ts`, `apps/extension/src/service-worker.ts`, `apps/extension/src/core/service-worker.test.ts`
+
+**What changed**
+- Identified that the live failure was a mixed-host Canvas identity problem, not a traversal failure: the extension could capture many items, then lose importability at final bundle inspection.
+- Added `normalizeCourseUrlToDetectedOrigin()` and used it during discovery so same-course `html_url` values returned on alternate Canvas hosts are rewritten onto the detected course origin before capture.
+- Kept discussion capture supported through the same normalized discovery path rather than excluding it.
+- Split the generic final runtime label so only truly empty bundles say `No Importable Pages Captured`; metadata and course-identity failures now surface as `Capture Identity Rejected`.
+- Added regression coverage for same-course URL normalization and for the service-worker identity-rejection path that previously looked like an empty capture.
+
+**Why**: real Canvas APIs can return same-course page URLs on a different host than the active course tab, which caused `inspectCanvasCourseKnowledgePack()` to reject otherwise valid extension captures as ambiguous or mismatched.
+
+**Downstream effects**: full-course captures from equivalent Canvas hosts should now remain importable, and the UI is more truthful when a bundle fails for identity reasons instead of emptiness.
+
 ## 2026-04-16
 
 ### Ultimate bridge completion and restore-scope remount hardening

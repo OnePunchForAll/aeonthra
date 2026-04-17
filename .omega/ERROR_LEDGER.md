@@ -1,5 +1,23 @@
 # ERROR LEDGER
 
+## 2026-04-17
+
+### [EXTENSION] Live full-course capture emitted retained pages that the worker never persisted
+
+**Status**: CODE FIX VERIFIED; LIVE RETEST PENDING
+**Root cause**: `apps/extension/src/content-canvas.ts` emitted retained pages as `aeon:item-captured`, but `apps/extension/src/service-worker.ts` only auto-routed `aeon:job-*`. The worker therefore never merged retained items into the partial bundle on the real capture path.
+**Symptom**: Canvas traversal could look busy and show processed counts, yet finalization still hit `empty-bundle` and surfaced `No Importable Pages Captured`.
+**Fix**: the worker now routes `aeon:item-captured`, records partial-bundle persistence counts in capture forensics, and regression tests prove the item reaches storage. The side panel now shows the live build marker, verdicts, and final inspection trace so the next manual run cannot be ambiguous.
+**Guard**: `apps/extension/src/core/service-worker.test.ts`, `apps/extension/src/core/storage.test.ts`, `apps/extension/scripts/build.test.mjs`.
+
+### [EXTENSION] Full-course Canvas captures could be rejected as non-importable after successful item capture
+
+**Status**: FIXED
+**Root cause**: `apps/extension/src/content-canvas.ts` trusted Canvas API `html_url` values as canonical queue item URLs. On installations that expose the same course on multiple equivalent hosts, the active tab host populated `captureMeta.sourceHost` while one or more captured item URLs preserved a different host from the API response. `inspectCanvasCourseKnowledgePack()` then correctly rejected the finished bundle as `ambiguous-course-identity` or `host-mismatch`.
+**Symptom**: the extension could show high capture progress such as `36/37`, then still end on the generic phase label `No Importable Pages Captured` because final bundle inspection failed after capture rather than during traversal.
+**Fix**: added same-course URL canonicalization onto the detected course origin before discovery items are queued, and changed the service-worker phase label so identity failures report as `Capture Identity Rejected` instead of pretending the bundle was empty.
+**Guard**: `apps/extension/src/core/platform.test.ts`, `apps/extension/src/core/service-worker.test.ts`.
+
 ## 2026-04-16
 
 ### [BRIDGE] Fresh handoffs inherited stale capture timestamps and aged out of the queue incorrectly

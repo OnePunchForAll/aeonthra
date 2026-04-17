@@ -3,6 +3,15 @@ import ReactDOM from "react-dom/client";
 import { Button, Card, ModeCard, Progress, Shell, Stat, formatBytes, formatRuntime, sendExtensionMessage, useExtensionState } from "./ui/shared";
 import "./styles/global.css";
 
+function formatDateTime(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+function shortHash(value: string, size = 12): string {
+  return value.length <= size ? value : value.slice(0, size);
+}
+
 function SidePanelApp() {
   const { state, statusText, setStatusText } = useExtensionState();
   const [selectedMode, setSelectedMode] = useState<"complete" | "learning">("learning");
@@ -17,6 +26,15 @@ function SidePanelApp() {
   const activeSession = state?.session ?? null;
   const isBusy = state ? ["starting", "discovering", "capturing", "paused"].includes(state.runtime.status) : false;
   const latestCapture = useMemo(() => state?.history[0] ?? null, [state]);
+  const forensicRejections = useMemo(
+    () => (state?.forensics?.itemVerdicts ?? [])
+      .filter((verdict) => verdict.status !== "captured")
+      .slice(-6)
+      .reverse(),
+    [state?.forensics?.itemVerdicts]
+  );
+  const finalInspection = state?.forensics?.finalInspection ?? null;
+  const distinctIdentities = finalInspection?.distinctIdentities ?? [];
 
   const startCapture = async () => {
     const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({
@@ -163,6 +181,98 @@ function SidePanelApp() {
             <Stat label="Files" value={state.runtime.discovered.files} />
             <Stat label="Total" value={state.runtime.discovered.total} />
           </div>
+        </Card>
+      ) : null}
+
+      {state ? (
+        <Card accent={state.build ? "teal" : "orange"}>
+          <div className="ae-card__title">Build Identity</div>
+          {state.build ? (
+            <>
+              <div className="ae-stats-grid">
+                <Stat label="Version" value={state.build.version} />
+                <Stat label="Built" value={formatDateTime(state.build.builtAt)} />
+                <Stat label="Source Hash" value={shortHash(state.build.sourceHash)} />
+                <Stat label="Marker" value={state.build.markerPath} />
+              </div>
+              <p className="ae-copy">
+                Canonical unpacked folder: <code>{state.build.unpackedPath}</code>.
+                If this build stamp does not change after <code>npm run build:extension</code> and a Chrome reload,
+                Chrome is not using the current dist output.
+              </p>
+            </>
+          ) : (
+            <p className="ae-copy">
+              The loaded extension could not read <code>build-info.json</code>. Chrome may be loading the wrong unpacked folder or a stale build outside <code>apps/extension/dist</code>.
+            </p>
+          )}
+        </Card>
+      ) : null}
+
+      {state?.forensics ? (
+        <Card accent={finalInspection?.code ? "orange" : "cyan"}>
+          <div className="ae-card__title">Live Capture Forensics</div>
+          <div className="ae-stats-grid">
+            <Stat label="Queue" value={state.forensics.queueTotal} />
+            <Stat
+              label="Captured"
+              value={state.forensics.itemVerdicts.filter((verdict) => verdict.status === "captured").length}
+            />
+            <Stat
+              label="Skipped"
+              value={state.forensics.itemVerdicts.filter((verdict) => verdict.status === "skipped").length}
+            />
+            <Stat
+              label="Failed"
+              value={state.forensics.itemVerdicts.filter((verdict) => verdict.status === "failed").length}
+            />
+          </div>
+          {finalInspection ? (
+            <>
+              <p className="ae-copy" style={{ marginTop: 14 }}>
+                Final inspection: {finalInspection.code ?? "importable"}.
+              </p>
+              <p className="ae-copy">
+                Expected identity: {finalInspection.expectedSourceHost || "unknown-host"} / {finalInspection.expectedCourseId || "unknown-course"}.
+              </p>
+              {distinctIdentities.length > 0 ? (
+                <p className="ae-copy">
+                  Seen identities: {distinctIdentities.map((identity) => `${identity.sourceHost}/${identity.courseId}`).join(", ")}.
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="ae-copy" style={{ marginTop: 14 }}>
+              Final inspection has not been recorded yet for this run.
+            </p>
+          )}
+          {state.forensics.finalErrorMessage ? (
+            <p className="ae-copy" style={{ marginTop: 14 }}>
+              {state.forensics.finalErrorMessage}
+            </p>
+          ) : null}
+          {state.forensics.lastPersistedCanonicalUrl ? (
+            <p className="ae-copy">
+              Last persisted item: <code>{state.forensics.lastPersistedCanonicalUrl}</code>
+            </p>
+          ) : null}
+          {forensicRejections.length > 0 ? (
+            <div className="history-list" style={{ marginTop: 12 }}>
+              {forensicRejections.map((verdict) => (
+                <div key={`${verdict.queueItemId}:${verdict.status}`} className="history-item">
+                  <div>
+                    <div className="history-item__title">{verdict.title}</div>
+                    <div className="history-item__meta">
+                      {verdict.type} | {verdict.status} | {verdict.url}
+                    </div>
+                  </div>
+                  <div className="ae-copy" style={{ maxWidth: 340, margin: 0 }}>
+                    {verdict.message ?? "No detailed rejection reason was recorded."}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Card>
       ) : null}
 

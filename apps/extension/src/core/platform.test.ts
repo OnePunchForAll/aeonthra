@@ -3,6 +3,7 @@ import {
   BRIDGE_URL_REQUIREMENT,
   extractCourseId,
   isKnownCanvasHost,
+  normalizeCourseUrlToDetectedOrigin,
   parseCourseContextFromUrl,
   validateAeonthraUrl
 } from "./platform";
@@ -51,5 +52,35 @@ describe("extension platform guards", () => {
       ok: false,
       message: BRIDGE_URL_REQUIREMENT
     });
+  });
+
+  it("normalizes same-course Canvas URLs onto the detected course origin", () => {
+    expect(
+      normalizeCourseUrlToDetectedOrigin("https://school.instructure.com/courses/42/assignments/7?module_item_id=9", {
+        origin: "https://canvas.school.edu",
+        courseId: "42"
+      })
+    ).toBe("https://canvas.school.edu/courses/42/assignments/7?module_item_id=9");
+
+    expect(
+      normalizeCourseUrlToDetectedOrigin("/courses/42/discussion_topics/11", {
+        origin: "https://canvas.school.edu",
+        courseId: "42"
+      })
+    ).toBe("https://canvas.school.edu/courses/42/discussion_topics/11");
+
+    expect(
+      normalizeCourseUrlToDetectedOrigin("https://school.instructure.com/courses/99/assignments/7", {
+        origin: "https://canvas.school.edu",
+        courseId: "42"
+      })
+    ).toBe("https://school.instructure.com/courses/99/assignments/7");
+
+    expect(
+      normalizeCourseUrlToDetectedOrigin("https://school.instructure.com/files/88/download", {
+        origin: "https://canvas.school.edu",
+        courseId: "42"
+      })
+    ).toBe("https://school.instructure.com/files/88/download");
   });
 });
