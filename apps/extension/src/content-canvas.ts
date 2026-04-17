@@ -1244,7 +1244,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "bridge-request-import") {
     window.postMessage({
       source: "learning-freedom-bridge",
-      type: "NF_IMPORT_REQUEST"
+      type: "NF_IMPORT_REQUEST",
+      requestId:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : stableHash(`${Date.now()}:${Math.random().toString(36).slice(2, 10)}`)
     }, "*");
     sendResponse({ ok: true });
     return true;

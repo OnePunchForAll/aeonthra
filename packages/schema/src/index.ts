@@ -47,6 +47,15 @@ export const relationTypes = [
   "applies"
 ] as const;
 
+export const conceptFieldIds = [
+  "definition",
+  "summary",
+  "primer",
+  "mnemonic",
+  "commonConfusion",
+  "transferHook"
+] as const;
+
 export const neuralForgePhaseIds = [
   "immerse",
   "decode",
@@ -138,6 +147,239 @@ export const CaptureBundleSchema = z.object({
   }).optional()
 });
 
+export const canvasCourseKnowledgePackIssueCodes = [
+  "invalid-bundle",
+  "wrong-source",
+  "empty-bundle",
+  "textbook-only",
+  "missing-course-id",
+  "missing-source-host",
+  "missing-course-url",
+  "ambiguous-course-identity",
+  "host-mismatch",
+  "course-identity-mismatch"
+] as const;
+
+type SchemaCaptureItem = z.infer<typeof CaptureItemSchema>;
+type SchemaCaptureBundle = z.infer<typeof CaptureBundleSchema>;
+
+export type CanvasCourseKnowledgePackIssueCode =
+  (typeof canvasCourseKnowledgePackIssueCodes)[number];
+
+export type CanvasCourseKnowledgePackInspection =
+  | {
+      ok: true;
+      bundle: SchemaCaptureBundle;
+      canvasItemCount: number;
+      courseId: string;
+      sourceHost: string;
+    }
+  | {
+      ok: false;
+      code: CanvasCourseKnowledgePackIssueCode;
+      bundle: SchemaCaptureBundle | null;
+    };
+
+export function isTextbookCaptureItem(item: SchemaCaptureItem): boolean {
+  return (item.tags ?? []).includes("textbook");
+}
+
+function normalizeCourseIdPart(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const urlMatch = trimmed.match(/\/courses\/([^/?#]+)/i);
+  if (urlMatch?.[1]) {
+    return urlMatch[1].trim().toLowerCase();
+  }
+
+  const numericTailMatch = trimmed.match(/(?:^course[-:_/]?)?(\d+)$/i);
+  if (numericTailMatch?.[1]) {
+    return numericTailMatch[1];
+  }
+
+  return trimmed.toLowerCase().replace(/^course[-:_]?/i, "");
+}
+
+function normalizeSourceHostPart(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function parseCanvasCourseIdentityFromUrl(
+  value: string
+): { courseId: string; sourceHost: string } | null {
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/\/courses\/([^/?#]+)/i);
+    const courseId = normalizeCourseIdPart(match?.[1]);
+    const sourceHost = normalizeSourceHostPart(url.host);
+    if (!courseId || !sourceHost) {
+      return null;
+    }
+    return {
+      courseId,
+      sourceHost
+    };
+  } catch {
+    return null;
+  }
+}
+
+function collectCanvasCourseIdentityCandidates(
+  bundle: SchemaCaptureBundle
+): Array<{ courseId: string; sourceHost: string }> {
+  const itemUrls = bundle.items
+    .filter((item) => !isTextbookCaptureItem(item))
+    .map((item) => item.canonicalUrl);
+  const manifestUrls = bundle.manifest.sourceUrls;
+  const candidates = [...itemUrls, ...manifestUrls]
+    .map((value) => parseCanvasCourseIdentityFromUrl(value))
+    .filter((value): value is { courseId: string; sourceHost: string } => value !== null);
+
+  return Array.from(
+    new Map(
+      candidates.map((candidate) => [
+        `${candidate.sourceHost}::${candidate.courseId}`,
+        candidate
+      ])
+    ).values()
+  );
+}
+
+function inspectParsedCanvasCourseKnowledgePack(
+  bundle: SchemaCaptureBundle
+): CanvasCourseKnowledgePackInspection {
+  if (bundle.source !== "extension-capture") {
+    return {
+      ok: false,
+      code: "wrong-source",
+      bundle
+    };
+  }
+
+  if (bundle.items.length === 0) {
+    return {
+      ok: false,
+      code: "empty-bundle",
+      bundle
+    };
+  }
+
+  const canvasItemCount = bundle.items.filter(
+    (item) => !isTextbookCaptureItem(item)
+  ).length;
+  if (canvasItemCount === 0) {
+    return {
+      ok: false,
+      code: "textbook-only",
+      bundle
+    };
+  }
+
+  const courseId = normalizeCourseIdPart(bundle.captureMeta?.courseId);
+  if (!courseId) {
+    return {
+      ok: false,
+      code: "missing-course-id",
+      bundle
+    };
+  }
+
+  const sourceHost = normalizeSourceHostPart(bundle.captureMeta?.sourceHost);
+  if (!sourceHost) {
+    return {
+      ok: false,
+      code: "missing-source-host",
+      bundle
+    };
+  }
+
+  const identityCandidates = collectCanvasCourseIdentityCandidates(bundle);
+  if (identityCandidates.length === 0) {
+    return {
+      ok: false,
+      code: "missing-course-url",
+      bundle
+    };
+  }
+
+  const distinctIdentities = Array.from(
+    new Map(
+      identityCandidates.map((candidate) => [
+        `${candidate.sourceHost}::${candidate.courseId}`,
+        candidate
+      ])
+    ).values()
+  );
+  if (distinctIdentities.length > 1) {
+    return {
+      ok: false,
+      code: "ambiguous-course-identity",
+      bundle
+    };
+  }
+
+  const [resolvedIdentity] = distinctIdentities;
+  if (!resolvedIdentity || resolvedIdentity.sourceHost !== sourceHost) {
+    return {
+      ok: false,
+      code: "host-mismatch",
+      bundle
+    };
+  }
+
+  if (resolvedIdentity.courseId !== courseId) {
+    return {
+      ok: false,
+      code: "course-identity-mismatch",
+      bundle
+    };
+  }
+
+  return {
+    ok: true,
+    bundle,
+    canvasItemCount,
+    courseId,
+    sourceHost
+  };
+}
+
+export function inspectCanvasCourseKnowledgePack(
+  input: unknown
+): CanvasCourseKnowledgePackInspection {
+  const parsed = CaptureBundleSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid-bundle",
+      bundle: null
+    };
+  }
+
+  return inspectParsedCanvasCourseKnowledgePack(parsed.data);
+}
+
+export function isCanvasCourseKnowledgePack(
+  input: unknown
+): input is SchemaCaptureBundle {
+  return inspectCanvasCourseKnowledgePack(input).ok;
+}
+
+export const EvidenceFragmentSchema = z.object({
+  label: z.string(),
+  excerpt: z.string(),
+  sourceItemId: z.string()
+});
+
+const ConceptFieldSupportSchema = z.object({
+  quality: z.enum(["strong", "supported", "weak"]),
+  supportScore: z.number().nonnegative(),
+  evidence: z.array(EvidenceFragmentSchema).default([])
+});
+
 export const LearningConceptSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -153,7 +395,15 @@ export const LearningConceptSchema = z.object({
   category: z.string().optional(),
   keywords: z.array(z.string()).default([]),
   sourceItemIds: z.array(z.string()),
-  relatedConceptIds: z.array(z.string())
+  relatedConceptIds: z.array(z.string()),
+  fieldSupport: z.object({
+    definition: ConceptFieldSupportSchema.optional(),
+    summary: ConceptFieldSupportSchema.optional(),
+    primer: ConceptFieldSupportSchema.optional(),
+    mnemonic: ConceptFieldSupportSchema.optional(),
+    commonConfusion: ConceptFieldSupportSchema.optional(),
+    transferHook: ConceptFieldSupportSchema.optional()
+  }).optional()
 });
 
 export const ConceptRelationSchema = z.object({
@@ -161,7 +411,8 @@ export const ConceptRelationSchema = z.object({
   toId: z.string(),
   type: z.enum(relationTypes),
   label: z.string(),
-  strength: z.number()
+  strength: z.number(),
+  evidence: z.array(EvidenceFragmentSchema).default([]).optional()
 });
 
 export const EngineProfileSchema = z.object({
@@ -171,12 +422,6 @@ export const EngineProfileSchema = z.object({
   signature: z.string(),
   contribution: z.string(),
   moves: z.array(z.string())
-});
-
-export const EvidenceFragmentSchema = z.object({
-  label: z.string(),
-  excerpt: z.string(),
-  sourceItemId: z.string()
 });
 
 export const PhaseSubmodeSchema = z.object({
@@ -296,7 +541,10 @@ export const LearningSynthesisSchema = z.object({
   focusThemes: z.array(FocusThemeSchema).default([]),
   assignmentMappings: z.array(AssignmentIntelligenceSchema).default([]),
   retentionModules: z.array(RetentionModuleSchema).default([]),
-  deterministicHash: z.string()
+  deterministicHash: z.string(),
+  qualityBanner: z.string().default(""),
+  qualityWarnings: z.array(z.string()).default([]),
+  synthesisMode: z.enum(["full", "degraded", "blocked-with-warning"]).default("full")
 });
 
 export const LearningBundleSchema = z.object({
@@ -315,6 +563,7 @@ export const AppProgressSchema = z.object({
   conceptMastery: z.record(z.number()).default({}),
   chapterCompletion: z.record(z.number()).default({}),
   goalCompletion: z.record(z.boolean()).default({}),
+  skillHistory: z.record(z.boolean()).default({}),
   practiceMode: z.boolean().default(false)
 });
 
@@ -331,7 +580,46 @@ export const OfflineSiteBundleSchema = z.object({
   deterministicHash: z.string()
 });
 
-export const CourseKnowledgePackSchema = CaptureBundleSchema;
+export const CourseKnowledgePackSchema = CaptureBundleSchema.refine(
+  (bundle) => inspectParsedCanvasCourseKnowledgePack(bundle).ok,
+  {
+    message: "Bridge packs must be importable Canvas extension captures."
+  }
+);
+
+export const BridgeHandoffEnvelopeSchema = z.object({
+  handoffId: z.string().min(1),
+  packId: z.string().min(1),
+  queuedAt: z.string().datetime(),
+  courseId: z.string(),
+  sourceHost: z.string(),
+  pack: CaptureBundleSchema
+}).superRefine((value, context) => {
+  const packId = captureBundleId(value.pack);
+  const packCourseId = normalizeCourseIdPart(value.pack.captureMeta?.courseId);
+  const packSourceHost = normalizeSourceHostPart(value.pack.captureMeta?.sourceHost);
+  const envelopeCourseId = normalizeCourseIdPart(value.courseId);
+  const envelopeSourceHost = normalizeSourceHostPart(value.sourceHost);
+  if (value.packId !== packId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Bridge handoff envelope metadata must match the queued pack."
+    });
+    return;
+  }
+
+  if (
+    (packCourseId && envelopeCourseId !== packCourseId) ||
+    (packSourceHost && envelopeSourceHost !== packSourceHost)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Bridge handoff envelope metadata must match the queued pack."
+    });
+  }
+});
+
+export const PendingBridgeHandoffQueueSchema = z.array(BridgeHandoffEnvelopeSchema);
 
 const BridgeEnvelopeSchema = z.object({
   source: z.literal(BRIDGE_SOURCE)
@@ -339,21 +627,29 @@ const BridgeEnvelopeSchema = z.object({
 
 export const NFPackReadyMessageSchema = BridgeEnvelopeSchema.extend({
   type: z.literal("NF_PACK_READY"),
+  requestId: z.string().min(1),
+  handoffId: z.string().min(1),
+  packId: z.string().min(1),
   pack: CourseKnowledgePackSchema
 });
 
 export const NFPackAckMessageSchema = BridgeEnvelopeSchema.extend({
   type: z.literal("NF_PACK_ACK"),
+  requestId: z.string().min(1),
+  handoffId: z.string().min(1),
   packId: z.string()
 });
 
 export const NFImportRequestMessageSchema = BridgeEnvelopeSchema.extend({
-  type: z.literal("NF_IMPORT_REQUEST")
+  type: z.literal("NF_IMPORT_REQUEST"),
+  requestId: z.string().min(1)
 });
 
 export const NFImportResultMessageSchema = BridgeEnvelopeSchema.extend({
   type: z.literal("NF_IMPORT_RESULT"),
+  requestId: z.string().min(1),
   success: z.boolean(),
+  handoffId: z.string().optional(),
   packId: z.string().optional(),
   error: z.string().optional()
 });
@@ -402,6 +698,8 @@ export type NeuralForgePhaseId = (typeof neuralForgePhaseIds)[number];
 export type SourceFamily = (typeof sourceFamilies)[number];
 export type RetentionModuleKind = (typeof retentionModuleKinds)[number];
 export type CourseKnowledgePack = z.infer<typeof CourseKnowledgePackSchema>;
+export type BridgeHandoffEnvelope = z.infer<typeof BridgeHandoffEnvelopeSchema>;
+export type PendingBridgeHandoffQueue = z.infer<typeof PendingBridgeHandoffQueueSchema>;
 export type BridgeMessage = z.infer<typeof BridgeMessageSchema>;
 
 export function stableHash(input: string): string {
@@ -430,6 +728,21 @@ export function captureBundleId(bundle: CaptureBundle): string {
       resources: bundle.resources.map((resource) => resource.id)
     })
   );
+}
+
+export function createBridgeHandoffEnvelope(
+  pack: CaptureBundle,
+  queuedAt = new Date().toISOString()
+): BridgeHandoffEnvelope {
+  const packId = captureBundleId(pack);
+  return {
+    handoffId: stableHash(`handoff:${packId}:${queuedAt}`),
+    packId,
+    queuedAt,
+    courseId: normalizeCourseIdPart(pack.captureMeta?.courseId),
+    sourceHost: normalizeSourceHostPart(pack.captureMeta?.sourceHost),
+    pack
+  };
 }
 
 export function createEmptyBundle(title = "Untitled capture"): CaptureBundle {

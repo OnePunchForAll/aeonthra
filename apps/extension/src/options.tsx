@@ -49,7 +49,7 @@ function OptionsApp() {
             </label>
             <label className="toggle">
               <input type="checkbox" checked={draft.autoDeleteAfterImport} onChange={(event) => setDraft({ ...draft, autoDeleteAfterImport: event.target.checked })} />
-              <span>Delete local capture history after AEONTHRA confirms import</span>
+              <span>Delete saved capture after any acknowledged AEONTHRA import</span>
             </label>
           </Card>
 
@@ -63,6 +63,10 @@ function OptionsApp() {
             <label className="field">
               <span>Retry backoff ({draft.retryBackoffMs} ms)</span>
               <input type="range" min="600" max="3000" step="100" value={draft.retryBackoffMs} onChange={(event) => setDraft({ ...draft, retryBackoffMs: Number(event.target.value) })} />
+            </label>
+            <label className="field">
+              <span>Retry attempts ({draft.maxRetries})</span>
+              <input type="range" min="0" max="5" step="1" value={draft.maxRetries} onChange={(event) => setDraft({ ...draft, maxRetries: Number(event.target.value) })} />
             </label>
           </Card>
 

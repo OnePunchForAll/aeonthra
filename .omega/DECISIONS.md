@@ -2,6 +2,32 @@
 
 ## 2026-04-16
 
+### Do not track ephemeral worktrees or disposable QA artifacts in the repo root
+
+- Decision: `.claude/worktrees/` and disposable QA outputs such as `.playwright-cli/`, `dse-extracted/`, `test-results/`, temp web logs, and root screenshots are not canonical product source and should stay deleted or ignored.
+- Why: they created real source-of-truth ambiguity, extension-load confusion, and noisy repo state without contributing to the shipped product.
+
+### Keep Atlas progression projection outside `AeonthraShell.tsx`
+
+- Decision: `apps/web/src/lib/atlas-shell.ts` is the canonical seam for materializing the Atlas skill model into shell-ready assignment readiness and chapter reward state.
+- Why: the skill-tree contract is deterministic product logic, not view-local JSX glue, and it needs typed tests instead of repeated inline branches.
+
+### Use one shared Canvas importability classifier across bridge boundaries
+
+- Decision: `inspectCanvasCourseKnowledgePack()` in `packages/schema/src/index.ts` is the single source of truth for whether a bundle may be queued, relayed, or imported as a Canvas workspace seed.
+- Why: the live bridge failure came from the worker treating "schema-valid bundle" as sufficient while the app required "importable Canvas extension capture."
+
+### Canonical browser-local persistence is split source-workspace plus hash-scoped learner state
+
+- Decision: `learning-freedom:source-workspace` is the canonical browser-local source pointer store, while notes and progress are scoped by the synthesized workspace hash. The legacy merged-bundle key and unscoped progress key are migration-only compatibility paths.
+- Why: the older global bundle/progress model made it too easy for stale state to leak across imports and obscured which storage shape was actually canonical.
+
+### Superseded on 2026-04-16: Current handoff queue remains single-slot until correlated queueing lands
+
+- Historical decision: keep `aeonthra:pending-bundle` as one validated pending pack.
+- Current reality: the extension now uses `aeonthra:pending-handoffs` as a correlated queue of bridge envelopes with TTL, dedupe, legacy-slot migration, and exact `handoffId + packId` clearing.
+- Why superseded: the bridge repair pass landed the correlated queue and removed the old single-slot truth boundary.
+
 ### Preserve deterministic continuity across additive metadata upgrades
 
 - Decision: replay restore and same-course state preservation should remain compatible across additive metadata upgrades when the older payload can still be validated or its course identity can still be inferred locally.
@@ -27,6 +53,26 @@
 - Decision: offline replay bundles should include scoped notes and validate their deterministic hash on restore, while `practiceMode` should not persist across replay/export boundaries.
 - Why: replay export should be self-contained and truthful, but carrying a brittle unlock override forward would overstate learner state integrity.
 
+### Cancel deprecated legacy-progress migration when the workspace is explicitly replaced
+
+- Decision: once the user imports a new Canvas capture, restores a replay bundle, loads demo mode, or resets the workspace, the app should clear the deprecated unscoped legacy progress bucket and disable any pending migration from it.
+- Why: legacy progress is only meaningful for the one boot-time migration path from a deprecated single-bundle workspace. Letting it survive an explicit workspace replacement creates source-of-truth drift and stale progress contamination.
+
+### Add field-level provenance and relation evidence without changing the public learning bundle contract shape
+
+- Decision: provenance upgrades should remain additive. Major concept-facing fields gain `fieldSupport`, and relations may carry optional `evidence`, but the core concept and relation shapes stay intact for existing consumers.
+- Why: the semantic engine needed materially better truth signals without forcing a broad downstream schema rewrite.
+
+### Fail closed on real-workspace practice unless transfer or assignment evidence is source-backed
+
+- Decision: demo mode may keep curated fallback practice, but real imported workspaces must blank practice when transfer or assignment evidence is missing or weak.
+- Why: shell practice was crossing the truth boundary by inferring readiness from already-derived mapper text instead of source-backed evidence.
+
+### Explicit offline-site restores must remount the shell instance
+
+- Decision: when an offline replay bundle directly replaces the current learning workspace, the app should bump a shell instance epoch and remount `AeonthraShell`.
+- Why: the shell seeds notes from scoped local storage on mount. Without a remount, a same-instance restore could show stale notes and write them into the wrong restored scope.
+
 ## 2026-04-09
 
 ### Use the existing repo layout and map spec codenames onto it
@@ -46,10 +92,11 @@
 
 ## 2026-04-15
 
-### Only accept bridge handoff packs while an import request is active
+### Superseded on 2026-04-16: Only accept bridge handoff packs while an import request is active
 
-- Decision: `NF_PACK_READY` should be ignored unless the app is in an explicit `auto` or `manual` import-request state, and `NF_IMPORT_RESULT` should always settle that state.
-- Why: stale bridge traffic replacing the workspace is worse than dropping an unexpected pack, because the product can recover from a missed import request but cannot truthfully justify an unsolicited workspace swap.
+- Historical decision: `NF_PACK_READY` was restricted to explicit request windows.
+- Current reality: the app still tracks `auto` and `manual` request state for status handling, but it may accept a validated extension-originated `NF_PACK_READY` even when request mode has already cleared.
+- Why superseded: the stricter request-only rule broke legitimate `Open AEONTHRA` flows more often than it protected users, as long as the pack itself was already bridge-tagged and importable.
 
 ### Fail closed on ambiguous reader concept selection
 
@@ -71,10 +118,11 @@
 - Decision: fallback course detection from the service worker may only trust URL parsing on known Canvas hosts; unknown hosts must be confirmed by the content script, and `aeonthraUrl` must be limited to origins where the bridge content script can actually load.
 - Why: path-only `/courses/<id>` detection and unrestricted classroom URLs made the extension advertise capabilities it could not truthfully guarantee, which crossed the repo's stated truth boundary.
 
-### Treat "Reset Workspace" as a full browser-local reset
+### Superseded on 2026-04-16: Treat "Reset Workspace" as a full browser-local reset
 
-- Decision: when the user chooses Reset Workspace, clear browser-local notes and all persisted progress scopes along with the stored bundle/source-workspace pointers.
-- Why: a reset action that leaves course-specific mastery and notes behind looks like a clean slate in the UI while silently preserving prior state for the next import of the same deterministic bundle.
+- Historical decision: reset was documented as clearing all scoped notes and progress.
+- Current reality: the runtime reset path clears the stored source pointers and the active workspace scope when one exists. The storage helpers can still clear every scope when called without a scope.
+- Why superseded: the current app favors clearing the active workspace without deleting every historical scoped record in the browser.
 
 ### Keep OMEGA FORGE codenames in repo docs, but document AEONTHRA as the shipped product brand
 

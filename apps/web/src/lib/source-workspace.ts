@@ -1,4 +1,11 @@
-import { CaptureBundleSchema, mergeCaptureBundle, type CaptureBundle, type CaptureItem } from "@learning/schema";
+import {
+  CaptureBundleSchema,
+  inspectCanvasCourseKnowledgePack,
+  isTextbookCaptureItem,
+  mergeCaptureBundle,
+  type CaptureBundle,
+  type CaptureItem
+} from "@learning/schema";
 import { z } from "zod";
 
 export type AppStage =
@@ -30,7 +37,7 @@ const SourceWorkspaceStateSchema = z.object({
 });
 
 function isTextbookItem(item: CaptureItem): boolean {
-  return (item.tags ?? []).includes("textbook");
+  return isTextbookCaptureItem(item);
 }
 
 function canonicalizeBundle(bundle: CaptureBundle, items: CaptureItem[]): CaptureBundle | null {
@@ -151,15 +158,7 @@ function normalizedBundleHost(bundle: CaptureBundle | null): string {
 }
 
 export function isCanvasCaptureBundle(bundle: CaptureBundle | null): boolean {
-  if (!bundle) {
-    return false;
-  }
-
-  if (bundle.source !== "extension-capture") {
-    return false;
-  }
-
-  return bundle.items.some((item) => !isTextbookItem(item));
+  return inspectCanvasCourseKnowledgePack(bundle).ok;
 }
 
 export function isSameCourse(left: CaptureBundle | null, right: CaptureBundle | null): boolean {

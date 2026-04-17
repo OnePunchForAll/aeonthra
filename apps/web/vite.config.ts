@@ -10,8 +10,7 @@ export default defineConfig({
     strictPort: true,
     fs: {
       allow: [
-        resolve(__dirname, "../../"),     // worktree root: awesome-gould/
-        resolve(__dirname, "../../../../") // main repo root: Canvas Converter/ (packages symlink target)
+        resolve(__dirname, "../..")
       ]
     },
     watch: {

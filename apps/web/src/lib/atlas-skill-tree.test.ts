@@ -24,7 +24,10 @@ const baseTree = buildAtlasSkillTree({
     {
       id: "assignment-1",
       title: "Compare virtue and duty",
-      con: ["virtue", "deontology"]
+      con: ["virtue", "deontology"],
+      requirementLines: [
+        "Compare virtue ethics and deontology with a concrete case from the reading."
+      ]
     }
   ],
   modules: [
@@ -61,6 +64,13 @@ const baseTree = buildAtlasSkillTree({
         likelySkills: ["compare", "justify"],
         conceptIds: ["virtue", "deontology"],
         focusThemeIds: ["theme-1"],
+        checklist: ["Support the comparison with course evidence."],
+        likelyPitfalls: ["Do not collapse duty into consequences."],
+        evidence: [{
+          label: "Assignment prompt",
+          excerpt: "Compare virtue ethics and deontology with a concrete case.",
+          sourceItemId: "assignment-1"
+        }],
         summary: "Stay ready to compare the frameworks without collapsing one into the other."
       }
     ],
@@ -69,37 +79,64 @@ const baseTree = buildAtlasSkillTree({
 });
 
 describe("atlas skill tree", () => {
-  it("derives foundational, applied, distinction, readiness, and mastery nodes", () => {
+  it("derives foundational, applied, distinction, transfer, reward, readiness, and mastery nodes", () => {
     const kinds = new Set(baseTree.nodes.map((node) => node.kind));
+    const assignmentRequirement = baseTree.assignmentRequirements.find(
+      (requirement) => requirement.assignmentId === "assignment-1"
+    );
 
     expect(kinds).toEqual(new Set([
       "foundational",
       "applied",
       "distinction",
+      "transfer",
       "assignment-readiness",
+      "chapter-reward",
       "mastery"
     ]));
-    expect(baseTree.assignmentRequirements).toEqual([
-      expect.objectContaining({
-        assignmentId: "assignment-1",
-        skillIds: expect.arrayContaining(["skill-ready-assignment-1"])
-      })
-    ]);
+    expect(assignmentRequirement?.skillIds).toEqual(expect.arrayContaining([
+      "skill-foundation-virtue",
+      "skill-foundation-deontology",
+      "skill-transfer-assignment-1",
+      "skill-ready-assignment-1"
+    ]));
+    expect(baseTree.nodes.find((node) => node.id === "skill-transfer-assignment-1")).toMatchObject({
+      branchId: "module-1",
+      tier: 3
+    });
+    expect(baseTree.nodes.find((node) => node.id === "skill-chapter-reward-module-1")).toMatchObject({
+      kind: "chapter-reward",
+      branchId: "module-1",
+      tier: 5
+    });
+    expect(assignmentRequirement).toMatchObject({
+      basis: "captured-requirements",
+      conceptIds: ["virtue", "deontology"],
+      focusThemeIds: ["theme-1"],
+      checklist: [
+        "Compare virtue ethics and deontology with a concrete case from the reading.",
+        "Support the comparison with course evidence."
+      ],
+      pitfalls: ["Do not collapse duty into consequences."]
+    });
+    expect(assignmentRequirement?.evidence[0]?.sourceItemId).toBe("assignment-1");
   });
 
-  it("keeps downstream nodes locked until prerequisite skills are earned", () => {
+  it("keeps readiness locked until prerequisite skills are earned while leaving foundations available", () => {
     const materialized = materializeAtlasSkillTree(baseTree, {
       conceptMastery: {},
-      chapterCompletion: {}
+      chapterCompletion: {},
+      skillHistory: {}
     });
     const foundation = materialized.nodes.find((node) => node.id === "skill-foundation-virtue");
     const nextFoundation = materialized.nodes.find((node) => node.id === "skill-foundation-deontology");
     const readiness = materialized.nodes.find((node) => node.id === "skill-ready-assignment-1");
 
     expect(foundation?.state).toBe("available");
-    expect(nextFoundation?.state).toBe("locked");
+    expect(nextFoundation?.state).toBe("available");
     expect(readiness?.state).toBe("locked");
     expect(readiness?.missingPrerequisiteIds.length).toBeGreaterThan(0);
+    expect(materialized.summary.locked).toBeGreaterThan(0);
   });
 
   it("earns assignment-readiness only after concept and chapter progress clear the thresholds", () => {
@@ -110,7 +147,8 @@ describe("atlas skill tree", () => {
       },
       chapterCompletion: {
         "module-1": 0.84
-      }
+      },
+      skillHistory: {}
     });
     const readiness = materialized.nodes.find((node) => node.id === "skill-ready-assignment-1");
     const mastery = materialized.nodes.find((node) => node.id === "skill-mastery-module-1");
@@ -118,5 +156,31 @@ describe("atlas skill tree", () => {
     expect(readiness?.state).toBe("earned");
     expect(readiness?.progress).toBeGreaterThan(0.7);
     expect(mastery?.state === "earned" || mastery?.state === "mastered").toBe(false);
+  });
+
+  it("requires skill history before re-opening a node as recovery", () => {
+    const withoutHistory = materializeAtlasSkillTree(baseTree, {
+      conceptMastery: {
+        virtue: 0.45
+      },
+      chapterCompletion: {
+        "module-1": 0.55
+      },
+      skillHistory: {}
+    });
+    const withHistory = materializeAtlasSkillTree(baseTree, {
+      conceptMastery: {
+        virtue: 0.45
+      },
+      chapterCompletion: {
+        "module-1": 0.55
+      },
+      skillHistory: {
+        "skill-foundation-virtue": true
+      }
+    });
+
+    expect(withoutHistory.nodes.find((node) => node.id === "skill-foundation-virtue")?.state).toBe("in-progress");
+    expect(withHistory.nodes.find((node) => node.id === "skill-foundation-virtue")?.state).toBe("recovery");
   });
 });

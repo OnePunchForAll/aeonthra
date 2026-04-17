@@ -6,6 +6,10 @@ coverage/
 apps/web/dist/
 apps/extension/dist/
 .playwright-cli/
+dse-extracted/
+test-results/
+.claude/worktrees/
+.tmp-web*.log
 test jsons/
 *.local.json
 output/

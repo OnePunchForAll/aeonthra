@@ -14,6 +14,8 @@ import type {
 import { stableHash } from "@learning/schema";
 import type { Block } from "./pipeline.ts";
 import { meaningfulWords, normalizePhrase, truncateReadable } from "./pipeline.ts";
+import { qualityBannerText, type SourceQualityReport } from "./source-quality.ts";
+import { selectEvidenceFragments } from "./artifact-support.ts";
 
 const INSTRUCTOR_VERBS = [
   "analyze",
@@ -64,6 +66,7 @@ function sourceFamilyFor(item: CaptureItem): SourceFamily {
   }
   if (
     tagSet.has("canvas")
+    || item.kind === "page"
     || item.kind === "assignment"
     || item.kind === "discussion"
     || item.kind === "quiz"
@@ -93,20 +96,7 @@ function evidenceForConcept(
 
   const chosenSourceIds = preferredSourceIds.length > 0 ? preferredSourceIds : concept.sourceItemIds;
   const matchedBlocks = blocks.filter((block) => chosenSourceIds.includes(block.sourceItemId));
-
-  if (matchedBlocks.length === 0) {
-    return [{
-      label: "Source anchor",
-      excerpt: truncateReadable(concept.excerpt || concept.summary, 180),
-      sourceItemId: concept.sourceItemIds[0] ?? concept.id
-    }];
-  }
-
-  return matchedBlocks.slice(0, 3).map((block, index) => ({
-    label: index === 0 ? "Anchor" : "Support",
-    excerpt: truncateReadable(block.lead || block.summary, 180),
-    sourceItemId: block.sourceItemId
-  }));
+  return selectEvidenceFragments(matchedBlocks.length ? matchedBlocks : blocks, concept, "Anchor", "Support", 3);
 }
 
 function collectVerbHits(item: CaptureItem): string[] {
@@ -206,7 +196,6 @@ function buildConceptSupport(
     const assignmentItems = canvasItems.filter((item) => ["assignment", "discussion", "quiz"].includes(item.kind));
     const relationCount = relations.filter((relation) => relation.fromId === concept.id || relation.toId === concept.id).length;
     const verbHits = Array.from(new Set(canvasItems.flatMap(collectVerbHits))).sort();
-    const sourceCount = new Set(sourceItems.map((item) => item.id)).size;
     const familyCount = new Set(sourceItems.map(sourceFamilyFor)).size;
 
     // Diversity-weighted counts: clone-family members beyond the first contribute
@@ -220,14 +209,15 @@ function buildConceptSupport(
     const weightedAssignment = assignmentItems.reduce(
       (sum, item) => sum + (diversityWeights.get(item.id) ?? 1.0), 0
     );
+    const weightedSourceCount = Number((weightedCanvas + weightedTextbook).toFixed(2));
 
     const semanticEvidence = concept.score;
-    const sourceDiversity = Math.min(3, sourceCount) * 8;
+    const sourceDiversity = Math.min(3, weightedSourceCount) * 8;
     const crossFamilyCoverage = familyCount * 10 + (canvasItems.length > 0 && textbookItems.length > 0 ? 8 : 0);
-    const assignmentRelevance = assignmentItems.length > 0 ? 10 + Math.min(2, weightedAssignment) * 6 : 0;
+    const assignmentRelevance = weightedAssignment > 0 ? 10 + Math.min(2, weightedAssignment) * 6 : 0;
     const relationCentrality = Math.min(4, relationCount) * 6;
-    const repeatedCanvasPressure = canvasItems.length > 0 ? Math.min(2.5, weightedCanvas) * 4 : 0;
-    const textbookAnchoring = textbookItems.length > 0 ? Math.min(2.5, weightedTextbook) * 5 : 0;
+    const repeatedCanvasPressure = weightedCanvas > 0 ? Math.min(2.5, weightedCanvas) * 4 : 0;
+    const textbookAnchoring = weightedTextbook > 0 ? Math.min(2.5, weightedTextbook) * 5 : 0;
     const verbPressure = verbHits.length * 4;
 
     const supportScore = Number((
@@ -246,10 +236,10 @@ function buildConceptSupport(
       conceptId: concept.id,
       supportScore,
       relationCount,
-      sourceCount,
-      canvasSupport: canvasItems.length,
-      textbookSupport: textbookItems.length,
-      assignmentSupport: assignmentItems.length,
+      sourceCount: weightedSourceCount,
+      canvasSupport: Number(weightedCanvas.toFixed(2)),
+      textbookSupport: Number(weightedTextbook.toFixed(2)),
+      assignmentSupport: Number(weightedAssignment.toFixed(2)),
       verbHits
     };
   }).sort((left, right) => right.supportScore - left.supportScore || left.conceptId.localeCompare(right.conceptId));
@@ -290,6 +280,15 @@ function buildFocusThemes(
   supportByConceptId: Map<string, ConceptSupport>
 ): FocusTheme[] {
   const itemLookup = itemById(bundle);
+  const summaryParts = (parts: string[]): string =>
+    truncateReadable(
+      parts
+        .map((entry) => truncateReadable(entry, 120))
+        .filter((entry) => entry.length >= 20)
+        .filter((entry, index, array) => array.findIndex((candidate) => normalizePhrase(candidate) === normalizePhrase(entry)) === index)
+        .join(" "),
+      180
+    );
   return concepts.flatMap((concept) => {
     const support = supportByConceptId.get(concept.id);
     if (!support) return [];
@@ -306,7 +305,7 @@ function buildFocusThemes(
       id: concept.id,
       label: concept.label,
       score: support.supportScore,
-      summary: truncateReadable(`${concept.summary} ${concept.transferHook}`, 180),
+      summary: summaryParts([concept.summary, concept.transferHook, concept.primer]),
       verbs: support.verbHits,
       sourceFamily: family,
       conceptIds: [concept.id, ...concept.relatedConceptIds].slice(0, 4),
@@ -510,7 +509,8 @@ export function buildSynthesisReport(
   blocks: Block[],
   concepts: LearningConcept[],
   relations: ConceptRelation[],
-  stableConceptIds: string[]
+  stableConceptIds: string[],
+  qualityReport?: SourceQualityReport
 ): LearningSynthesis {
   const stableConceptSet = new Set(stableConceptIds);
   const stableConcepts = concepts.filter((concept) => stableConceptSet.has(concept.id));
@@ -539,6 +539,9 @@ export function buildSynthesisReport(
     focusThemes,
     assignmentMappings,
     retentionModules,
-    deterministicHash
+    deterministicHash,
+    qualityBanner: qualityReport ? qualityBannerText(qualityReport) : "",
+    qualityWarnings: qualityReport?.warnings ?? [],
+    synthesisMode: qualityReport?.synthesisMode ?? "full"
   };
 }

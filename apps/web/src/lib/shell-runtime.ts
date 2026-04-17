@@ -239,7 +239,7 @@ function fallbackMcFromRuntime(concept: ShellConcept, runtime: ForgeConceptRunti
 }
 
 function enrichConcept(concept: ShellConcept, runtime: ForgeConceptRuntime | undefined): ShellConcept {
-  if (!runtime) {
+  if (!runtime || concept.practiceReady === false) {
     return concept;
   }
 
@@ -288,6 +288,7 @@ export function isEmptyProgress(progress: AppProgress): boolean {
     Object.keys(progress.conceptMastery).length === 0
     && Object.keys(progress.chapterCompletion).length === 0
     && Object.keys(progress.goalCompletion).length === 0
+    && Object.keys(progress.skillHistory).length === 0
     && !progress.practiceMode
   );
 }
@@ -304,6 +305,7 @@ export function normalizeProgressForWorkspace(
     ...workspace.chapters.map((chapter) => chapter.id)
   ]);
   const validGoalIds = new Set(workspace.goals.map((goal) => goal.id));
+  const validSkillIds = new Set(shellData.skillTree.nodes.map((node) => node.id));
 
   return {
     conceptMastery: Object.fromEntries(
@@ -323,6 +325,11 @@ export function normalizeProgressForWorkspace(
         .filter(([id]) => validGoalIds.has(id))
         .sort(([left], [right]) => left.localeCompare(right))
     ),
+    skillHistory: Object.fromEntries(
+      Object.entries(progress.skillHistory ?? {})
+        .filter(([id, earned]) => validSkillIds.has(id) && earned === true)
+        .sort(([left], [right]) => left.localeCompare(right))
+    ),
     practiceMode: Boolean(progress.practiceMode)
   };
 }
@@ -332,6 +339,7 @@ export function createEmptyProgress(): AppProgress {
     conceptMastery: {},
     chapterCompletion: {},
     goalCompletion: {},
+    skillHistory: {},
     practiceMode: false
   };
 }

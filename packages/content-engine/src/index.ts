@@ -1,6 +1,7 @@
 import { LearningBundleSchema, type EngineProfile, type CaptureBundle, type LearningBundle } from "@learning/schema";
 export { assessSourceQuality, qualityBannerText } from "./source-quality.ts";
 export type { SourceQualityReport, SynthesisMode } from "./source-quality.ts";
+import { assessSourceQuality } from "./source-quality.ts";
 import { SCHEMA_VERSION } from "@learning/schema";
 import { buildBlocks, buildConcepts, buildRelations } from "./pipeline.ts";
 import { buildProtocol } from "./protocol.ts";
@@ -30,6 +31,7 @@ export function buildLearningBundleWithProgress(
   bundle: CaptureBundle,
   onProgress?: (stage: LearningBuildStage, progress: number) => void
 ): LearningBundle {
+  const qualityReport = assessSourceQuality(bundle);
   onProgress?.("normalizing-sources", 4);
   const blocks = buildBlocks(bundle);
   onProgress?.("segmenting-evidence", 16);
@@ -48,7 +50,7 @@ export function buildLearningBundleWithProgress(
   });
   const relations = buildRelations(concepts);
   onProgress?.("crystallizing-knowledge", 78);
-  const synthesis = buildSynthesisReport(bundle, blocks, concepts, relations, stableConceptIds);
+  const synthesis = buildSynthesisReport(bundle, blocks, concepts, relations, stableConceptIds, qualityReport);
   onProgress?.("generating-learning-artifacts", 88);
   const protocol = buildProtocol(blocks, concepts, relations);
   const neuralForge = buildNeuralForge(blocks, concepts, relations);

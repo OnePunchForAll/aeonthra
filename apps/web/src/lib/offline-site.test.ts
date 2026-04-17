@@ -27,6 +27,7 @@ describe("offline replay bundle", () => {
     const learningBundle = buildLearningBundleWithProgress(mergedBundle!);
     const progress = createEmptyProgress();
     progress.conceptMastery[learningBundle.concepts[0]!.id] = 0.8;
+    progress.skillHistory["skill-foundation-demo"] = true;
     progress.practiceMode = true;
 
     const offlineBundle = createOfflineSiteBundle({
@@ -115,5 +116,6 @@ describe("offline replay bundle", () => {
 
     expect(parsed).not.toBeNull();
     expect(parsed?.notes).toBe("");
+    expect(parsed?.progress.skillHistory).toEqual({});
   });
 });

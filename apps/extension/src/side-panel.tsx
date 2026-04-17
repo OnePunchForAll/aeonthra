@@ -59,7 +59,7 @@ function SidePanelApp() {
     const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({
       type: "aeon:open-workspace"
     });
-    setStatusText(response.ok ? "AEONTHRA Classroom opened." : (response.message ?? "Unable to open AEONTHRA Classroom."));
+    setStatusText(response.ok ? "AEONTHRA Classroom opened without importing a capture." : (response.message ?? "Unable to open AEONTHRA Classroom."));
   };
 
   const downloadLatest = async (captureId?: string) => {
@@ -100,7 +100,7 @@ function SidePanelApp() {
   return (
     <Shell
       title={isBusy ? "AUTO CAPTURE RUNNING" : "COURSE BRIDGE"}
-      subtitle={activeCourse ? `Canvas course detected: ${activeCourse.courseName}` : "Open a Canvas course, then let AEONTHRA capture the supported course content truthfully."}
+      subtitle={activeCourse ? `Canvas course detected: ${activeCourse.courseName}` : "Open a Canvas course, then let AEONTHRA capture supported course surfaces truthfully."}
       footer={
         <div className="ae-footer-actions">
           <Button variant="ghost" onClick={() => void sendExtensionMessage({ type: "aeon:open-side-panel" })}>Refresh Panel</Button>
@@ -117,7 +117,7 @@ function SidePanelApp() {
             {isBusy
               ? state.runtime.currentTitle || "Walking the course in the background."
               : activeCourse
-                ? "AEONTHRA can capture the supported course surfaces or strip them down to forge-ready learning content."
+                ? "AEONTHRA can capture supported course surfaces or strip them down to forge-ready learning content."
                 : "Open any Canvas course page first. The extension only runs where it can truthfully detect a course."}
           </p>
 
@@ -145,7 +145,7 @@ function SidePanelApp() {
               </div>
               <div className="ae-inline-actions">
                 <Button variant="primary" onClick={() => void startCapture()}>Capture Supported Content</Button>
-                <Button variant="ghost" onClick={() => void openWorkspace()}>Open AEONTHRA</Button>
+                <Button variant="ghost" onClick={() => void openWorkspace()}>Open AEONTHRA Only</Button>
               </div>
             </>
           ) : null}
@@ -171,7 +171,7 @@ function SidePanelApp() {
           <div className="ae-card__title">Visited Session</div>
           <p className="ae-copy">
             {activeSession
-              ? "AEONTHRA is accumulating the Canvas pages you actually visited in this course."
+              ? "AEONTHRA is accumulating the Canvas pages you actually visited in this course. Session capture pauses while a full-course run is active."
               : "As you browse this course, AEONTHRA can accumulate visited pages locally and save them later as a lightweight learning capture."}
           </p>
           {activeSession ? (
@@ -203,7 +203,7 @@ function SidePanelApp() {
             <Stat label="Size" value={formatBytes(latestCapture.sizeBytes)} />
           </div>
           <div className="ae-inline-actions">
-            <Button variant="primary" onClick={() => void openClassroom(latestCapture.id)}>Open in AEONTHRA</Button>
+            <Button variant="primary" onClick={() => void openClassroom(latestCapture.id)}>Open + Import</Button>
             <Button variant="ghost" onClick={() => void downloadLatest(latestCapture.id)}>Download JSON</Button>
           </div>
         </Card>
@@ -222,7 +222,7 @@ function SidePanelApp() {
                   </div>
                 </div>
                 <div className="history-item__actions">
-                  <Button variant="ghost" onClick={() => void openClassroom(entry.id)}>Open</Button>
+                  <Button variant="ghost" onClick={() => void openClassroom(entry.id)}>Open + Import</Button>
                   <Button variant="ghost" onClick={() => void downloadLatest(entry.id)}>Export</Button>
                   <Button variant="danger" onClick={() => void deleteCapture(entry.id)}>Delete</Button>
                 </div>
@@ -230,7 +230,7 @@ function SidePanelApp() {
             ))}
           </div>
         ) : (
-          <p className="ae-copy">No saved captures yet. Run your first full-course capture and it will appear here automatically.</p>
+          <p className="ae-copy">No saved captures yet. Run a full-course capture or save a visited session and it will appear here automatically.</p>
         )}
       </Card>
 

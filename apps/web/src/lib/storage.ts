@@ -101,11 +101,16 @@ export function loadProgress(scope?: string): AppProgress {
       conceptMastery: parsed.conceptMastery ?? {},
       chapterCompletion: parsed.chapterCompletion ?? {},
       goalCompletion: parsed.goalCompletion ?? {},
+      skillHistory: parsed.skillHistory ?? {},
       practiceMode: Boolean(parsed.practiceMode)
     };
   } catch {
     return createEmptyProgress();
   }
+}
+
+export function clearLegacyProgress(): void {
+  window.localStorage.removeItem(progressKey);
 }
 
 function storeProgress(progress: AppProgress, scope?: string): void {

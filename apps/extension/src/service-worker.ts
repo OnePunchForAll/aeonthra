@@ -4,7 +4,9 @@ import {
   CaptureBundleSchema,
   captureBundleId,
   createEmptyBundle,
+  inspectCanvasCourseKnowledgePack,
   mergeCaptureBundle,
+  type CanvasCourseKnowledgePackIssueCode,
   type BridgeMessage,
   type CaptureBundle,
   type CaptureItem,
@@ -13,23 +15,24 @@ import {
 import {
   DEFAULT_SETTINGS,
   clearAllCaptures,
-  clearPendingBundle,
+  clearPendingHandoff,
+  clearPendingHandoffs,
   clearSessionState,
   deleteCaptureRecord,
   estimateStorageUsage,
+  inspectPendingHandoff,
   latestCaptureId,
   patchRuntimeState,
   readCaptureRecord,
   readHistorySummaries,
-  readPendingBundle,
   readRuntimeState,
   readSessionState,
   readSessionSummary,
   readSettings,
+  queuePendingHandoff,
   resetRuntimeState,
   upsertSessionObservation,
   upsertHistory,
-  writePendingBundle,
   writeRuntimeState,
   writeSettings
 } from "./core/storage";
@@ -306,6 +309,84 @@ function randomJobId(): string {
   return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
 }
 
+function describeQueueableCanvasBundleIssue(
+  code: CanvasCourseKnowledgePackIssueCode,
+  context: "queue" | "bridge" | "capture"
+): string {
+  if (context === "queue") {
+    switch (code) {
+      case "invalid-bundle":
+        return "The selected capture was malformed and cannot be handed off to AEONTHRA.";
+      case "wrong-source":
+        return "Only SENTINEL extension captures can be handed off to AEONTHRA.";
+      case "empty-bundle":
+        return "This capture finished without any importable Canvas pages. Re-run SENTINEL on a readable Canvas page before opening AEONTHRA.";
+      case "textbook-only":
+        return "This capture only contains textbook-tagged items, so AEONTHRA will not treat it as a Canvas course capture.";
+      case "missing-course-id":
+        return "This capture is missing the Canvas course id required for an AEONTHRA handoff.";
+      case "missing-source-host":
+        return "This capture is missing the Canvas source host required for an AEONTHRA handoff.";
+      case "missing-course-url":
+        return "This capture did not preserve any Canvas page URL that resolves back to one course identity, so AEONTHRA cannot queue it.";
+      case "ambiguous-course-identity":
+        return "This capture does not resolve to one Canvas host and course identity, so AEONTHRA cannot queue it as a course handoff.";
+      case "host-mismatch":
+        return "This capture's recorded Canvas host does not match the captured Canvas URLs, so AEONTHRA refused to queue it.";
+      case "course-identity-mismatch":
+        return "This capture's recorded Canvas course id does not match the captured Canvas URLs, so AEONTHRA refused to queue it.";
+    }
+  }
+
+  if (context === "bridge") {
+    switch (code) {
+      case "invalid-bundle":
+        return "Queued AEONTHRA handoff was malformed and has been cleared.";
+      case "wrong-source":
+        return "Queued AEONTHRA handoff was cleared because its source was not an extension capture.";
+      case "empty-bundle":
+        return "Queued AEONTHRA handoff was cleared because it contained zero captured Canvas items.";
+      case "textbook-only":
+        return "Queued AEONTHRA handoff was cleared because it only contained textbook-tagged items.";
+      case "missing-course-id":
+        return "Queued AEONTHRA handoff was cleared because it did not record the Canvas course id.";
+      case "missing-source-host":
+        return "Queued AEONTHRA handoff was cleared because it did not record the Canvas source host.";
+      case "missing-course-url":
+        return "Queued AEONTHRA handoff was cleared because none of its preserved Canvas URLs resolved back to one course identity.";
+      case "ambiguous-course-identity":
+        return "Queued AEONTHRA handoff was cleared because its captured URLs did not resolve to one Canvas course identity.";
+      case "host-mismatch":
+        return "Queued AEONTHRA handoff was cleared because its recorded Canvas host did not match the captured Canvas URLs.";
+      case "course-identity-mismatch":
+        return "Queued AEONTHRA handoff was cleared because its recorded Canvas course id did not match the captured Canvas URLs.";
+    }
+  }
+
+  switch (code) {
+    case "invalid-bundle":
+      return "Capture output was malformed, so nothing was saved or queued.";
+    case "wrong-source":
+      return "Capture output did not resolve to an extension capture, so nothing was saved or queued.";
+    case "empty-bundle":
+      return "Capture finished without any importable Canvas pages, so nothing was saved or queued.";
+    case "textbook-only":
+      return "Capture finished with only textbook-tagged items, so nothing was saved or queued.";
+    case "missing-course-id":
+      return "Capture finished without the Canvas course id required for AEONTHRA import, so nothing was saved or queued.";
+    case "missing-source-host":
+      return "Capture finished without the Canvas source host required for AEONTHRA import, so nothing was saved or queued.";
+    case "missing-course-url":
+      return "Capture finished without any preserved Canvas URL that resolved back to one course identity, so nothing was saved or queued.";
+    case "ambiguous-course-identity":
+      return "Capture finished without one resolved Canvas course identity, so nothing was saved or queued.";
+    case "host-mismatch":
+      return "Capture metadata recorded a Canvas host that did not match the captured Canvas URLs, so nothing was saved or queued.";
+    case "course-identity-mismatch":
+      return "Capture metadata recorded a Canvas course id that did not match the captured Canvas URLs, so nothing was saved or queued.";
+  }
+}
+
 async function activeTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await tabsQuery({ active: true, currentWindow: true });
   return tab ?? null;
@@ -454,18 +535,24 @@ async function requestWorkspaceImport(tabId: number): Promise<boolean> {
   }
 }
 
-async function queueBundleForWorkspace(bundle: CaptureBundle): Promise<{ bridgeReady: boolean; queuedPackId: string }> {
+async function queueBundleForWorkspace(bundle: CaptureBundle): Promise<{ bridgeReady: boolean; queuedPackId: string; handoffId: string }> {
+  const inspection = inspectCanvasCourseKnowledgePack(bundle);
+  if (!inspection.ok) {
+    throw new Error(describeQueueableCanvasBundleIssue(inspection.code, "queue"));
+  }
+
   const settings = await readSettings();
   const validatedUrl = validateAeonthraUrl(settings.aeonthraUrl);
   if (!validatedUrl.ok) {
     throw new Error(validatedUrl.message);
   }
-  await writePendingBundle(bundle);
+  const handoff = await queuePendingHandoff(inspection.bundle);
   const tab = await openOrFocusWorkspace(validatedUrl.normalizedUrl);
   const bridgeReady = tab.id ? await requestWorkspaceImport(tab.id) : false;
   return {
     bridgeReady,
-    queuedPackId: captureBundleId(bundle)
+    queuedPackId: handoff.packId,
+    handoffId: handoff.handoffId
   };
 }
 
@@ -626,12 +713,28 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
     }
   };
 
-  const captureId = captureBundleId(finalized);
-  const sizeBytes = new Blob([JSON.stringify(finalized)]).size;
+  const inspection = inspectCanvasCourseKnowledgePack(finalized);
+  if (!inspection.ok) {
+    await clearPartialState();
+    await updateRuntime({
+      status: cancelled ? "cancelled" : "error",
+      progressPct: 100,
+      phaseLabel: cancelled ? "Partial Capture Discarded" : "No Importable Pages Captured",
+      finishedAt: new Date().toISOString(),
+      captureId: null,
+      warningCount: warnings.length,
+      errorMessage: describeQueueableCanvasBundleIssue(inspection.code, "capture")
+    });
+    return;
+  }
+
+  const importableBundle = inspection.bundle;
+  const captureId = captureBundleId(importableBundle);
+  const sizeBytes = new Blob([JSON.stringify(importableBundle)]).size;
   const record: StoredCaptureRecord = {
     id: captureId,
-    title: finalized.title,
-    capturedAt: finalized.capturedAt,
+    title: importableBundle.title,
+    capturedAt: importableBundle.capturedAt,
     courseId: course.courseId,
     courseName: course.courseName,
     mode,
@@ -641,7 +744,7 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
       sizeBytes
     },
     warnings,
-    bundle: finalized
+    bundle: importableBundle
   };
 
   await upsertHistory(record);
@@ -659,7 +762,7 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
   const settings = await readSettings();
   if (!cancelled && settings.autoHandoff) {
     try {
-      await queueBundleForWorkspace(finalized);
+      await queueBundleForWorkspace(importableBundle);
     } catch (error) {
       await updateRuntime({
         status: "completed",
@@ -1138,7 +1241,7 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
 
   if (type === "aeon:clear-captures") {
     await clearAllCaptures();
-    await clearPendingBundle();
+    await clearPendingHandoffs();
     await resetRuntimeState(null);
     return { ok: true };
   }
@@ -1151,16 +1254,33 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
 
     const bridgeMessage = parsed.data;
     if (bridgeMessage.type === "NF_IMPORT_REQUEST") {
-      const pendingBundle = await readPendingBundle();
-      const relay: BridgeMessage = pendingBundle
+      const pending = await inspectPendingHandoff();
+      if (pending.state === "invalid") {
+        return {
+          ok: true,
+          relay: {
+            source: BRIDGE_SOURCE,
+            type: "NF_IMPORT_RESULT",
+            requestId: bridgeMessage.requestId,
+            success: false,
+            error: describeQueueableCanvasBundleIssue(pending.code, "bridge")
+          } satisfies BridgeMessage
+        };
+      }
+
+      const relay: BridgeMessage = pending.state === "ok"
         ? {
             source: BRIDGE_SOURCE,
             type: "NF_PACK_READY",
-            pack: pendingBundle
+            requestId: bridgeMessage.requestId,
+            handoffId: pending.handoff.handoffId,
+            packId: pending.handoff.packId,
+            pack: pending.handoff.pack
           }
         : {
             source: BRIDGE_SOURCE,
             type: "NF_IMPORT_RESULT",
+            requestId: bridgeMessage.requestId,
             success: false,
             error: "No pending AEONTHRA bundle was queued for import."
           };
@@ -1168,10 +1288,7 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
     }
 
     if (bridgeMessage.type === "NF_PACK_ACK") {
-      const pendingBundle = await readPendingBundle();
-      if (pendingBundle && captureBundleId(pendingBundle) === bridgeMessage.packId) {
-        await clearPendingBundle();
-      }
+      await clearPendingHandoff(bridgeMessage.handoffId, bridgeMessage.packId);
       const settings = await readSettings();
       if (settings.autoDeleteAfterImport) {
         await deleteCaptureRecord(bridgeMessage.packId);

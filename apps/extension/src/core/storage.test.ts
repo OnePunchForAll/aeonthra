@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createManualCaptureBundle } from "@learning/schema";
+import {
+  createBridgeHandoffEnvelope,
+  createManualCaptureBundle,
+  type CaptureBundle
+} from "@learning/schema";
 import {
   DEFAULT_SETTINGS,
+  clearPendingHandoff,
+  clearPendingHandoffs,
+  inspectPendingHandoff,
+  queuePendingHandoff,
   clearSessionState,
   readCaptureRecord,
   readHistorySummaries,
+  readPendingHandoffQueue,
   readSettings,
   readSessionState,
   upsertHistory,
@@ -15,8 +24,9 @@ import type { CourseContext, ExtensionSettings, StoredCaptureRecord } from "./ty
 
 type StorageMap = Map<string, unknown>;
 
-function createStorageArea(store: StorageMap): chrome.storage.StorageArea {
+function createStorageArea(store: StorageMap): chrome.storage.LocalStorageArea {
   return {
+    QUOTA_BYTES: 0,
     get(keys: string | string[] | Record<string, unknown> | null, callback: (items: Record<string, unknown>) => void) {
       if (typeof keys === "string") {
         callback({ [keys]: store.get(keys) });
@@ -48,7 +58,7 @@ function createStorageArea(store: StorageMap): chrome.storage.StorageArea {
       }
       callback?.();
     }
-  } as chrome.storage.StorageArea;
+  } as chrome.storage.LocalStorageArea;
 }
 
 function makeRecord(id: string): StoredCaptureRecord {
@@ -88,6 +98,34 @@ function makeCourse(courseId = "course-42"): CourseContext {
     courseUrl: `https://canvas.example.test/courses/${courseId}`,
     modulesUrl: `https://canvas.example.test/courses/${courseId}/modules`,
     host: "canvas.example.test"
+  };
+}
+
+function makeQueuedCanvasBundle(input: {
+  title?: string;
+  courseId?: string;
+  sourceHost?: string;
+  capturedAt?: string;
+} = {}): CaptureBundle {
+  const courseId = input.courseId ?? "42";
+  const sourceHost = input.sourceHost ?? "canvas.example.test";
+  const capturedAt = input.capturedAt ?? new Date().toISOString();
+  const bundle = createManualCaptureBundle({
+    title: input.title ?? "Queued Canvas Capture",
+    text: "Deterministic bridge capture",
+    canonicalUrl: `https://${sourceHost}/courses/${courseId}/assignments/7`,
+    kind: "assignment"
+  });
+
+  return {
+    ...bundle,
+    capturedAt,
+    source: "extension-capture",
+    captureMeta: {
+      courseId,
+      courseName: input.title ?? "Queued Canvas Capture",
+      sourceHost
+    }
   };
 }
 
@@ -230,5 +268,76 @@ describe("extension storage", () => {
 
     await clearSessionState(makeCourse());
     expect(await readSessionState(makeCourse())).toBeNull();
+  });
+
+  it("migrates a legacy pending bundle into the correlated handoff queue on read", async () => {
+    const store = new Map<string, unknown>();
+    (globalThis as typeof globalThis & { chrome: typeof chrome }).chrome.storage.local = createStorageArea(store);
+    const bundle = makeQueuedCanvasBundle();
+    store.set("aeonthra:pending-bundle", bundle);
+
+    const inspection = await inspectPendingHandoff();
+
+    expect(inspection.state).toBe("ok");
+    if (inspection.state !== "ok") {
+      throw new Error("Expected migrated handoff.");
+    }
+    expect(inspection.handoff.pack).toEqual(bundle);
+    expect(store.has("aeonthra:pending-bundle")).toBe(false);
+    expect(Array.isArray(store.get("aeonthra:pending-handoffs"))).toBe(true);
+  });
+
+  it("dedupes queued handoffs by pack id", async () => {
+    const bundle = makeQueuedCanvasBundle();
+
+    await queuePendingHandoff(bundle);
+    await queuePendingHandoff(bundle);
+
+    const queue = await readPendingHandoffQueue();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.pack).toEqual(bundle);
+  });
+
+  it("expires stale handoffs older than twenty four hours", async () => {
+    const store = new Map<string, unknown>();
+    (globalThis as typeof globalThis & { chrome: typeof chrome }).chrome.storage.local = createStorageArea(store);
+    const bundle = makeQueuedCanvasBundle({
+      capturedAt: "2026-04-10T00:00:00.000Z"
+    });
+    store.set("aeonthra:pending-handoffs", [
+      createBridgeHandoffEnvelope(bundle, "2026-04-10T00:00:00.000Z")
+    ]);
+
+    expect(await inspectPendingHandoff()).toEqual({ state: "missing" });
+    expect(store.has("aeonthra:pending-handoffs")).toBe(false);
+  });
+
+  it("clears only the exact acknowledged handoff", async () => {
+    const first = await queuePendingHandoff(makeQueuedCanvasBundle({
+      title: "First Queue",
+      capturedAt: new Date().toISOString()
+    }));
+    const second = await queuePendingHandoff(makeQueuedCanvasBundle({
+      title: "Second Queue",
+      capturedAt: new Date(Date.now() + 1_000).toISOString()
+    }));
+
+    expect(await clearPendingHandoff(first.handoffId, second.packId)).toBe(false);
+    expect(await readPendingHandoffQueue()).toHaveLength(2);
+    expect(await clearPendingHandoff(first.handoffId, first.packId)).toBe(true);
+    expect((await readPendingHandoffQueue()).map((handoff) => handoff.packId)).toEqual([second.packId]);
+    await clearPendingHandoffs();
+    expect(await inspectPendingHandoff()).toEqual({ state: "missing" });
+  });
+
+  it("flags malformed queue entries as invalid when no valid handoff remains", async () => {
+    const store = new Map<string, unknown>();
+    (globalThis as typeof globalThis & { chrome: typeof chrome }).chrome.storage.local = createStorageArea(store);
+    store.set("aeonthra:pending-handoffs", [{ nope: true }]);
+
+    expect(await inspectPendingHandoff()).toEqual({
+      state: "invalid",
+      code: "invalid-bundle"
+    });
   });
 });

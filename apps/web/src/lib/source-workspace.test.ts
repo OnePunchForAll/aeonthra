@@ -21,7 +21,7 @@ function makeCanvasBundle(): CaptureBundle {
     ...bundle,
     source: "extension-capture",
     captureMeta: {
-      courseId: "course-42",
+      courseId: "42",
       courseName: "Deterministic Ethics",
       sourceHost: "canvas.example.test"
     }
@@ -115,7 +115,7 @@ describe("source workspace helpers", () => {
     const legacy = {
       ...makeCanvasBundle(),
       captureMeta: {
-        courseId: "course-42",
+        courseId: "42",
         courseName: "Deterministic Ethics"
       }
     };

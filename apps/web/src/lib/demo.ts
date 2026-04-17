@@ -839,7 +839,10 @@ function buildDemoSynthesis(
     focusThemes,
     assignmentMappings,
     retentionModules,
-    deterministicHash
+    deterministicHash,
+    qualityBanner: "",
+    qualityWarnings: [],
+    synthesisMode: "full"
   };
 }
 

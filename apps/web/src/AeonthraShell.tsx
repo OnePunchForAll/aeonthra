@@ -6,8 +6,10 @@
 // AppProgress interfaces; only the internal view state is untyped here.
 import { useState, useCallback, useEffect, useRef } from "react";
 import { resolveDominantShellConceptId, type ShellData } from "./lib/shell-mapper";
+import { buildConceptQuestionPool } from "./lib/concept-practice";
 import type { AppProgress } from "./lib/workspace";
-import { materializeAtlasSkillTree } from "./lib/atlas-skill-tree";
+import { buildAtlasShellProjection } from "./lib/atlas-shell";
+import { AtlasJourneyPanel } from "./components/AtlasJourneyPanel";
 import { loadNotes, storeNotes } from "./lib/storage";
 
 type AeonthraShellProps = {
@@ -206,16 +208,38 @@ useEffect(()=>{
 },[]);
 const atlasScrollRef=useRef(null);
 const atlasRafRef=useRef(null);
+const toastTimerRef=useRef(null);
+const celebrationDismissRef=useRef(null);
+const celebrationReturnFocusRef=useRef(null);
+const closeCelebration=()=>{setShowCelebration(false);const previous=celebrationReturnFocusRef.current;if(previous&&typeof previous.focus==="function")previous.focus();celebrationReturnFocusRef.current=null;};
 useEffect(()=>{
-  if(v!=="journey"||prefersReducedMotion||mobileLayout){if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}return;}
+  const container=atlasScrollRef.current;
+  if(v!=="journey"||prefersReducedMotion||mobileLayout||!container){if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}return;}
   let spd=0;
-  const onMove=(e)=>{const w=window.innerWidth;const z=w*.28;if(e.clientX<z){spd=-(z-e.clientX)/z*14;}else if(e.clientX>w-z){spd=(e.clientX-(w-z))/z*14;}else{spd=0;}};
-  const tick=()=>{if(atlasScrollRef.current&&spd!==0)atlasScrollRef.current.scrollLeft+=spd;atlasRafRef.current=requestAnimationFrame(tick);};
-  window.addEventListener("mousemove",onMove,{passive:true});
-  atlasRafRef.current=requestAnimationFrame(tick);
-  return()=>{window.removeEventListener("mousemove",onMove);if(atlasRafRef.current)cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;};
+  const stopTick=()=>{spd=0;if(atlasRafRef.current){cancelAnimationFrame(atlasRafRef.current);atlasRafRef.current=null;}};
+  const tick=()=>{if(!atlasScrollRef.current||spd===0){atlasRafRef.current=null;return;}atlasScrollRef.current.scrollLeft+=spd;atlasRafRef.current=requestAnimationFrame(tick);};
+  const startTick=()=>{if(spd!==0&&!atlasRafRef.current)atlasRafRef.current=requestAnimationFrame(tick);};
+  const onMove=(e)=>{const rect=container.getBoundingClientRect();const edge=Math.max(96,rect.width*.18);const left=e.clientX-rect.left;const right=rect.right-e.clientX;if(left<edge){spd=-((edge-left)/edge)*14;startTick();}else if(right<edge){spd=((edge-right)/edge)*14;startTick();}else{stopTick();}};
+  container.addEventListener("mousemove",onMove,{passive:true});
+  container.addEventListener("mouseleave",stopTick);
+  return()=>{container.removeEventListener("mousemove",onMove);container.removeEventListener("mouseleave",stopTick);stopTick();};
 },[mobileLayout,prefersReducedMotion,v]);
 // ═══ ARGUMENT FORGE ═══
+useEffect(()=>()=>{if(toastTimerRef.current)clearTimeout(toastTimerRef.current);},[]);
+useEffect(()=>{
+  if(!showCelebration||typeof document==="undefined")return;
+  const active=document.activeElement;
+  celebrationReturnFocusRef.current=active instanceof HTMLElement?active:null;
+  const raf=typeof window!=="undefined"&&window.requestAnimationFrame?window.requestAnimationFrame(()=>celebrationDismissRef.current?.focus()):null;
+  return()=>{if(raf!==null&&typeof window!=="undefined"&&window.cancelAnimationFrame)window.cancelAnimationFrame(raf);};
+},[showCelebration]);
+useEffect(()=>{
+  if(!showCelebration||typeof window==="undefined")return;
+  const onKeyDown=(event)=>{if(event.key==="Escape"){event.preventDefault();closeCelebration();}};
+  window.addEventListener("keydown",onKeyDown);
+  return()=>window.removeEventListener("keydown",onKeyDown);
+},[showCelebration]);
+const scrollAtlasLanes=(direction)=>{if(!atlasScrollRef.current)return;atlasScrollRef.current.scrollBy({left:direction*atlasLaneWidth*.92,behavior:prefersReducedMotion?"auto":"smooth"});};
 const[argStage,setArgStage]=useState("thesis"); // thesis|outline|draft
 const[thesis,setThesis]=useState({});
 const[outline,setOutline]=useState({});
@@ -393,8 +417,11 @@ const readerPrimaryConceptId=readerContent?resolveDominantShellConceptId(readerC
 const markConceptComplete=(conceptId)=>setCC(p=>p.map(c=>c.id===conceptId?{...c,mastery:Math.max(c.mastery,.8)}:c));
 const conceptMasteryMap=Object.fromEntries(cc.map(c=>[c.id,c.mastery]));
 const chapterProgressMap=buildChapterProgressMap();
-const atlasSkillModel=data.skillTree?materializeAtlasSkillTree(data.skillTree,{conceptMastery:conceptMasteryMap,chapterCompletion:chapterProgressMap}):null;
-const atlasSkillById=atlasSkillModel?new Map(atlasSkillModel.nodes.map(node=>[node.id,node])):new Map();
+const skillHistoryMap=initialProgress.skillHistory??{};
+const atlasProjection=buildAtlasShellProjection({skillTree:data.skillTree,assignments:ASSIGNMENTS,progress:{conceptMastery:conceptMasteryMap,chapterCompletion:chapterProgressMap,skillHistory:skillHistoryMap}});
+const atlasSkillModel=atlasProjection.atlasSkillModel;
+const atlasSkillById=atlasProjection.atlasSkillById;
+const assignmentReadiness=(assignment)=>atlasProjection.assignmentReadinessById.get(assignment.id)||{assignmentId:assignment.id,requirement:null,requiredSkills:[],missingSkills:[],readiness:null,status:"unmapped",label:"Unmapped",progressPercent:0};
 
 const MODULES=data.modules;
 
@@ -402,31 +429,7 @@ const MODULES=data.modules;
 const generateQuestions=(conceptId,count,type)=>{
   const c=cc.find(x=>x.id===conceptId);if(!c)return[];
   if(!isRenderableConcept(c))return[];
-  const pool=[];
-  const primaryKeyword=normalizePanelText(c.kw[0]||c.name.toLowerCase());
-  const safeTrap=normalizePanelText(c.trap||`Students often flatten ${c.name} into a generic course prompt.`);
-  const safeDepth=normalizePanelText(c.depth||c.core);
-  const safeDist=normalizePanelText(c.dist||c.core);
-  const safeHook=normalizePanelText(c.hook||`Use ${c.name} as the lens for explaining what the source is trying to show.`);
-  // Original hand-crafted questions
-  if(type==="tf")c.tf.forEach(q=>pool.push({...q,source:"hand"}));
-  if(type==="mc")c.mc.forEach(q=>pool.push({...q,source:"hand"}));
-  // Generated cross-concept comparisons
-  const others=cc.filter(x=>x.id!==c.id&&isRenderableConcept(x));
-  if(type==="tf"){
-    others.forEach(o=>{
-      pool.push({statement:`${c.name} and ${o.name} are both part of the ${c.cat} tradition.`,answer:c.cat===o.cat,explanation:c.cat===o.cat?`Correct — both fall under ${c.cat}.`:`False — ${c.name} is ${c.cat} while ${o.name} is ${o.cat}.`,source:"gen"});
-    });
-    pool.push({statement:`${c.name} focuses primarily on ${primaryKeyword}.`,answer:true,explanation:`Correct — ${primaryKeyword} is central to ${c.name}.`,source:"gen"});
-    pool.push({statement:`A key pitfall when studying ${c.name} is: ${safeTrap.split(".")[0]}.`,answer:true,explanation:`Correct — ${safeTrap}`,source:"gen"});
-    pool.push({statement:`${c.name} applies only in academic writing contexts.`,answer:false,explanation:`Not specifically — ${safeDepth.split(".")[0]}.`,source:"gen"});
-  }
-  if(type==="mc"){
-    others.slice(0,4).forEach(o=>{
-      pool.push({question:`What is the key difference between ${c.name} and ${o.name}?`,options:[safeDist.split(".")[0]||`${c.name} has a distinct primary claim in this source`,normalizePanelText(o.dist||o.core).split(".")[0]||`${o.name} focuses on a different aspect of this topic`,"They are essentially identical","Neither has practical applications"],correctIndex:0,explanation:`${c.name}: ${c.core} vs ${o.name}: ${o.core}`,source:"gen"});
-    });
-    pool.push({question:`Which memory hook best captures ${c.name}?`,options:[safeHook,...others.slice(0,3).map(o=>normalizePanelText(o.hook||o.core))],correctIndex:0,explanation:`The correct hook for ${c.name}: ${safeHook}`,source:"gen"});
-  }
+  const pool=buildConceptQuestionPool(c,cc,type);
   return takeStableSubset(pool,count,`${c.id}:${type}`);
 };
 
@@ -490,6 +493,23 @@ useEffect(()=>{
   onProgressUpdate({chapterCompletion});
 // eslint-disable-next-line react-hooks/exhaustive-deps
 },[READING,sectionsRead]);
+const prevSkillHistoryKeyRef=useRef(null);
+useEffect(()=>{
+  if(!atlasSkillModel)return;
+  const mergedHistory={...(initialProgress.skillHistory??{})};
+  let changed=false;
+  atlasSkillModel.nodes.forEach((node)=>{
+    if((node.state==="earned"||node.state==="mastered")&&mergedHistory[node.id]!==true){
+      mergedHistory[node.id]=true;
+      changed=true;
+    }
+  });
+  if(!changed)return;
+  const key=JSON.stringify(Object.keys(mergedHistory).sort().reduce((acc,id)=>{acc[id]=mergedHistory[id];return acc;},{}));
+  if(prevSkillHistoryKeyRef.current===key)return;
+  prevSkillHistoryKeyRef.current=key;
+  onProgressUpdate({skillHistory:mergedHistory});
+},[atlasSkillModel,initialProgress.skillHistory,onProgressUpdate]);
 
 // Keyboard shortcuts
 useEffect(()=>{
@@ -526,8 +546,8 @@ const go=useCallback((to,d)=>{
 },[cc,done]);
 
 const bump=(id,d)=>setCC(p=>p.map(c=>c.id===id?{...c,mastery:Math.min(1,Math.max(0,c.mastery+d))}:c));
-const flash=(m,g)=>{setToast({m,g});setTimeout(()=>setToast(null),2200);};
-const triggerCelebration=()=>{setShowCelebration(true);setTimeout(()=>setShowCelebration(false),3000);};
+const flash=(m,g)=>{if(toastTimerRef.current)clearTimeout(toastTimerRef.current);setToast({m,g});toastTimerRef.current=window.setTimeout(()=>{setToast(null);toastTimerRef.current=null;},2200);};
+const triggerCelebration=()=>{setShowCelebration(true);};
 const openReader=(contentId)=>{const r=READING.find(x=>x.id===contentId);if(r){setReaderContent(r);setReaderSection(readingPositions[contentId]||0);setReaderUtilOpen(false);go("reader");}};
 const openReaderForChapter=(moduleId,chapterIdx)=>{const chapters=READING.filter(x=>x.module===moduleId);const r=chapters[chapterIdx]||chapters[0];if(r){setReaderContent(r);setReaderSection(readingPositions[r.id]||0);setReaderUtilOpen(false);go("reader");}};
 const openTranscript=(txId)=>{const t=TRANSCRIPTS.find(x=>x.id===txId);if(t){setTranscript(t);setTxTime(0);setTxPlaying(false);go("transcript");}};
@@ -538,6 +558,7 @@ useEffect(()=>{if(!txPlaying||!transcript)return;const t=setInterval(()=>{setTxT
 const mastered=cc.filter(c=>c.mastery>=.8).length;
 const avg=cc.length>0?cc.reduce((s,c)=>s+c.mastery,0)/cc.length:0;
 const nextA=[...ASSIGNMENTS].sort((a,b)=>a.due-b.due)[0];
+const nextAReadiness=nextA?assignmentReadiness(nextA):null;
 
 const askO=()=>{if(!oq.trim())return;const w=oq.toLowerCase().split(/\s+/).filter(x=>x.length>2);
   setOR(PH.map((p,pi)=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b&&p.q.length)b=p.q[stableHash(`${p.n}:${pi}:${oq}`)%p.q.length];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r||a.n.localeCompare(b.n)));};
@@ -641,30 +662,30 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   </div>
   <div style={{display:"flex",gap:4,flexWrap:"wrap",width:mobileLayout?"100%":"auto",overflowX:mobileLayout?"auto":"visible",paddingBottom:mobileLayout?2:0}}>
     {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
-      <button key={id} onClick={()=>go(id)} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
+      <button key={id} onClick={()=>go(id)} aria-current={v===id?"page":undefined} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
-    <button onClick={()=>go("settings")} title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
+    <button onClick={()=>go("settings")} aria-current={v==="settings"?"page":undefined} aria-label="Settings" title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
   </div>
 </nav>
 
-{toast&&<div style={{position:"fixed",top:88,left:"50%",transform:"translateX(-50%)",padding:"14px 36px",borderRadius:18,background:toast.g?`${TL}1a`:`${RD}1a`,border:`2px solid ${toast.g?TL:RD}`,color:toast.g?TL:RD,fontSize:".95rem",fontWeight:700,zIndex:200,animation:"fadeUp .3s ease",boxShadow:`0 8px 32px ${toast.g?TL:RD}22`,display:"flex",alignItems:"center",gap:12}}>
+{toast&&<div role="status" aria-live="polite" aria-atomic="true" style={{position:"fixed",top:88,left:"50%",transform:"translateX(-50%)",padding:"14px 36px",borderRadius:18,background:toast.g?`${TL}1a`:`${RD}1a`,border:`2px solid ${toast.g?TL:RD}`,color:toast.g?TL:RD,fontSize:".95rem",fontWeight:700,zIndex:200,animation:"fadeUp .3s ease",boxShadow:`0 8px 32px ${toast.g?TL:RD}22`,display:"flex",alignItems:"center",gap:12}}>
   {toast.m}
   {streak>=3&&toast.g&&<span style={{fontSize:"1.1rem"}}>{"🔥".repeat(Math.min(Math.floor(streak/3),5))}</span>}
   {streak>=3&&toast.g&&<span style={{color:GD,fontWeight:800}}>{streak}x</span>}
 </div>}
 
 {/* CELEBRATION OVERLAY */}
-{showCelebration&&<div style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(2,2,8,.9)",animation:"fadeUp .5s ease",overflow:"hidden"}}>
+{showCelebration&&<div role="dialog" aria-modal="true" aria-labelledby="aeonthra-celebration-title" style={{position:"fixed",inset:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(2,2,8,.9)",animation:"fadeUp .5s ease",overflow:"hidden"}}>
   {/* Floating particles */}
   {[...Array(20)].map((_,i)=>(<div key={i} style={{position:"absolute",fontSize:["🔥","⭐","✨","💫","🏆"][i%5],left:`${(i*17)%100}%`,bottom:"-10%",animation:`floatParticle ${2+(i%4)}s ease ${(i%3)*.35}s infinite`,opacity:.8}}>{["🔥","⭐","✨","💫","🏆"][i%5]}</div>))}
   <div style={{textAlign:"center",position:"relative",zIndex:1}}>
     <div style={{fontSize:"5rem",marginBottom:24,animation:"float 1.5s ease infinite"}}>🏆</div>
-    <h2 style={{fontSize:"2.8rem",fontWeight:900,background:`linear-gradient(135deg,${CY},${TL},${GD})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontFamily:"'Space Grotesk',sans-serif",marginBottom:16,animation:"completionBloom .8s ease, celebrate 1.2s ease"}}>CONCEPT MASTERED</h2>
+    <h2 id="aeonthra-celebration-title" style={{fontSize:"2.8rem",fontWeight:900,background:`linear-gradient(135deg,${CY},${TL},${GD})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontFamily:"'Space Grotesk',sans-serif",marginBottom:16,animation:"completionBloom .8s ease, celebrate 1.2s ease"}}>CONCEPT MASTERED</h2>
     <div style={{fontSize:"1.5rem",color:GD,fontWeight:700,marginBottom:12}}>{"🔥".repeat(10)}</div>
     <p style={{color:TX,fontSize:"1.2rem",fontWeight:600}}>Streak: {streak}x · Best: {bestStreak}x</p>
     {totalAnswered>0&&<p style={{color:T2,fontSize:"1rem",marginTop:8}}>Session: {Math.round(totalCorrect/totalAnswered*100)}% accuracy across {totalAnswered} questions</p>}
     <div style={{marginTop:32}}>
-      <button onClick={()=>setShowCelebration(false)} style={{...bt(`linear-gradient(135deg,${GD},#cc8800)`,"#000"),fontSize:"1.1rem",padding:"18px 48px"}}>Continue →</button>
+      <button ref={celebrationDismissRef} onClick={closeCelebration} style={{...bt(`linear-gradient(135deg,${GD},#cc8800)`,"#000"),fontSize:"1.1rem",padding:"18px 48px"}}>Continue →</button>
     </div>
   </div>
 </div>}
@@ -748,15 +769,16 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
       {(()=>{const needed=nextA.con.map(id=>cc.find(c=>c.id===id)).filter(Boolean);const ready=needed.filter(c=>c.mastery>=.6);const notReady=needed.filter(c=>c.mastery<.6);
         return(<div style={{marginTop:16}}>
           {ready.length>0&&<p style={{color:TL,fontSize:".88rem",marginBottom:6}}>✓ You already know {ready.map(c=>c.name).join(", ")}</p>}
-          {notReady.length>0?<p style={{color:CY,fontSize:".88rem"}}>→ {notReady.length===1?"Just one concept":""+notReady.length+" concepts"} to prepare: {notReady.map(c=>c.name).join(", ")}. About {notReady.length*5} minutes of learning.</p>:
-            <p style={{color:TL,fontSize:".92rem",fontWeight:600}}>✓ You're ready for this. All required concepts are prepared.</p>}
+          {notReady.length>0?<p style={{color:CY,fontSize:".88rem"}}>→ {notReady.length===1?"One concept still needs attention":"Concept groundwork still needs attention"}: {notReady.map(c=>c.name).join(", ")}.</p>:
+            <p style={{color:nextAReadiness?.status==="ready"?TL:CY,fontSize:".92rem",fontWeight:600}}>{nextAReadiness?.status==="ready"?"✓ Skill chain earned. You can move into the assignment.":"→ Concepts are prepared, but Atlas is not treating this as a full readiness claim yet."}</p>}
+          {nextAReadiness?.status&&nextAReadiness.status!=="ready"&&<p style={{color:MU,fontSize:".82rem",marginTop:8}}>{nextAReadiness.status==="building"?"Atlas is still building the skill chain for this assignment.":"Use this as concept groundwork rather than an exact readiness score."}</p>}
         </div>);
       })()}
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
       {(()=>{const notReady=nextA.con.filter(id=>(cc.find(c=>c.id===id)?.mastery??0)<.6);
-        return notReady.length>0?
-          <button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>⚡ Prepare now ({notReady.length*5} min)</button>:
+        return notReady.length>0||nextAReadiness?.status!=="ready"?
+          <button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>⚡ Strengthen groundwork</button>:
           <button onClick={()=>go("assignment",{a:nextA})} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>✓ Open Assignment</button>;
       })()}
       <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`,padding:"10px 22px",fontSize:".82rem"}}>See full path →</button>
@@ -770,15 +792,15 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     <div style={{...ey,color:TL,margin:0,fontFamily:"'Space Grotesk',sans-serif"}}>📊 ASSIGNMENT READINESS</div>
     <span style={{fontSize:".82rem",color:MU}}>How prepared you are for each task</span>
   </div>
-  {ASSIGNMENTS.map(a=>{const readiness=a.con.length?Math.round(a.con.reduce((s,id)=>s+Math.min(1,(cc.find(c=>c.id===id)?.mastery??0)/.6),0)/a.con.length*100):100;const urgent=a.due<=3;
+  {ASSIGNMENTS.map(a=>{const readinessState=assignmentReadiness(a);const readiness=readinessState.progressPercent;const readinessLabel=readinessState.label;const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";const urgent=a.due<=3;
     return(<button key={a.id} onClick={()=>go("assignment",{a})} style={{display:"flex",alignItems:"center",gap:16,padding:"14px 18px",background:innr,border:`1px solid ${urgent?`${RD}33`:BD}`,borderRadius:16,cursor:"pointer",width:"100%",color:TX,transition:"all 250ms",marginBottom:8}}>
       <span style={{fontSize:"1.3rem",width:36}}>{a.type}</span>
       <div style={{flex:1,textAlign:"left"}}>
         <div style={{fontSize:".92rem",fontWeight:600}}>{a.title}</div>
-        <div style={{width:"100%",height:4,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:readiness>=100?TL:readiness>50?CY:"#ff8800",width:readiness+"%",transition:"width 500ms ease"}}/></div>
+        <div style={{width:"100%",height:4,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:readinessColor,width:readiness+"%",transition:"width 500ms ease"}}/></div>
       </div>
       <div style={{textAlign:"right",minWidth:70}}>
-        <div style={{fontSize:"1.1rem",fontWeight:800,color:readiness>=100?TL:readiness>50?CY:"#ff8800",fontFamily:"'Space Grotesk',sans-serif"}}>{readiness}%</div>
+        <div style={{fontSize:"1.1rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessLabel}</div>
         <div style={{fontSize:".65rem",color:urgent?RD:MU}}>{urgent?"⚠ "+a.due+"d":a.due+"d left"}</div>
       </div>
     </button>);
@@ -825,86 +847,25 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 </>}
 
 {/* COURSE ATLAS */}
-{v==="journey"&&(()=>{const rewardByModule=new Map((atlasSkillModel?.chapterRewards||[]).map(r=>[r.moduleId,r]));const reqByAssignment=new Map((atlasSkillModel?.assignmentRequirements||[]).map(r=>[r.assignmentId,r]));const skillStateColor=(state)=>state==="mastered"?GD:state==="earned"?TL:state==="recovery"?"#fb923c":state==="in-progress"?CY:state==="available"?"#7dd3fc":MU;const skillStateFill=(state)=>state==="mastered"?`linear-gradient(135deg,${GD},#ff8c38)`:state==="earned"?`linear-gradient(135deg,${TL},#0cc08f)`:state==="recovery"?"linear-gradient(135deg,#fb923c,#f97316)":state==="in-progress"?`linear-gradient(135deg,${CY},#2f7bff)`:state==="available"?"rgba(125,211,252,.12)":CD2;const skillIcon=(kind,state)=>kind==="mastery"?"✦":kind==="assignment-readiness"?"⬢":kind==="distinction"?"⇄":kind==="applied"?"➜":state==="mastered"?"✦":"◉";const assignmentsById=new Map(ASSIGNMENTS.map(a=>[a.id,a]));const upcomingAssignments=ASSIGNMENTS.filter(a=>a.skills?.length).map(a=>{const req=reqByAssignment.get(a.id);const linked=(req?.skillIds||[]).map(id=>atlasSkillById.get(id)).filter(Boolean);const readiness=linked.length?Math.round(linked.reduce((sum,node)=>sum+node.progress,0)/linked.length*100):a.con.length?Math.round(a.con.reduce((sum,id)=>sum+Math.min(1,(cc.find(c=>c.id===id)?.mastery??0)/.6),0)/a.con.length*100):100;return{assignment:a,readiness,missing:linked.filter(node=>!["earned","mastered"].includes(node.state)).slice(0,2)};}).sort((left,right)=>left.assignment.due-right.assignment.due).slice(0,4);const recoveryNodes=(atlasSkillModel?.nodes||[]).filter(node=>node.state==="recovery").slice(0,4);return(<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48}}>
-  <div style={{padding:mobileLayout?"20px 16px":"28px 48px",background:"rgba(8,8,20,.88)",borderBottom:`1px solid ${BD}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:68,zIndex:40,backdropFilter:"blur(16px)",gap:24,flexWrap:"wrap"}}>
-    <div>
-      <h2 style={{...hd(1.5),marginBottom:4}}>Atlas Skill Tree</h2>
-      <p style={{color:MU,fontSize:".88rem",maxWidth:620}}>Chapters now pay out skills, assignments consume those skills, and weak skills reopen as recovery loops instead of hiding behind module averages.</p>
-    </div>
-    <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-      {[["Available",atlasSkillModel?.summary.available||0,"#7dd3fc"],["In Flight",atlasSkillModel?.summary.inProgress||0,CY],["Earned",atlasSkillModel?.summary.earned||0,TL],["Mastered",atlasSkillModel?.summary.mastered||0,GD]].map(([label,count,color])=><div key={label} style={{padding:"10px 14px",borderRadius:14,background:"rgba(12,16,30,.78)",border:`1px solid ${BD}`}}><div style={{fontSize:".68rem",letterSpacing:".14em",textTransform:"uppercase",color,marginBottom:4,fontFamily:"'Space Grotesk',sans-serif"}}>{label}</div><div style={{fontSize:"1.05rem",fontWeight:800,color:TX,fontFamily:"'Space Grotesk',sans-serif"}}>{count}</div></div>)}
-      <button onClick={()=>go("courseware")} style={{padding:"10px 18px",borderRadius:12,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".82rem",fontWeight:600,cursor:"pointer"}}>📚 Library</button>
-    </div>
-  </div>
-  <div style={{padding:mobileLayout?"24px 16px 20px":"30px 48px 24px",display:"grid",gridTemplateColumns:mobileLayout?"1fr":"1.3fr .9fr",gap:18}}>
-    <div style={{...card,padding:"24px 28px",background:"linear-gradient(135deg,rgba(0,240,255,.08),rgba(3,8,18,.88))"}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:18,alignItems:"center",flexWrap:"wrap"}}>
-        <div>
-          <div style={ey}>Progression Story</div>
-          <h3 style={hd(1.18)}>Read → Forge → Distinguish → Apply → Master</h3>
-        </div>
-        <div style={{minWidth:220}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:".82rem",color:MU,marginBottom:8}}><span>Overall command</span><span>{P(avg)}</span></div>
-          <div style={{height:8,borderRadius:999,background:DM,overflow:"hidden"}}><div style={{height:"100%",width:P(avg),background:`linear-gradient(90deg,${CY},${TL},${GD})`,borderRadius:999}}/></div>
-        </div>
-      </div>
-    </div>
-    <div style={{...card,padding:"24px 28px"}}>
-      <div style={ey}>Assignment Readiness</div>
-      <div style={{display:"grid",gap:10}}>
-        {upcomingAssignments.length?upcomingAssignments.map(({assignment,readiness,missing})=><button key={assignment.id} onClick={()=>go("assignment",{a:assignment})} style={{padding:"16px 18px",borderRadius:16,background:innr,border:`1px solid ${assignment.due<=3?`${RD}33`:BD}`,cursor:"pointer",textAlign:"left",color:TX}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
-            <div><div style={{fontSize:".92rem",fontWeight:700}}>{assignment.title}</div><div style={{fontSize:".76rem",color:MU,marginTop:4}}>{missing.length?`Missing ${missing.map(node=>node.label).join(" · ")}`:"Skill chain earned"}</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontSize:"1rem",fontWeight:800,color:readiness>=100?TL:readiness>60?CY:"#fb923c",fontFamily:"'Space Grotesk',sans-serif"}}>{readiness}%</div><div style={{fontSize:".68rem",color:assignment.due<=3?RD:MU}}>{assignment.due}d</div></div>
-          </div>
-          <div style={{height:4,borderRadius:999,background:DM,overflow:"hidden",marginTop:10}}><div style={{height:"100%",width:readiness+"%",background:readiness>=100?TL:readiness>60?CY:"#fb923c",borderRadius:999}}/></div>
-        </button>):<div style={{color:MU,fontSize:".88rem"}}>No assignment-specific skill chains were derived yet.</div>}
-      </div>
-    </div>
-  </div>
-  {recoveryNodes.length>0&&<div style={{padding:mobileLayout?"0 16px 20px":"0 48px 24px"}}><div style={{...card,padding:"22px 24px",border:`1px solid #fb923c33`,background:"linear-gradient(135deg,rgba(251,146,60,.08),rgba(10,12,22,.9))"}}><div style={{...ey,color:"#fb923c"}}>Recovery Loop</div><div style={{display:"flex",flexWrap:"wrap",gap:12}}>{recoveryNodes.map(node=><button key={node.id} onClick={()=>{const c=cc.find(x=>x.id===node.conceptIds[0]);if(c)go("forge",{c});}} style={{padding:"12px 16px",borderRadius:14,border:"1px solid rgba(251,146,60,.24)",background:"rgba(251,146,60,.08)",color:TX,cursor:"pointer",textAlign:"left"}}><div style={{fontSize:".82rem",fontWeight:700,color:"#fb923c"}}>{node.label}</div><div style={{fontSize:".76rem",color:T2,marginTop:4}}>{Math.round(node.progress*100)}% command retained · reopen before the next assignment leans on it.</div></button>)}</div></div></div>}
-  <div ref={atlasScrollRef} style={{overflowX:"auto",overflowY:"hidden",padding:mobileLayout?"0 16px 64px":"0 48px 80px",scrollbarWidth:"thin",scrollbarColor:`${BD} transparent`}}>
-    <div style={{display:"flex",gap:24,minWidth:"max-content",alignItems:"flex-start"}}>
-      {(atlasSkillModel?.groups||[]).map((group,groupIndex)=>{const reward=rewardByModule.get(group.moduleId||"");const module=MODULES.find(m=>m.id===group.moduleId);const groupNodes=group.skillIds.map(id=>atlasSkillById.get(id)).filter(Boolean);const masteryNode=group.moduleId?atlasSkillById.get(`skill-mastery-${group.moduleId}`):null;const rewardState=!masteryNode||masteryNode.state==="locked"?"Locked":masteryNode.state==="earned"?"Ready to claim":masteryNode.state==="mastered"?"Claimed":"In progress";return(<div key={group.id} style={{width:atlasLaneWidth,flexShrink:0,position:"relative",paddingTop:mobileLayout?0:groupIndex*24}}>
-        {groupIndex>0&&<div style={{position:"absolute",left:-18,top:46,width:18,height:2,background:`linear-gradient(90deg,${MU}00,${BD})`}}/>}
-        <div style={{...card,padding:"24px 24px 22px",marginBottom:16,borderTop:`3px solid ${groupNodes.some(node=>node.state==="mastered")?GD:groupNodes.some(node=>node.state==="earned")?TL:CY}`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
-            <div>
-              <div style={ey}>{module?.pages||"Skill Lane"}</div>
-              <h3 style={hd(1.1)}>{group.title}</h3>
-            </div>
-            <button onClick={()=>openReaderForChapter(group.moduleId,0)} style={{padding:"8px 12px",borderRadius:10,border:`1px solid ${CY}24`,background:`${CY}0a`,color:CY,fontSize:".76rem",fontWeight:700,cursor:"pointer"}}>Read →</button>
-          </div>
-          <p style={{fontSize:".88rem",color:T2,lineHeight:1.65,margin:"10px 0 0"}}>{group.summary}</p>
-        </div>
-        {reward&&<div style={{padding:"16px 18px",borderRadius:18,background:"rgba(255,215,0,.05)",border:`1px solid ${GD}22`,marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:8}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".14em",color:GD,fontFamily:"'Space Grotesk',sans-serif"}}>CHAPTER REWARD</div><span style={{padding:"4px 10px",borderRadius:999,border:`1px solid ${rewardState==="Claimed"?`${GD}33`:rewardState==="Ready to claim"?`${TL}33`:`${BD}`}`,fontSize:".68rem",fontWeight:700,color:rewardState==="Claimed"?GD:rewardState==="Ready to claim"?TL:MU,background:"rgba(6,10,20,.24)"}}>{rewardState}</span></div><div style={{fontSize:".95rem",fontWeight:700,color:TX,marginBottom:6}}>{reward.title}</div><p style={{fontSize:".82rem",color:T2,lineHeight:1.55,margin:0}}>{reward.summary}</p></div>}
-        <div style={{display:"grid",gap:14}}>
-          {groupNodes.map((node,nodeIndex)=>{const primaryConcept=cc.find(c=>node.conceptIds.includes(c.id));const assignment=node.assignmentIds.map(id=>assignmentsById.get(id)).find(Boolean);return(<button key={node.id} onClick={()=>{if(node.missingPrerequisiteIds.length>0){const missing=node.missingPrerequisiteIds.map(id=>atlasSkillById.get(id)).find(Boolean);const missingConcept=missing?.conceptIds.map(id=>cc.find(c=>c.id===id)).find(Boolean);flash(missing?`Locked until ${missing.label}`:"This skill is still locked.",false);if(missingConcept){go("forge",{c:missingConcept});return;}if(missing?.moduleId){openReaderForChapter(missing.moduleId,0);}return;}if(node.kind==="assignment-readiness"&&assignment){go("assignment",{a:assignment});return;}if(node.kind==="distinction"){go("gym");return;}if(primaryConcept){go(["earned","mastered"].includes(node.state)?"explore":"forge",{c:primaryConcept});return;}if(group.moduleId)openReaderForChapter(group.moduleId,0);}} style={{position:"relative",padding:"20px 20px 18px",borderRadius:20,background:skillStateFill(node.state),border:`1px solid ${skillStateColor(node.state)}28`,boxShadow:node.state==="mastered"?`0 0 24px ${GD}18`:"none",color:TX,textAlign:"left",cursor:"pointer",overflow:"hidden"}}>
-            {nodeIndex<groupNodes.length-1&&<div style={{position:"absolute",left:28,top:"100%",width:2,height:18,background:`linear-gradient(180deg,${skillStateColor(node.state)},${BD})`,opacity:.55}}/>}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
-              <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-                <div style={{width:42,height:42,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(6,10,20,.4)",border:`1px solid ${skillStateColor(node.state)}33`,fontSize:"1.05rem",fontWeight:700,color:skillStateColor(node.state)}}>{skillIcon(node.kind,node.state)}</div>
-                <div>
-                  <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:skillStateColor(node.state),fontFamily:"'Space Grotesk',sans-serif"}}>{node.kind.replace(/-/g," ")}</div>
-                  <div style={{fontSize:"1rem",fontWeight:700,marginTop:6}}>{node.label}</div>
-                </div>
-              </div>
-              <div style={{textAlign:"right"}}><div style={{fontSize:".92rem",fontWeight:800,color:skillStateColor(node.state),fontFamily:"'Space Grotesk',sans-serif"}}>{Math.round(node.progress*100)}%</div><div style={{fontSize:".68rem",color:MU,marginTop:2}}>{node.state}</div></div>
-            </div>
-            <p style={{fontSize:".84rem",lineHeight:1.62,color:T2,margin:"14px 0 12px"}}>{node.summary}</p>
-            <div style={{height:4,borderRadius:999,background:DM,overflow:"hidden",marginBottom:12}}><div style={{height:"100%",width:Math.round(node.progress*100)+"%",background:skillStateColor(node.state),borderRadius:999}}/></div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {node.assignmentIds.slice(0,1).map(id=>assignmentsById.get(id)).filter(Boolean).map(a=><span key={a.id} style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${BD}`,fontSize:".72rem",color:MU,background:"rgba(6,10,20,.32)"}}>Assignment: {a.title}</span>)}
-              {node.rewardLabel&&<span style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${BD}`,fontSize:".72rem",color:MU,background:"rgba(6,10,20,.32)"}}>{node.rewardLabel}</span>}
-              {node.missingPrerequisiteIds.length>0&&<span style={{padding:"6px 10px",borderRadius:999,border:`1px solid ${RD}22`,fontSize:".72rem",color:RD,background:"rgba(255,68,102,.08)"}}>Requires {node.missingPrerequisiteIds.length} earlier skill{node.missingPrerequisiteIds.length!==1?"s":""}</span>}
-            </div>
-          </button>);})}
-        </div>
-      </div>);})}
-    </div>
-  </div>
-  {(!atlasSkillModel||atlasSkillModel.nodes.length===0)&&<div style={{textAlign:"center",padding:"20px 48px 40px"}}><p style={{fontSize:"1rem",color:MU}}>Atlas needs stronger chapter and assignment signals before it can derive a skill graph for this bundle.</p><button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000"),marginTop:12}}>Start First Concept →</button></div>}
-</div>);})()}
+{v==="journey"&&<AtlasJourneyPanel
+  atlasSkillModel={atlasSkillModel}
+  atlasSkillById={atlasSkillById}
+  assignmentReadinessById={atlasProjection.assignmentReadinessById}
+  assignments={ASSIGNMENTS}
+  concepts={cc}
+  modules={MODULES}
+  mobileLayout={mobileLayout}
+  atlasLaneWidth={atlasLaneWidth}
+  atlasScrollRef={atlasScrollRef}
+  scrollAtlasLanes={scrollAtlasLanes}
+  openReaderForChapter={openReaderForChapter}
+  goToCourseware={()=>go("courseware")}
+  goToAssignment={(assignment)=>go("assignment",{a:assignment})}
+  goToGym={()=>go("gym")}
+  goToConcept={(concept,destination)=>go(destination,{c:concept})}
+  flash={flash}
+  theme={{BD,CY,MU,T2,TL,GD,RD,DM,CD2,TX,innr,card,ey,heading:hd}}
+/>}
 
 
 {/* EXPLORE */}
@@ -968,7 +929,12 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{selC.conn.map(id=>{const r=cc.find(c=>c.id===id);return r?<button key={id} onClick={()=>setSC(r)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:20,border:`1px solid ${CY}22`,color:CY,background:`${CY}08`,cursor:"pointer",fontSize:".88rem",fontWeight:600,transition:"all 200ms"}}><div style={{width:8,height:8,borderRadius:"50%",background:mc2(r.mastery)}}/>{r.name}</button>:null;})}</div>
     </div>}
 
-    <button onClick={()=>go("forge",{c:selC})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>Practice {selC.name} in Neural Forge →</button>
+    {isDemoMode||selC.practiceReady!==false
+      ?<button onClick={()=>go("forge",{c:selC})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>Practice {selC.name} in Neural Forge →</button>
+      :<div style={{padding:"16px 18px",borderRadius:16,background:"rgba(255,68,102,.06)",border:`1px solid ${RD}22`,color:T2}}>
+        <div style={{fontSize:".74rem",fontWeight:700,letterSpacing:".12em",color:RD,marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE LOCKED</div>
+        <div style={{fontSize:".92rem",lineHeight:1.7}}>{selC.practiceSupportLabel}</div>
+      </div>}
   </div>:<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:480,color:MU}}>
     <div style={{textAlign:"center"}}><div style={{fontSize:"2.5rem",marginBottom:16}}>🧠</div><h3 style={{...hd(1.2),color:MU,marginBottom:8}}>Concept Library</h3><p style={{fontSize:"1rem",color:MU}}>Select a concept from the sidebar to explore its full depth</p></div>
   </div>}
@@ -978,17 +944,22 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 {/* ASSIGNMENT */}
 {v==="assignment"&&selA&&(()=>{
 const needed=selA.con.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
-const requiredSkills=(selA.skills||[]).map(id=>atlasSkillById.get(id)).filter(Boolean);
+const readinessState=assignmentReadiness(selA);
+const requiredSkills=readinessState.requiredSkills;
 const ready=needed.filter(c=>c.mastery>=.6);
 const weak=needed.filter(c=>c.mastery<.6);
-const readiness=requiredSkills.length?Math.round(requiredSkills.reduce((sum,node)=>sum+node.progress,0)/requiredSkills.length*100):needed.length?Math.round(ready.length/needed.length*100):100;
+const readiness=readinessState.progressPercent;
+const readinessLabel=readinessState.label;
+const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";
+const readinessBorder=readinessState.status==="unmapped"?BD:readinessState.status==="concept-prep"?CY:readiness>=100?TL:urgent?RD:CY;
+const readinessFill=readinessState.status==="unmapped"?"rgba(125,148,178,.06)":readinessState.status==="concept-prep"?"rgba(61,149,255,.08)":readiness>=100?`${TL}06`:urgent?`${RD}04`:`${CY}04`;
 const urgent=selA.due<=3;
 
 return(<div style={{maxWidth:880}}>
 <button onClick={()=>go("home")} style={{background:"transparent",border:"none",color:MU,cursor:"pointer",fontSize:".92rem",marginBottom:20}}>← Back</button>
 
 {/* Header */}
-<div style={{...card,marginBottom:24,borderTop:`4px solid ${readiness>=100?TL:urgent?RD:CY}`,background:`linear-gradient(135deg,${readiness>=100?`${TL}06`:urgent?`${RD}04`:`${CY}04`},${CD2})`}}>
+<div style={{...card,marginBottom:24,borderTop:`4px solid ${readinessBorder}`,background:`linear-gradient(135deg,${readinessFill},${CD2})`}}>
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:20}}>
     <div style={{flex:1}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
@@ -1005,13 +976,20 @@ return(<div style={{maxWidth:880}}>
     </div>
     <div style={{textAlign:"center",minWidth:100}}>
       <div style={{position:"relative",width:80,height:80,margin:"0 auto"}}>
-        <svg viewBox="0 0 80 80" style={{width:80,height:80}}><circle cx="40" cy="40" r="36" fill="none" stroke={DM} strokeWidth="4"/><circle cx="40" cy="40" r="36" fill="none" stroke={readiness>=100?TL:readiness>50?CY:"#ff8800"} strokeWidth="4" strokeDasharray={`${readiness/100*226} 226`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
-        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"1.3rem",fontWeight:800,color:readiness>=100?TL:readiness>50?CY:"#ff8800",fontFamily:"'Space Grotesk',sans-serif"}}>{readiness}%</span></div>
+        <svg viewBox="0 0 80 80" style={{width:80,height:80}}><circle cx="40" cy="40" r="36" fill="none" stroke={DM} strokeWidth="4"/><circle cx="40" cy="40" r="36" fill="none" stroke={readinessColor} strokeWidth="4" strokeDasharray={`${readiness/100*226} 226`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"1.3rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessLabel}</span></div>
       </div>
-      <div style={{fontSize:".68rem",color:MU,marginTop:6}}>READINESS</div>
+      <div style={{fontSize:".68rem",color:MU,marginTop:6}}>{readinessState.status==="unmapped"?"SKILL MAP":readinessState.status==="concept-prep"?"CONCEPT PREP":"READINESS"}</div>
     </div>
   </div>
 </div>
+
+{["unmapped","concept-prep"].includes(readinessState.status)&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${readinessState.status==="concept-prep"?CY:MU}`}}>
+  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:readinessState.status==="concept-prep"?CY:MU,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessState.status==="concept-prep"?"CONCEPT PREP ONLY":"MAP STILL NEEDED"}</div>
+  <p style={{color:T2,fontSize:".9rem",lineHeight:1.6,margin:0}}>{readinessState.status==="concept-prep"?"Atlas found concept grounding for this assignment, but it does not have enough checklist-backed skill evidence to claim readiness yet.":"Atlas has not derived a trustworthy assignment skill chain for this task yet. The concept evidence below is still useful, but it is not being promoted into a fake readiness score."}</p>
+  {readinessState.requirement?.checklist?.length>0&&<div style={{marginTop:14,display:"grid",gap:8}}>{readinessState.requirement.checklist.slice(0,3).map((line,index)=><div key={`${selA.id}-check-${index}`} style={{padding:"10px 12px",borderRadius:12,background:innr,border:`1px solid ${BD}`,color:T2,fontSize:".82rem"}}>{line}</div>)}</div>}
+  {readinessState.requirement?.pitfalls?.length>0&&<p style={{color:MU,fontSize:".78rem",lineHeight:1.5,margin:"12px 0 0"}}>Watch for: {readinessState.requirement.pitfalls.slice(0,2).join(" · ")}</p>}
+</div>}
 
 {requiredSkills.length>0&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${CY}`}}>
   <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:CY,marginBottom:16,fontFamily:"'Space Grotesk',sans-serif"}}>⬢ SKILL CHAIN</div>
@@ -1194,7 +1172,21 @@ return(<div style={{maxWidth:880}}>
 })()}
 
 {/* ═══ NEURAL FORGE ═══ */}
-{v==="forge"&&fc&&(()=>{
+{v==="forge"&&fc&&(!isDemoMode&&fc.practiceReady===false?(
+<div style={{maxWidth:860,margin:"0 auto"}}>
+  <div style={{...card,padding:mobileLayout?"32px 24px":"44px 40px",borderTop:`3px solid ${RD}`}}>
+    <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:RD,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE UNAVAILABLE</div>
+    <h2 style={{...hd(1.5),marginBottom:10}}>{fc.name}</h2>
+    <p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:"0 0 18px"}}>{fc.practiceSupportLabel||"Practice unlocks after transfer or assignment evidence is captured."}</p>
+    <p style={{fontSize:".88rem",lineHeight:1.7,color:MU,margin:"0 0 24px"}}>AEONTHRA will not synthesize Neural Forge drills from mapper-authored prose alone. This concept needs real transfer evidence or assignment evidence before practice opens.</p>
+    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <button onClick={()=>go("explore",{c:fc})} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>Review concept →</button>
+      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Open Atlas</button>
+      <button onClick={()=>go("courseware")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Back to library</button>
+    </div>
+  </div>
+</div>
+):(()=>{
 const phases=[
   {id:"intro",icon:"🧠",name:"Orient",color:CY,desc:"Ground yourself in the core idea before anything else."},
   {id:"dilemma",icon:"⚖",name:"Apply",color:"#a78bfa",desc:"Face a real scenario that tests this concept in practice."},
@@ -1427,7 +1419,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
     <button onClick={()=>{const n=cc.filter(c=>c.id!==fc.id&&!done.has(c.id)&&c.mastery<.8);if(n.length)go("forge",{c:n[0]});}} style={{fontSize:".88rem",color:MU,background:"transparent",border:`1px solid ${BD}`,padding:"10px 24px",borderRadius:20,cursor:"pointer"}}>Switch to another concept →</button>
   </div>
 </div>);
-})()}
+})())}
 
 {/* COMPARE */}
 {v==="compare"&&<div style={{maxWidth:1020,margin:"0 auto"}}>
@@ -1619,6 +1611,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             {[5,10,25,50,100].map(n=>(
               <button key={n} onClick={()=>{
                 const qs=m.concepts.flatMap(id=>generateQuestions(id,Math.ceil(n/m.concepts.length),"tf").map(q=>({...q,cid:id})));
+                if(qs.length===0){flash("Practice stays locked until this module has source-backed transfer or assignment evidence.",false);return;}
                 setPracticeQ(takeStableSubset(qs,n,`practice:${m.id}:tf:${n}`));
                 setPracticeI(0);setPracticeA(null);setPracticeSc({c:0,w:0});setPracticeMode("tf");setV("practice");
               }} style={{padding:"8px 16px",borderRadius:12,border:`1px solid ${BD}`,background:innr,color:CY,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>
@@ -1628,6 +1621,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
             {[5,10,25].map(n=>(
               <button key={"mc"+n} onClick={()=>{
                 const qs=m.concepts.flatMap(id=>generateQuestions(id,Math.ceil(n/m.concepts.length),"mc").map(q=>({...q,cid:id})));
+                if(qs.length===0){flash("Practice stays locked until this module has source-backed transfer or assignment evidence.",false);return;}
                 setPracticeQ(takeStableSubset(qs,n,`practice:${m.id}:mc:${n}`));
                 setPracticeI(0);setPracticeA(null);setPracticeSc({c:0,w:0});setPracticeMode("mc");setV("practice");
               }} style={{padding:"8px 16px",borderRadius:12,border:`1px solid ${BD}`,background:innr,color:GD,fontSize:".82rem",fontWeight:600,cursor:"pointer",transition:"all 200ms"}}>
@@ -1680,10 +1674,13 @@ return(<div style={{...card,position:"sticky",top:88,padding:"28px 24px",animati
   ))}
   {c.kw.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>{c.kw.slice(0,6).map(k=><span key={k} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${BD}`,fontSize:".75rem",color:MU,background:innr}}>{k}</span>)}</div>}
   <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:8}}>
-    <button onClick={()=>go("forge",{c})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>⚡ Forge this concept</button>
+    {isDemoMode||c.practiceReady!==false
+      ?<button onClick={()=>go("forge",{c})} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>⚡ Forge this concept</button>
+      :<div style={{padding:"12px 14px",borderRadius:14,background:"rgba(255,68,102,.06)",border:`1px solid ${RD}22`,color:T2,fontSize:".82rem",lineHeight:1.6}}>{c.practiceSupportLabel}</div>}
     <button onClick={()=>{setSC(c);go("explore");}} style={{...bt("transparent",CY),border:`1px solid ${CY}33`}}>🔍 View in Explore</button>
   </div>
 </div>);})()}
+ 
 
 </div>}
 

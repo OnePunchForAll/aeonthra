@@ -2,17 +2,16 @@
 
 ## Highest leverage next work
 
-- Add true end-to-end coverage for `capture -> open AEONTHRA -> bridge import -> durable persist -> NF_PACK_ACK cleanup -> workspace render`.
-- Replace the single pending-pack slot with a queued or correlated handoff model so overlapping imports cannot overwrite each other.
-- Break down `apps/web/src/AeonthraShell.tsx`, `apps/web/src/App.tsx`, and `apps/extension/src/service-worker.ts` into smaller maintained seams now that the major repair pass is stable.
+- Add a checked-in browser proof path for `capture -> open AEONTHRA -> import -> NF_PACK_ACK -> queue clear`, or keep the manual proof sequence current if a harness is still infeasible.
+- Decide whether hostless legacy same-course compatibility should eventually be tightened behind an explicit migration instead of the current compatibility rule.
+- Continue splitting `apps/web/src/AeonthraShell.tsx` after the Atlas extraction, starting with reader/transcript state and helpers.
 
-## Semantic and Atlas breadth
+## Repo hygiene and determinism
 
-- Extend the golden fixture suite beyond thin-discussion, clone-heavy/admin-heavy, and transfer/confusion regressions into larger mixed-source and contradictory-source captures.
-- Add more Atlas progression tests around recovery loops, chapter reward ordering, and assignment-readiness edge cases.
-- Expand deterministic memory beyond notes into a real EMBER store for confusion patterns, aliases, and user corrections.
+- Delete the remaining non-UTF8 `output/*.log` files once the environment allows direct filesystem deletion, or keep recording the desktop-policy blocker.
+- Decide whether any additional historical artifacts still belong in the repo after the ultimate purge.
 
-## Platform hygiene
+## Product hardening
 
-- Expand the visited-page session path with stronger regression coverage and decide whether saved sessions should optionally open AEONTHRA immediately after materialization.
-- Investigate why `demo.ts` still needs a full Vite restart to propagate in dev mode.
+- Add mounted UI coverage for shell remount behavior on explicit offline restores if a lightweight render test harness is introduced.
+- Strengthen regression coverage for visited-session save and clear targeting plus interrupted partial-capture cleanup.

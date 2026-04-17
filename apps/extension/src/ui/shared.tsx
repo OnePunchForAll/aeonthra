@@ -139,7 +139,7 @@ export function ModeCard({
     ? {
         icon: "FULL",
         title: "Complete Snapshot",
-        body: "Archive the whole course with raw HTML, metadata, files, discussions, and the broadest recovery path.",
+        body: "Capture the broadest supported course surfaces with raw HTML, metadata, files, discussions, and the best recovery path.",
         meta: "Large output - slower capture - backup-grade"
       }
     : {

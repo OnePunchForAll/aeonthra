@@ -1,9 +1,10 @@
-import { createManualCaptureBundle } from "@learning/schema";
+import { createEmptyBundle, createManualCaptureBundle } from "@learning/schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_RUNTIME_STATE,
   readCaptureRecord,
   readHistorySummaries,
+  readRuntimeState,
   readSessionState,
   upsertSessionObservation,
   writeRuntimeState
@@ -20,6 +21,7 @@ type MessageHandler = (
 
 let messageHandler: MessageHandler | null = null;
 let installedHandler: (() => void) | null = null;
+let localStoreRef: StorageMap;
 
 function createStorageArea(store: StorageMap): chrome.storage.StorageArea {
   return {
@@ -69,6 +71,29 @@ function makeCourse(courseId = "course-42"): CourseContext {
   };
 }
 
+function makeQueuedCanvasBundle(input: {
+  courseId?: string;
+  title?: string;
+} = {}) {
+  const courseId = input.courseId ?? "42";
+  const bundle = createManualCaptureBundle({
+    title: input.title ?? "Queued Canvas Capture",
+    text: "Deterministic bridge capture",
+    canonicalUrl: `https://canvas.example.test/courses/${courseId}/assignments/7`,
+    kind: "assignment"
+  });
+
+  return {
+    ...bundle,
+    source: "extension-capture" as const,
+    captureMeta: {
+      courseId,
+      courseName: input.title ?? "Queued Canvas Capture",
+      sourceHost: "canvas.example.test"
+    }
+  };
+}
+
 async function dispatchMessage(message: unknown, sender: Partial<chrome.runtime.MessageSender> = {}): Promise<any> {
   const handler = messageHandler;
   if (!handler) {
@@ -88,6 +113,7 @@ describe("extension service-worker session flow", () => {
 
     const localStore: StorageMap = new Map();
     const syncStore: StorageMap = new Map();
+    localStoreRef = localStore;
 
     (globalThis as typeof globalThis & { chrome: typeof chrome; addEventListener: typeof globalThis.addEventListener }).chrome = {
       runtime: {
@@ -133,6 +159,7 @@ describe("extension service-worker session flow", () => {
     void module;
     if (installedHandler) {
       (installedHandler as () => void)();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   });
 
@@ -246,5 +273,121 @@ describe("extension service-worker session flow", () => {
     expect(response).toEqual({ ok: true });
     expect(await readSessionState(course)).toBeNull();
     expect(await readHistorySummaries()).toHaveLength(0);
+  });
+
+  it("rejects malformed pending handoffs instead of relaying them as bridge packs", async () => {
+    localStoreRef.set("aeonthra:pending-bundle", { not: "a-capture-bundle" });
+
+    const response = await dispatchMessage({
+      type: "bridge-message",
+      payload: {
+        source: "learning-freedom-bridge",
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-1"
+      }
+    });
+
+    expect(response).toEqual({
+      ok: true,
+      relay: {
+        source: "learning-freedom-bridge",
+        type: "NF_IMPORT_RESULT",
+        requestId: "request-1",
+        success: false,
+        error: "Queued AEONTHRA handoff was malformed and has been cleared."
+      }
+    });
+    expect(localStoreRef.has("aeonthra:pending-bundle")).toBe(false);
+  });
+
+  it("clears schema-valid pending bundles whose source is not an extension capture", async () => {
+    localStoreRef.set("aeonthra:pending-bundle", createManualCaptureBundle({
+      title: "Manual Notes",
+      text: "This should never be relayed as a queued extension handoff."
+    }));
+
+    const response = await dispatchMessage({
+      type: "bridge-message",
+      payload: {
+        source: "learning-freedom-bridge",
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-2"
+      }
+    });
+
+    expect(response).toEqual({
+      ok: true,
+      relay: {
+        source: "learning-freedom-bridge",
+        type: "NF_IMPORT_RESULT",
+        requestId: "request-2",
+        success: false,
+        error: "Queued AEONTHRA handoff was cleared because its source was not an extension capture."
+      }
+    });
+    expect(localStoreRef.has("aeonthra:pending-bundle")).toBe(false);
+  });
+
+  it("relays queued handoffs with request and handoff correlation fields", async () => {
+    const bundle = makeQueuedCanvasBundle();
+    localStoreRef.set("aeonthra:pending-bundle", bundle);
+
+    const response = await dispatchMessage({
+      type: "bridge-message",
+      payload: {
+        source: "learning-freedom-bridge",
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-3"
+      }
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.relay).toMatchObject({
+      source: "learning-freedom-bridge",
+      type: "NF_PACK_READY",
+      requestId: "request-3",
+      packId: expect.any(String),
+      handoffId: expect.any(String),
+      pack: bundle
+    });
+    expect(localStoreRef.has("aeonthra:pending-handoffs")).toBe(true);
+    expect(localStoreRef.has("aeonthra:pending-bundle")).toBe(false);
+  });
+
+  it("does not save empty extension captures into history", async () => {
+    const course = makeCourse("course-empty");
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-empty",
+      mode: "learning",
+      course,
+      startedAt: "2026-04-16T00:00:00.000Z"
+    });
+    localStoreRef.set("aeonthra:partial-bundle", createEmptyBundle("AEONTHRA Capture"));
+
+    await dispatchMessage({
+      type: "aeon:job-complete",
+      jobId: "job-empty",
+      mode: "learning",
+      course,
+      stats: {
+        totalItemsVisited: 1,
+        totalItemsCaptured: 0,
+        totalItemsSkipped: 1,
+        totalItemsFailed: 0,
+        durationMs: 250
+      }
+    });
+
+    expect(await readHistorySummaries()).toHaveLength(0);
+    expect(await readCaptureRecord("job-empty")).toBeNull();
+
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "error",
+      errorMessage: "Capture finished without any importable Canvas pages, so nothing was saved or queued."
+    });
+    expect(localStoreRef.has("aeonthra:partial-bundle")).toBe(false);
   });
 });

@@ -2,6 +2,101 @@
 
 ## 2026-04-16
 
+### Ultimate bridge completion and restore-scope remount hardening
+
+**Files changed**: `packages/schema/src/index.ts`, `apps/extension/src/core/storage.ts`, `apps/extension/src/service-worker.ts`, `apps/web/src/App.tsx`, `apps/extension/src/core/storage.test.ts`, `apps/extension/src/core/service-worker.test.ts`, `apps/web/src/App.test.ts`, `apps/web/src/lib/bridge.test.ts`
+
+**What changed**
+- Completed the correlated handoff queue around `BridgeHandoffEnvelopeSchema`, `requestId`, `handoffId`, and `packId`.
+- Enforced exact `handoffId + packId` clearing and legacy single-slot migration on read.
+- Fixed queue freshness by stamping `queuedAt` from actual queue time instead of bundle capture time.
+- Allowed valid extension-originated `NF_PACK_READY` messages to land even when request state has already cleared, while still ignoring mismatched active requests.
+- Forced `AeonthraShell` to remount on explicit offline replay restore so scoped notes cannot bleed across same-instance restores.
+
+**Why**: the bridge needed end-to-end correlation and truthful timing, and the web shell still had one live scoped-notes bug on direct replay restore.
+
+**Downstream effects**: queued handoffs now age correctly, exact acknowledgements clear only the matching queue entry, real `Open AEONTHRA` timing drift no longer drops valid packs, and restored note scopes are safer.
+
+### Purge stale worktree mirrors and disposable QA artifacts from the repo root
+
+**Files changed**: `.gitignore`, `.claude/worktrees/**`, `forge-screen.png`, `home-screen.png`, `workspace-screen.png`
+
+**What changed**
+- Removed the malformed tracked `.claude/worktrees/**` gitlinks and deleted the duplicate worktree directories from the filesystem.
+- Deleted the tracked root screenshots that were only referenced by the old purge note.
+- Deleted disposable `.playwright-cli/`, `dse-extracted/`, and `test-results/` directories plus temporary web logs where the filesystem allowed it.
+- Added ignore coverage for `.claude/worktrees/`, `dse-extracted/`, `test-results/`, and temporary web logs.
+
+**Why**: these artifacts were not canonical runtime source and they created real extension-load ambiguity plus noisy repo state.
+
+**Downstream effects**: the repo is materially leaner, the canonical unpacked extension path is clearer, and disposable QA artifacts are less likely to drift back into versioned state.
+
+### Bridge contract unification and canonical browser-local persistence
+
+**Files changed**: `packages/schema/src/index.ts`, `apps/extension/src/service-worker.ts`, `apps/web/src/App.tsx`, `apps/web/src/lib/source-workspace.ts`, `apps/web/src/lib/storage.ts`, `apps/extension/src/core/service-worker.test.ts`, `apps/web/src/App.test.ts`, `apps/web/src/lib/storage.test.ts`
+
+**What changed**
+- Added the shared `inspectCanvasCourseKnowledgePack()` classifier and reused it at queue, relay, and app-import boundaries.
+- Replaced the old generic bridge misclassification with exact file and bridge failure reasons for malformed, wrong-source, empty, and textbook-only queued packs.
+- Treated `learning-freedom:source-workspace` as the canonical live source-pointer store and pushed the legacy merged-bundle key into migration-only compatibility.
+- Added one-time legacy unscoped-progress migration and kept notes and progress scoped by `learningBundle.synthesis.deterministicHash`.
+
+**Why**: the bridge failure exposed that worker relay, app import, and browser-local persistence were not all using the same source-of-truth rules.
+
+**Downstream effects**: current handoff behavior is more truthful, stale legacy state is less likely to bleed into current workspaces, and the bridge contract has a single inspected definition instead of several near-matches.
+
+### Docs and ledger truth alignment after the bridge repair pass
+
+**Files changed**: `README.md`, `docs/architecture.md`, `docs/extension-handoff.md`, `docs/truth-boundaries.md`, `.omega/DECISIONS.md`, `.omega/DIAGNOSTIC_PROTOCOL.md`, `.omega/ERROR_LEDGER.md`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/TODO_NOW.md`, and the then-current audit artifacts
+
+**What changed**
+- Reframed the bridge failure as a historical incident fixed in current source and tests.
+- Documented the canonical persistence model, the remaining single-slot handoff limitation, and the verified repo-hygiene and build-determinism gaps.
+- Marked the old request-only bridge policy and global-reset claim as historical or superseded where the live runtime no longer behaves that way.
+
+**Why**: the docs and ledgers had drifted into an intermediate state that mixed pre-fix failures, superseded policies, and current runtime behavior.
+
+**Downstream effects**: contributor-facing docs, ledgers, and audit artifacts now describe the same runtime contract and the same remaining open issues.
+
+### Ultimate docs, purge, and stop-rule alignment
+
+**Files changed**: `README.md`, `COMMAND_CAPABILITY_MATRIX.md`, `HUMAN_TRIGGER_SEQUENCE.md`, `AGENT_SWARM_ROSTER.md`, `SKILL_GAP_AND_CREATION_PLAN.md`, `ITERATION_SCOREBOARD.md`, `AUDIT_ULTIMATE_PASS.md`, `EXECUTION_PLAN_ULTIMATE_PASS.md`, `BRIDGE_FAILURE_ROOT_CAUSE_ULTIMATE.md`, `PURGE_REPORT_ULTIMATE.md`, `.omega/DECISIONS.md`, `.omega/DIAGNOSTIC_PROTOCOL.md`, `.omega/ERROR_LEDGER.md`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Rewrote the repo-facing docs so they describe the live correlated queue, provenance, practice truth gate, Atlas model, and manual-proof boundary instead of older intermediate claims.
+- Recorded the iteration scoreboard through the final no-delta review loops.
+- Documented the final bridge root cause, purge decisions, canonical source-of-truth files, and manual human-trigger sequence.
+
+**Why**: the repo had reached a materially stronger runtime state than the docs and ledgers were willing to claim.
+
+**Downstream effects**: stop-time claims now line up with what was actually built, verified, and left as a documented limitation.
+
+### AeonthraShell concentration reduction: extract Atlas projection and readiness derivation into a typed helper
+
+**Files changed**: `apps/web/src/AeonthraShell.tsx`, `apps/web/src/lib/atlas-shell.ts`, `apps/web/src/lib/atlas-shell.test.ts`
+
+**What changed**
+- Extracted the pure Atlas materialization, assignment-readiness derivation, and chapter-reward state labeling out of `AeonthraShell.tsx` into `apps/web/src/lib/atlas-shell.ts`.
+- Rewired the shell to consume the shared projection instead of rebuilding the same readiness contract inline across home, journey, and assignment views.
+- Added regression coverage for `building`, `ready`, `concept-prep`, and `unmapped` assignment states plus chapter reward label mapping.
+
+**Why**: the shell was carrying deterministic Atlas projection logic inline beside JSX, which made safe changes harder and increased drift risk across surfaces that should agree on one progression contract.
+
+**Downstream effects**: Atlas/readiness changes now have one typed seam and one focused test file, while the large shell loses some of its highest-value pure-logic concentration without a broad component rewrite.
+
+### Extension release hardening: fail closed when unpacked dist and manifest drift
+
+**Files changed**: `apps/extension/scripts/build.mjs`, `apps/extension/scripts/build.test.mjs`
+
+**What changed**
+- Refactored the extension build script into explicit entrypoint and copied-asset lists so the generated unpacked output is described in one place.
+- Added a post-build validation pass that parses `apps/extension/dist/manifest.json`, confirms every referenced file exists in `dist`, and rejects absolute or out-of-tree manifest paths.
+- Added direct regression tests for manifest file collection, missing-file detection, complete-dist acceptance, and path-escape rejection.
+
+**Why**: the extension build previously trusted `manifest.json` blindly. A manifest/build drift could still produce a "successful" build that loaded as a broken unpacked extension in Chrome.
+
+**Downstream effects**: `npm run build:extension` now fails closed on last-mile output drift instead of shipping an incomplete unpacked extension.
+
 ### Replay and course-identity compatibility repair
 
 **Files changed**: `apps/web/src/lib/offline-site.ts`, `apps/web/src/lib/offline-site.test.ts`, `apps/web/src/lib/source-workspace.ts`, `apps/web/src/lib/source-workspace.test.ts`
@@ -117,19 +212,19 @@
 
 **Downstream effects**: concept-specific reader behavior is now stricter and more truthful. Ambiguous sections may show fewer targeted hints, but they no longer silently mislabel the learner's context.
 
-### Bridge request hardening: ignore unsolicited packs and settle import lifecycle deterministically
+### Historical bridge request hardening before validated extension-initiated pack acceptance
 
 **Files changed**: `apps/web/src/App.tsx`, `apps/web/src/App.test.ts`, `apps/web/src/lib/bridge.test.ts`
 
 **What changed**
 - Extracted bridge-message decision logic into a pure helper so the live app and tests share the same request-state rules.
-- Stopped accepting `NF_PACK_READY` when no bridge request is active, which blocks stale or unsolicited extension packs from replacing the workspace.
-- Made `NF_IMPORT_RESULT` always settle the request lifecycle while only surfacing failure status for manual requests.
-- Added app-level and bridge-level regression coverage for requested pack acceptance, unsolicited pack rejection, wrong-source message rejection, and manual vs auto import-result handling.
+- Tightened request-state handling first, then later relaxed final acceptance so validated extension-originated packs can still land when request mode has already cleared.
+- Kept `NF_IMPORT_RESULT` as the deterministic request-lifecycle closer while moving final safety to shared pack validation and exact importability checks.
+- Added app-level and bridge-level regression coverage for requested pack acceptance, exact rejection reasons, and manual vs auto import-result handling.
 
-**Why**: the app previously trusted any schema-valid bridge pack that arrived, even if the user had not asked for an import in the current session.
+**Why**: the app previously trusted any schema-valid bridge pack that arrived, even if the user had not asked for an import in the current session. Later bridge repair work showed that strict request-only acceptance also blocked legitimate `Open AEONTHRA` flows.
 
-**Downstream effects**: bridge handoff is now request-scoped rather than opportunistic, which reduces workspace replacement risk and makes the import state machine easier to reason about.
+**Downstream effects**: request state still governs status handling, but the final safety boundary is now the shared validated pack contract rather than request mode alone.
 
 ### Content-engine fixture broadening: discussion scaffold filtering, wrapper dedupe, and academic sentence recovery
 
@@ -261,7 +356,7 @@
 
 **Reset semantics**
 - Added `clearStoredNotes()` and `clearStoredProgress()` in `apps/web/src/lib/storage.ts`.
-- Updated `resetWorkspace()` in `apps/web/src/App.tsx` so Reset Workspace clears browser-local notes and all scoped/default progress buckets, not just the stored bundle pointers.
+- Updated the reset helpers so no-scope clearing wipes all notes and progress buckets, while the live runtime reset path can clear only the active workspace scope when one is available.
 
 **Offline export truthfulness**
 - Changed `createOfflineSiteBundle()` in `apps/web/src/lib/offline-site.ts` so `exportedAt` records the actual export time instead of reusing `learningBundle.generatedAt`.
@@ -271,7 +366,7 @@
 
 **Why**: the web app could appear reset while silently preserving old notes/mastery for the same deterministic scope, and offline replay bundles displayed the synthesis time as if it were the export time.
 
-**Downstream effects**: Reset Workspace now returns the browser-local app state to a real clean slate, offline replay metadata is truthful, and storage regression tests cover the reset contract directly.
+**Downstream effects**: reset can now be truthful in both modes: full helper-level clearing when no scope is provided, and active-workspace clearing when the runtime is operating on one synthesized scope. Offline replay metadata is also truthful, and storage regression tests cover both reset contracts directly.
 
 ### Web boundary hardening: legacy source split fix and regression expansion
 
@@ -391,6 +486,14 @@
 **Why**: Without skill docs, pipeline behavior was implicit and prone to regression during refactors.
 **Downstream effects**: All future agents working on AEONTHRA should consult `.agents/skills/` before modifying any system covered by a skill doc.
 **Skill refs**: `omega-self-repair-loop`
+
+### Legacy progress migration cancellation on explicit workspace replacement
+
+**Files changed**: `apps/web/src/App.tsx`, `apps/web/src/App.test.ts`
+**What it does**: Adds `discardLegacyProgressMigration()` and calls it when Canvas import, replay restore, demo load, or full reset explicitly replace the active workspace. This clears the deprecated unscoped legacy progress bucket and disables later fallback migration for the replaced workspace.
+**Why**: The old migration ref stayed armed until the first scoped hydration. If the user replaced the workspace before that hydration, a later synthesis on the new workspace could inherit unrelated legacy progress.
+**Downstream effects**: Deprecated unscoped progress is now only eligible for one initial migration path. Explicit workspace replacement cancels it instead of letting it leak across imports.
+**Skill refs**: `read-write-boundaries`, `state-minimization`
 
 ## 2026-04-09
 

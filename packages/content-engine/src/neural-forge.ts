@@ -1,6 +1,7 @@
 import type { ConceptRelation, LearningBundle, LearningConcept } from "@learning/schema";
 import type { Block } from "./pipeline.ts";
-import { meaningfulWords, normalizePhrase, truncateReadable } from "./pipeline.ts";
+import { truncateReadable } from "./pipeline.ts";
+import { strongestRelatedConcept, selectEvidenceFragments } from "./artifact-support.ts";
 
 const phases = [
   { id: "immerse", title: "Immerse", tagline: "Feel the shape of the material before you sort it.", purpose: "Use human-readable primers and stakes so the material stops feeling alien." },
@@ -9,30 +10,6 @@ const phases = [
   { id: "transfer", title: "Transfer", tagline: "Aim the idea at real course work.", purpose: "Connect concepts to assignments, discussions, and likely response moves." },
   { id: "recover", title: "Recover", tagline: "Leave with cues future-you can actually use.", purpose: "Turn the session into review cues, confidence notes, and a next-pass study map." }
 ] as const;
-
-const pairFor = (concept: LearningConcept, concepts: LearningConcept[], relations: ConceptRelation[]) => {
-  const relation = relations.find((entry) => entry.fromId === concept.id || entry.toId === concept.id);
-  const otherId = relation ? relation.fromId === concept.id ? relation.toId : relation.fromId : concepts.find((candidate) => candidate.id !== concept.id)?.id;
-  return concepts.find((candidate) => candidate.id === otherId) ?? null;
-};
-
-const evidenceFor = (blocks: Block[], concept: LearningConcept, firstLabel = "Anchor line") => {
-  const conceptBlocks = blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId));
-  const chosen = (conceptBlocks.length ? conceptBlocks : blocks).slice(0, 2);
-  const tokens = meaningfulWords(concept.label);
-  if (!chosen.length) {
-    return [{
-      label: firstLabel,
-      excerpt: truncateReadable(concept.excerpt || concept.summary),
-      sourceItemId: concept.sourceItemIds[0] ?? concept.id
-    }];
-  }
-  return chosen.map((block, index) => ({
-    label: index === 0 ? firstLabel : "Support line",
-    excerpt: truncateReadable(block.sentences.find((sentence) => tokens.some((token) => normalizePhrase(sentence).includes(token))) ?? block.lead ?? block.summary),
-    sourceItemId: block.sourceItemId
-  }));
-};
 
 const conceptWindow = (
   concepts: LearningConcept[],
@@ -73,7 +50,11 @@ export function buildNeuralForge(
     cards: (
       phase.id === "contrast"
         ? conceptWindow(concepts, 0, 4).map((concept) => {
-            const secondary = pairFor(concept, concepts, relations);
+            const secondary = strongestRelatedConcept(concept, concepts, relations, {
+              preferredTypes: ["contrasts"],
+              fallbackToAny: false
+            });
+            const conceptBlocks = blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId));
             return {
               id: `${phase.id}-${concept.id}`,
               title: secondary ? `${concept.label} vs ${secondary.label}` : concept.label,
@@ -83,7 +64,7 @@ export function buildNeuralForge(
               supportLine: concept.commonConfusion,
               actions: ["Name the tempting mix-up.", "Write the clean separation line.", "Keep one source phrase that proves the difference."],
               conceptIds: secondary ? [concept.id, secondary.id] : [concept.id],
-              evidence: evidenceFor(blocks, concept, "Contrast anchor")
+              evidence: selectEvidenceFragments(conceptBlocks.length ? conceptBlocks : blocks, concept, "Contrast anchor", "Support line")
             };
           })
         : conceptWindow(concepts, phaseIndex, 4).map((concept) => ({
@@ -95,7 +76,14 @@ export function buildNeuralForge(
             supportLine: phase.id === "recover" ? concept.transferHook : concept.primer,
             actions: [phase.id === "immerse" ? "Read the support line, then say what the topic feels like before you define it." : phase.id === "decode" ? "Translate the concept into one sentence you would trust under pressure." : phase.id === "transfer" ? `Aim ${concept.label} at one real source item from the bundle.` : "Write the recovery cue you want future-you to see first.", "Keep the strongest evidence line in view.", "Write one sentence that future-you would still understand."],
             conceptIds: [concept.id],
-            evidence: evidenceFor(blocks, concept)
+            evidence: selectEvidenceFragments(
+              blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId)).length
+                ? blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId))
+                : blocks,
+              concept,
+              "Anchor line",
+              "Support line"
+            )
           }))
     ).slice(0, 4)
   }));

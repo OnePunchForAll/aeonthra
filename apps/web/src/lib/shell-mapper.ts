@@ -8,9 +8,8 @@
  * Do not remove fields — add optional ones if you extend the schema later.
  */
 
-import type { CaptureBundle, LearningBundle, LearningConcept, ConceptRelation } from "@learning/schema";
+import type { CaptureBundle, LearningBundle, LearningConcept, ConceptRelation, EvidenceFragment } from "@learning/schema";
 import type { CourseTask, ForgeChapter } from "./workspace";
-import { assessSourceQuality, qualityBannerText } from "@learning/content-engine";
 import { buildAtlasSkillTree, type AtlasSkillTree } from "./atlas-skill-tree";
 
 // ─── Shell data types ──────────────────────────────────────────────────────────
@@ -58,9 +57,11 @@ export type ShellConcept = {
   trap: string;     // common student mistake
   kw: string[];     // keywords for question generation
   conn: string[];   // related concept IDs
-  dil: ShellDilemma;
+  dil: ShellDilemma | null;
   tf: ShellTFQuestion[];
   mc: ShellMCQuestion[];
+  practiceReady: boolean;
+  practiceSupportLabel: string;
 };
 
 export type ShellAssignment = {
@@ -79,6 +80,7 @@ export type ShellAssignment = {
   failModes: string[];
   evidence: string;
   quickPrep: string;
+  requirementLines: string[];
   skills: string[];
 };
 
@@ -183,6 +185,8 @@ export type ShellAssignmentIntel = {
   conceptIds: string[];
   focusThemeIds: string[];
   checklist: string[];
+  likelyPitfalls: string[];
+  evidence: EvidenceFragment[];
 };
 
 export type ShellRetentionModule = {
@@ -298,6 +302,14 @@ function normalizeComparisonText(text: string | null | undefined): string {
     .trim();
 }
 
+function comparisonTokens(text: string | null | undefined): string[] {
+  return Array.from(new Set(
+    normalizeComparisonText(text)
+      .split(" ")
+      .filter((token) => token.length >= 4)
+  ));
+}
+
 function isScaffoldConceptLabel(label: string): boolean {
   const normalized = normalizeComparisonText(label);
   return normalized.length < 4 || SCAFFOLD_LABELS.has(normalized);
@@ -316,13 +328,32 @@ function isCompleteThought(text: string | null | undefined): boolean {
   return normalized.length >= 20 && /[.!?]$/.test(normalized) && !normalized.endsWith("...");
 }
 
+function isRenderableCueText(text: string | null | undefined): boolean {
+  const normalized = normalizeShellText(text);
+  return normalized.length >= 8 && !isScaffoldConceptLabel(normalized);
+}
+
 function isDistinctFrom(reference: string, candidate: string | null | undefined): boolean {
   const candidateNormalized = normalizeComparisonText(candidate);
   if (!candidateNormalized) return false;
   const referenceNormalized = normalizeComparisonText(reference);
-  return candidateNormalized !== referenceNormalized
-    && !candidateNormalized.includes(referenceNormalized)
-    && !referenceNormalized.includes(candidateNormalized);
+  if (
+    candidateNormalized === referenceNormalized
+    || candidateNormalized.includes(referenceNormalized)
+    || referenceNormalized.includes(candidateNormalized)
+  ) {
+    return false;
+  }
+
+  const referenceTokenSet = new Set(comparisonTokens(reference));
+  const candidateTokens = comparisonTokens(candidate);
+  if (referenceTokenSet.size === 0 || candidateTokens.length === 0) {
+    return true;
+  }
+
+  const sharedCount = candidateTokens.filter((token) => referenceTokenSet.has(token)).length;
+  const overlapRatio = sharedCount / Math.min(referenceTokenSet.size, candidateTokens.length);
+  return overlapRatio < 0.7;
 }
 
 function conceptCoreText(concept: LearningConcept): string {
@@ -382,15 +413,29 @@ function conceptDistinctionText(
 function conceptHookText(concept: LearningConcept): string {
   const core = conceptCoreText(concept);
   const depth = conceptDepthText(concept);
-  const candidates = [concept.mnemonic, concept.transferHook];
+  const candidates = [concept.mnemonic];
   for (const candidate of candidates) {
-    if (!isRenderableConceptText(candidate)) continue;
-    if (!isCompleteThought(candidate)) continue;
+    if (!isRenderableCueText(candidate)) continue;
     if (!isDistinctFrom(core, candidate)) continue;
     if (depth && !isDistinctFrom(depth, candidate)) continue;
     return normalizeShellText(candidate);
   }
   return "";
+}
+
+function dedupeMcOptions(options: string[]): string[] {
+  const seen = new Set<string>();
+  return options
+    .map((option) => normalizeShellText(option))
+    .filter((option) => option.length > 0)
+    .filter((option) => {
+      const key = normalizeComparisonText(option);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 }
 
 function conceptTrapText(concept: LearningConcept): string {
@@ -405,6 +450,66 @@ function conceptTrapText(concept: LearningConcept): string {
     return normalizeShellText(concept.commonConfusion);
   }
   return "";
+}
+
+type PracticeSupportContext = {
+  allowCuratedPractice: boolean;
+  assignmentEvidenceByConceptId: Map<string, number>;
+};
+
+function buildPracticeSupportContext(
+  bundle: CaptureBundle,
+  learning: LearningBundle
+): PracticeSupportContext {
+  const assignmentEvidenceByConceptId = new Map<string, number>();
+  learning.synthesis.assignmentMappings.forEach((mapping) => {
+    if (mapping.evidence.length === 0) {
+      return;
+    }
+    mapping.conceptIds.forEach((conceptId) => {
+      assignmentEvidenceByConceptId.set(
+        conceptId,
+        (assignmentEvidenceByConceptId.get(conceptId) ?? 0) + mapping.evidence.length
+      );
+    });
+  });
+  return {
+    allowCuratedPractice: bundle.source === "demo",
+    assignmentEvidenceByConceptId
+  };
+}
+
+function getPracticeSupportState(
+  concept: LearningConcept,
+  context: PracticeSupportContext
+): { ready: boolean; label: string } {
+  if (context.allowCuratedPractice) {
+    return {
+      ready: true,
+      label: "Demo mode keeps curated practice enabled."
+    };
+  }
+
+  const transferEvidenceCount = concept.fieldSupport?.transferHook?.evidence?.length ?? 0;
+  if (transferEvidenceCount > 0) {
+    return {
+      ready: true,
+      label: "Source-backed transfer evidence is available."
+    };
+  }
+
+  const assignmentEvidenceCount = context.assignmentEvidenceByConceptId.get(concept.id) ?? 0;
+  if (assignmentEvidenceCount > 0) {
+    return {
+      ready: true,
+      label: "Assignment evidence is available for this concept."
+    };
+  }
+
+  return {
+    ready: false,
+    label: "Practice unlocks after transfer or assignment evidence is captured."
+  };
 }
 
 const DOMINANT_CONCEPT_STOPWORDS = new Set([
@@ -465,10 +570,7 @@ function conceptEvidenceTokens(concept: ShellConcept): string[] {
   return [
     ...new Set([
       ...tokenizeConceptEvidence(concept.name),
-      ...concept.kw.flatMap((keyword) => tokenizeConceptEvidence(keyword)),
-      ...tokenizeConceptEvidence(concept.core),
-      ...tokenizeConceptEvidence(concept.depth),
-      ...tokenizeConceptEvidence(concept.dist)
+      ...concept.kw.flatMap((keyword) => tokenizeConceptEvidence(keyword))
     ])
   ];
 }
@@ -591,7 +693,7 @@ function generateMC(c: LearningConcept, allConcepts: LearningConcept[]): ShellMC
 
   const q1: ShellMCQuestion = {
     question: `Which best describes ${label}?`,
-    options: [
+    options: dedupeMcOptions([
       normalizeShellText(c.definition),
       normalizeShellText(others[0]?.definition) || `The general study of ${c.keywords[1] ?? "this topic"}.`,
       // Use a distorted definition rather than commonConfusion "X is not Y" — that reads as correct
@@ -599,19 +701,19 @@ function generateMC(c: LearningConcept, allConcepts: LearningConcept[]): ShellMC
         ? normalizeShellText(c.definition.replace(/\bhelps\b/i, "ignores").replace(/\bfocuses on\b/i, "avoids"))
         : `A vague guideline rather than a concept with a specific claim.`,
       normalizeShellText(others[1]?.definition) || `A rule that applies without considering context.`
-    ],
+    ]),
     correctIndex: 0,
     explanation: normalizeShellText(c.definition)
   };
 
   const q2: ShellMCQuestion = {
     question: `When is ${label} most useful to apply?`,
-    options: [
+    options: dedupeMcOptions([
       `Only in formal written assignments`,
       normalizeShellText(c.transferHook) || `When the task directly requires understanding ${label}.`,
       `Only when the outcome is already known`,
       `Whenever a source mentions a related topic`
-    ],
+    ]),
     correctIndex: 1,
     explanation: normalizeShellText(c.transferHook || c.primer || c.definition)
   };
@@ -624,12 +726,12 @@ function generateMC(c: LearningConcept, allConcepts: LearningConcept[]): ShellMC
     : `That ${label} is a general heading rather than a concept with a precise claim.`;
   const q3: ShellMCQuestion = {
     question: `A common misunderstanding about ${label} is:`,
-    options: [
+    options: dedupeMcOptions([
       misconception,
       normalizeShellText(c.definition),
       conceptHookText(c),
       `That ${label} can be fully mastered through a single exposure without practice`
-    ],
+    ]),
     correctIndex: 0,
     explanation: `The misconception is: ${misconception} The actual claim: ${normalizeShellText(c.definition)}`
   };
@@ -698,7 +800,8 @@ function mapCourse(bundle: CaptureBundle): ShellCourse {
 function mapConcept(
   c: LearningConcept,
   allConcepts: LearningConcept[],
-  relations: ConceptRelation[]
+  relations: ConceptRelation[],
+  practiceSupportContext: PracticeSupportContext
 ): ShellConcept {
   const connectedIds = relations
     .filter((r) => r.fromId === c.id || r.toId === c.id)
@@ -713,6 +816,7 @@ function mapConcept(
     rawCat &&
     !isScaffoldConceptLabel(rawCat) &&
     normalizeComparisonText(rawCat) !== normalizeComparisonText(conceptName);
+  const practiceSupport = getPracticeSupportState(c, practiceSupportContext);
 
   return {
     id: c.id,
@@ -725,9 +829,11 @@ function mapConcept(
     trap: conceptTrapText(c),
     kw: c.keywords.filter((keyword) => !isScaffoldConceptLabel(keyword)),
     conn: [...new Set(connectedIds)],
-    dil: generateDilemma(c),
-    tf: generateTF(c),
-    mc: generateMC(c, allConcepts)
+    dil: practiceSupport.ready ? generateDilemma(c) : null,
+    tf: practiceSupport.ready ? generateTF(c) : [],
+    mc: practiceSupport.ready ? generateMC(c, allConcepts) : [],
+    practiceReady: practiceSupport.ready,
+    practiceSupportLabel: practiceSupport.label
   };
 }
 
@@ -754,38 +860,39 @@ function daysUntil(timestamp: number | null): number {
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
-function mapAssignment(task: CourseTask): ShellAssignment {
+function mapAssignment(task: CourseTask, conceptNameById: Map<string, string>): ShellAssignment {
   const { demand, icon } = taskDemand(task.kind);
   const reqLines = task.requirementLines.slice(0, 4);
+  const taskSummary = normalizeShellText(task.summary);
+  const focusConcepts = task.conceptIds
+    .map((conceptId) => conceptNameById.get(conceptId))
+    .filter((conceptName): conceptName is string => Boolean(conceptName))
+    .slice(0, 2);
   const failModes = reqLines.length > 0
     ? reqLines.map((r) => `Missing: ${r.slice(0, 80)}`)
-    : [
-        "Summarizing instead of analyzing",
-        "Not applying the specific framework requested",
-        "Missing citations or textbook evidence",
-        "Neglecting to address counterarguments"
-      ];
+    : [];
 
   const evidenceNeeded = reqLines.length > 0
     ? reqLines.slice(0, 2).join("; ")
-    : "Textbook concepts applied to a concrete case with reasoning shown";
+    : "";
 
   return {
     id: task.id,
     title: task.title,
-    sub: task.summary.slice(0, 60) || task.title,
+    sub: taskSummary.slice(0, 60) || task.title,
     type: taskTypeIcon(task.kind),
     due: daysUntil(task.dueDate),
     pts: task.pts,
     con: task.conceptIds,
-    tip: task.summary.slice(0, 100) || `Focus on ${task.conceptIds[0] ?? "the core concept"}.`,
-    reallyAsking: task.summary || `This assignment asks you to demonstrate mastery of ${task.conceptIds.join(", ")}.`,
+    tip: taskSummary.slice(0, 100) || "",
+    reallyAsking: taskSummary,
     demand,
     demandIcon: icon,
-    secretCare: `Instructors look for specific concept application, not just general knowledge. Show that you understand ${task.conceptIds[0] ?? "the framework"} deeply.`,
+    secretCare: reqLines[0] ? wordTruncate(reqLines[0], 140) : "",
     failModes,
     evidence: evidenceNeeded,
-    quickPrep: `Review ${task.conceptIds.slice(0, 2).join(" and ")} then work through one practice question. ~${Math.round(task.estimatedMinutes * 0.4)} minutes.`,
+    quickPrep: focusConcepts.length > 0 ? `Review ${focusConcepts.join(" and ")}.` : "",
+    requirementLines: reqLines,
     skills: []
   };
 }
@@ -952,14 +1059,6 @@ function generateMargins(reading: ShellReading[], concepts: ShellConcept[]): Rec
       const key = `${r.id}:${sIdx}`;
       const annotations: ShellMarginAnnotation[] = [];
 
-      if (sIdx === 0) {
-        annotations.push({
-          type: "hook",
-          text: "This section introduces core ideas that recur throughout the course. Read it carefully.",
-          color: "#ffd700"
-        });
-      }
-
       const relatedConceptId = resolveDominantShellConceptId(r, section, concepts);
       const relatedConcept = relatedConceptId
         ? concepts.find((concept) => concept.id === relatedConceptId)
@@ -969,7 +1068,7 @@ function generateMargins(reading: ShellReading[], concepts: ShellConcept[]): Rec
         if (hookText) {
           annotations.push({
             type: "plain",
-            text: `Plain English: ${hookText}`,
+            text: hookText,
             color: "#06d6a0"
           });
         }
@@ -1018,15 +1117,33 @@ function mapDistinctions(relations: ConceptRelation[], concepts: LearningConcept
     const a = concepts.find((c) => c.id === rel.fromId);
     const b = concepts.find((c) => c.id === rel.toId);
     if (!a || !b) continue;
+    const relationLabel = normalizeShellText(rel.label);
+    const borderText = normalizeShellText(
+      `${a.label}: ${wordTruncate(a.definition, 80)} ${b.label}: ${wordTruncate(b.definition, 80)}`
+    );
+    const trapText = [a.commonConfusion, b.commonConfusion]
+      .map((candidate) => normalizeShellText(candidate))
+      .find((candidate) =>
+        isRenderableConceptText(candidate)
+        && isDistinctFrom(relationLabel || borderText, candidate)
+      ) ?? "";
+    const twinsText = [a.summary, b.summary]
+      .map((candidate) => normalizeShellText(candidate))
+      .find((candidate) =>
+        isRenderableConceptText(candidate)
+        && isDistinctFrom(borderText, candidate)
+        && (!trapText || isDistinctFrom(trapText, candidate))
+      ) ?? "";
+    if (!relationLabel && !trapText) continue;
 
     result.push({
       a: rel.fromId,
       b: rel.toId,
-      label: rel.label || `${a.label} vs ${b.label}`,
-      border: `${a.label}: ${wordTruncate(a.definition, 80)} ${b.label}: ${wordTruncate(b.definition, 80)}`,
-      trap: `${a.label} and ${b.label} appear in the same discussions. Test yourself: state each one's core move without borrowing the other's language.`,
-      twins: `Both ${a.label} and ${b.label} address related ethical territory, which makes them easy to swap in explanations.`,
-      enemy: rel.label || `${a.label} and ${b.label} point in opposite ethical directions.`
+      label: relationLabel || `${a.label} vs ${b.label}`,
+      border: borderText,
+      trap: trapText,
+      twins: twinsText,
+      enemy: relationLabel
     });
 
     if (result.length >= 6) break; // cap for shell layout
@@ -1167,9 +1284,7 @@ function mapKeyFigures(bundle: CaptureBundle, learning: LearningBundle): ShellPh
     });
 }
 
-function mapSynthesis(bundle: CaptureBundle, learning: LearningBundle): ShellSynthesis {
-  const qualityReport = assessSourceQuality(bundle);
-  const qualityBanner = qualityBannerText(qualityReport);
+function mapSynthesis(_bundle: CaptureBundle, learning: LearningBundle): ShellSynthesis {
   return {
     sourceCoverage: {
       canvasItems: learning.synthesis.sourceCoverage.canvasItemCount,
@@ -1199,7 +1314,9 @@ function mapSynthesis(bundle: CaptureBundle, learning: LearningBundle): ShellSyn
       likelySkills: mapping.likelySkills,
       conceptIds: mapping.conceptIds,
       focusThemeIds: mapping.focusThemeIds,
-      checklist: mapping.checklist
+      checklist: mapping.checklist,
+      likelyPitfalls: mapping.likelyPitfalls,
+      evidence: mapping.evidence
     })),
     retentionModules: learning.synthesis.retentionModules.slice(0, 6).map((module) => ({
       id: module.id,
@@ -1209,9 +1326,9 @@ function mapSynthesis(bundle: CaptureBundle, learning: LearningBundle): ShellSyn
       prompts: module.prompts
     })),
     deterministicHash: learning.synthesis.deterministicHash,
-    qualityBanner,
-    qualityWarnings: qualityReport.warnings,
-    synthesisMode: qualityReport.synthesisMode
+    qualityBanner: learning.synthesis.qualityBanner,
+    qualityWarnings: learning.synthesis.qualityWarnings,
+    synthesisMode: learning.synthesis.synthesisMode
   };
 }
 
@@ -1240,8 +1357,9 @@ export function mapToShellData(
     !taskTitleSet.has(c.label.toLowerCase()) &&
     !isScaffoldConceptLabel(c.label);
   const filteredConcepts = scoredConcepts.filter(isValidConcept);
+  const practiceSupportContext = buildPracticeSupportContext(bundle, learning);
   const concepts = filteredConcepts.map((c) =>
-    mapConcept(c, learning.concepts, learning.relations)
+    mapConcept(c, learning.concepts, learning.relations, practiceSupportContext)
   );
 
   // Only link task concept IDs that survived the quality filter.
@@ -1257,7 +1375,8 @@ export function mapToShellData(
     conceptIds: ch.conceptIds.filter((id) => validConceptIds.has(id))
   }));
 
-  const assignments = cleanedTasks.map(mapAssignment);
+  const conceptNameById = new Map(concepts.map((concept) => [concept.id, concept.name]));
+  const assignments = cleanedTasks.map((task) => mapAssignment(task, conceptNameById));
   // Fall back to task-based grouping when there aren't enough page-type chapters
   // (e.g. skills courses where most items are discussions/quizzes, not pages)
   const modules = cleanedChapters.length >= 2 ? mapModulesFromChapters(cleanedChapters) : mapModulesFromTasks(cleanedTasks);

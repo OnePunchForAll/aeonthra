@@ -1,40 +1,31 @@
 # AEONTHRA
 
-AEONTHRA is a local-first Canvas learning workspace: a Chrome extension captures course material, a static web app forges it into deterministic study systems, and the student keeps control of everything without a backend or runtime AI calls.
+AEONTHRA is a local-first Canvas learning workspace. A Chrome extension captures course material, a static React app turns it into deterministic study systems, and everything stays in the browser without a backend or runtime AI calls.
 
-Repo docs also use the OMEGA FORGE mission codenames: `SENTINEL` for the extension, `ATLAS` for the web app, and `FOUNDRY` for the shared contracts. The shipped product/UI name in this repo is `AEONTHRA`.
+Repo docs still use the OMEGA FORGE codenames:
+
+- `SENTINEL` for the extension
+- `ATLAS` for the web app
+- `FOUNDRY` for the shared contracts
+
+The shipped product and UI name in this repo is `AEONTHRA`.
 
 ## What it does
 
-- Captures supported Canvas course content through a Manifest V3 extension in either `Complete Snapshot` or `Learning Content Only` mode
-- Supports a passive visited-page session path that can be saved into normal local capture history without a backend
-- Imports capture bundles into a static React/Vite classroom that runs on GitHub Pages or locally
-- Builds deterministic concepts, relations, Atlas skill-tree progression, assignment readiness, and Neural Forge study runs without runtime AI calls
-- Exports offline replay bundles with scoped notes and deterministic hash validation
-
-## Why it stands out
-
-- Zero hosted API requirement for the main experience
-- Deterministic extraction and study generation
-- Extension-to-classroom handoff for a near one-click workflow
-- Premium full-screen study surfaces instead of a plain dashboard
-- Honest failure behavior: when quality is weak, AEONTHRA leaves fields empty instead of inventing nonsense
-
-## Main surfaces
-
-- `Home`: source-quality banner, readiness overview, and launch points into the current workspace
-- `Atlas`: a deterministic skill tree with locked, available, in-progress, earned, mastered, assignment-readiness, and recovery states
-- `Concepts`: concept roster and concept detail access
-- `Learn`, `Read`, `Gym`, and `Oracle`: the current mounted study shell for guided practice, reader flow, contrast work, and synthesis views
-- `Offline replay`: export and restore of deterministic site bundles with scoped notes
+- Captures supported Canvas course content through a Manifest V3 extension in `Complete Snapshot` or `Learning Content Only` mode.
+- Supports bounded visited-page sessions keyed by Canvas origin and course id, then saves them as normal local capture history on demand.
+- Hands validated extension captures directly into the app through a typed local bridge contract.
+- Builds deterministic concepts, relations, provenance-backed study artifacts, and a real Atlas skill tree without runtime AI calls.
+- Persists the active source workspace locally, scopes notes and progress by synthesis hash, and restores offline replay bundles with deterministic validation.
 
 ## Project structure
 
 - `apps/web` - static AEONTHRA classroom
 - `apps/extension` - MV3 Chrome extension for Canvas capture and bridge handoff
-- `packages/content-engine` - deterministic extraction pipeline
-- `packages/interactions-engine` - deterministic ambient and novel interaction systems
+- `packages/content-engine` - deterministic extraction, synthesis, provenance, and distinctness logic
+- `packages/interactions-engine` - deterministic ambient and interaction systems
 - `packages/schema` - shared schemas and bridge contracts
+- `.agents/skills` - repo-local specialist workflows for this codebase
 
 ## Quick start
 
@@ -57,7 +48,7 @@ The local classroom is commonly available at:
 
 `http://127.0.0.1:5176/`
 
-### Build the extension
+### Build and load the extension
 
 ```bash
 npm run build:extension
@@ -72,55 +63,104 @@ Canonical source of truth:
 - `packages/**/src/**` for shared deterministic logic
 - `apps/extension/dist/` as the generated unpacked-extension output
 
-## Publish to GitHub Pages
+## Bridge contract
 
-AEONTHRA now includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`.
+The extension and app communicate through a local-only bridge around:
 
-One-time setup:
+- `NF_IMPORT_REQUEST`
+- `NF_PACK_READY`
+- `NF_PACK_ACK`
+- `NF_IMPORT_RESULT`
 
-1. Push this repo to GitHub.
-2. Open the repo's `Settings` -> `Pages`.
-3. Set `Source` to `GitHub Actions`.
-4. Push to `main` or `master`, or run the workflow manually from the `Actions` tab.
+Queued handoffs live in `chrome.storage.local["aeonthra:pending-handoffs"]`:
 
-URL rules:
+- newest-first
+- max length `5`
+- deduped by `packId`
+- TTL `24h`
+- cleared only on exact `handoffId + packId` acknowledgement
+- legacy `aeonthra:pending-bundle` migrates on read
 
-- If the repo is named `aeonthra`, the site URL will be `https://YOUR-USER.github.io/aeonthra/`
-- If the repo is named `YOUR-USER.github.io`, the site URL will be `https://YOUR-USER.github.io/`
+Both the extension and app reuse `inspectCanvasCourseKnowledgePack()` before queueing, relaying, or importing. A valid bridge pack must be:
 
-Until Pages is live, point the extension's AEONTHRA URL setting to your local app:
+- `source === "extension-capture"`
+- non-empty
+- not textbook-only
+- backed by `captureMeta.courseId`
+- backed by `captureMeta.sourceHost`
+- tied to one Canvas host and one Canvas course identity
 
-`http://127.0.0.1:5176/`
+Exact rejection codes:
 
-## Privacy note before going public
+- `invalid-bundle`
+- `wrong-source`
+- `empty-bundle`
+- `textbook-only`
+- `missing-course-id`
+- `missing-source-host`
+- `missing-course-url`
+- `ambiguous-course-identity`
+- `host-mismatch`
+- `course-identity-mismatch`
 
-- Keep real Canvas captures, Playwright audit dumps, and exported assignment artifacts out of the public repo.
-- The extension-to-classroom handoff is local. Captured course data does not need to be committed to GitHub for AEONTHRA to work.
-- If you want the extension to forget imported captures after a successful handoff, enable the auto-delete option in the extension settings.
-- Interrupted full-course captures can leave temporary local partial state until they are finalized or cleared; that is not the same as a saved history capture.
+Direct bridge handoff is only supported when AEONTHRA runs on:
 
-## Demo mode
+- `https://*.github.io/*`
+- `http://localhost/*`
+- `http://127.0.0.1/*`
 
-If you do not have a Canvas capture yet, open the web app and click `OPEN NEURAL FORGE DEMO`. AEONTHRA loads a prebuilt ethics course so the whole system is explorable immediately.
+## Browser-local persistence
 
-## Performance posture
+- `learning-freedom:source-workspace` is the canonical stored source pointer for Canvas and textbook inputs.
+- `learning-freedom:notes:<deterministicHash>` and `learning-freedom:progress:<deterministicHash>` hold scoped learner state.
+- `learning-freedom:notes:active-scope` tracks the currently active note scope.
+- Legacy merged-bundle and unscoped-progress keys are migration-only compatibility paths.
 
-- Workerized content processing for imported bundles
-- Static-site-safe service worker registration in the web app
-- Progressive processing overlay for large textbook imports
-- Atlas skill-tree materialization is derived once from synthesis output and learner progress rather than rebuilt ad hoc in the UI
-- Extension bridge returns structured failures instead of dropping the message channel silently
+Reset clears the active workspace and the active scoped learner state. It does not promise to erase every historical scoped record in the browser.
 
-## Accessibility and ergonomics
+## Deterministic learning posture
 
-- Keyboard-accessible controls across the main shell
-- Reduced-motion-friendly base shell
-- Strong contrast dark theme and explicit status messaging
+AEONTHRA now includes:
+
+- field-level support metadata for `definition`, `summary`, `primer`, `mnemonic`, `commonConfusion`, and `transferHook`
+- optional evidence on relations
+- distinctness blanking when concept-facing fields collapse into each other
+- fail-closed practice in real workspaces unless transfer or assignment evidence is source-backed
+- deterministic Atlas skill nodes for foundational, applied, distinction, transfer, assignment-readiness, chapter-reward, and mastery states
+
+When evidence is weak, the app prefers omission over generic repetition.
+
+## Verification
+
+Current verified command loop:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+Additional verified targeted coverage exists for:
+
+- bridge queue migration, expiry, exact ack clearing, and malformed queue rejection
+- bridge request and pack message handling
+- field support and relation evidence
+- shell practice fail-closed behavior
+- Atlas prerequisite, reward, recovery, and inspector behavior
+- Vite canonical path allow-listing
+
+## Known limits
+
+- A real browser-mediated `capture -> open AEONTHRA -> import -> NF_PACK_ACK cleanup` proof is still a manual path. The checked-in proof is unit, integration, typecheck, and build coverage.
+- Same-course preservation remains intentionally lenient for older hostless captures so legacy local workspaces can still match newer host-aware captures.
+- `apps/web/src/AeonthraShell.tsx` is still large and marked `// @ts-nocheck`; Atlas extraction landed, but the shell is not fully decomposed yet.
+- Two legacy `output/*.log` files still remain because direct shell deletion was blocked in this desktop environment and `apply_patch` could not delete their non-UTF8 contents.
 
 ## Current scripts
 
 - `npm run dev:web`
 - `npm run test:web`
+- `npm run test:extension`
 - `npm run build:web`
 - `npm run build:extension`
 - `npm run build`
@@ -129,4 +169,11 @@ If you do not have a Canvas capture yet, open the web app and click `OPEN NEURAL
 
 ## Status
 
-AEONTHRA is implemented as a real local-first learning product, not just a mockup. The current focus is reliability and semantic hardening: stronger regression coverage, cleaner extension build posture, broader fixture breadth, and deeper end-to-end verification of capture-to-workspace handoff.
+AEONTHRA is a working local-first learning product, not a mockup. The current repo state includes:
+
+- a correlated extension handoff queue with exact ack clearing
+- a shared Canvas importability classifier across worker and app
+- provenance-backed semantic fields and relation evidence
+- fail-closed shell practice rules
+- a typed Atlas skill tree with inspect-first journey UX
+- repeated typecheck, test, and build verification

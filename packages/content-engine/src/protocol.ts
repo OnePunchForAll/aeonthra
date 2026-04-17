@@ -1,6 +1,6 @@
 import type { ConceptRelation, LearningConcept, MegaPhase } from "@learning/schema";
 import type { Block } from "./pipeline.ts";
-import { meaningfulWords, normalizePhrase, truncateReadable } from "./pipeline.ts";
+import { strongestRelatedConcept, selectEvidenceFragments } from "./artifact-support.ts";
 
 const phases = [
   { id: "genesis", title: "Genesis", tagline: "Meet the signal before the jargon hardens.", summary: "Surface the topic, the repeated move, and the strongest evidence.", winCondition: "You can paraphrase the topic before reciting its label.", modes: [["signal-scan","Signal Scan",["signal-garden","thread-atlas"],"orient"],["concept-sense","Concept Sense",["signal-garden","mirror-harbor"],"orient"],["evidence-glimpse","Evidence Glimpse",["thread-atlas","signal-garden"],"orient"],["name-lock","Name Lock",["mirror-harbor","signal-garden"],"orient"]] },
@@ -9,30 +9,6 @@ const phases = [
   { id: "architect", title: "Architect", tagline: "Use the idea for real work.", summary: "Aim the concept at assignments, structure, and future responses.", winCondition: "You can use the topic inside course work, not just define it.", modes: [["assignment-link","Assignment Link",["thread-atlas","signal-garden"],"design"],["question-forge","Question Forge",["neural-forge","mirror-harbor"],"design"],["failure-map","Failure Map",["mirror-harbor","thread-atlas"],"design"],["transfer-bridge","Transfer Bridge",["thread-atlas","signal-garden"],"design"]] },
   { id: "transcend", title: "Transcend", tagline: "Leave with a recovery path.", summary: "Turn the session into confidence cues, blindspot notes, and next moves.", winCondition: "You know what is sturdy, what is shaky, and how to recover fast.", modes: [["blindspot-scan","Blindspot Scan",["mirror-harbor","signal-garden"],"transcend"],["confidence-mark","Confidence Mark",["mirror-harbor","neural-forge"],"transcend"],["future-use","Future Use",["thread-atlas","signal-garden"],"transcend"],["recovery-note","Recovery Note",["neural-forge","mirror-harbor"],"transcend"]] }
 ] as const;
-
-const pairFor = (concept: LearningConcept, concepts: LearningConcept[], relations: ConceptRelation[]) => {
-  const relation = relations.find((entry) => entry.fromId === concept.id || entry.toId === concept.id);
-  const otherId = relation ? relation.fromId === concept.id ? relation.toId : relation.fromId : concepts.find((candidate) => candidate.id !== concept.id)?.id;
-  return concepts.find((candidate) => candidate.id === otherId) ?? null;
-};
-
-const evidenceFor = (blocks: Block[], concept: LearningConcept, firstLabel = "Anchor fragment") => {
-  const conceptBlocks = blocks.filter((block) => concept.sourceItemIds.includes(block.sourceItemId));
-  const chosen = (conceptBlocks.length ? conceptBlocks : blocks).slice(0, 2);
-  const tokens = meaningfulWords(concept.label);
-  if (!chosen.length) {
-    return [{
-      label: firstLabel,
-      excerpt: truncateReadable(concept.excerpt || concept.summary),
-      sourceItemId: concept.sourceItemIds[0] ?? concept.id
-    }];
-  }
-  return chosen.map((block, index) => ({
-    label: index === 0 ? firstLabel : "Support fragment",
-    excerpt: truncateReadable(block.sentences.find((sentence) => tokens.some((token) => normalizePhrase(sentence).includes(token))) ?? block.lead ?? block.summary),
-    sourceItemId: block.sourceItemId
-  }));
-};
 
 function modeCopy(modeKey: string, primary: LearningConcept, secondary: LearningConcept | null, evidenceLines: string[]) {
   const pair = secondary ? `${primary.label} and ${secondary.label}` : primary.label;
@@ -70,11 +46,12 @@ export function buildProtocol(blocks: Block[], concepts: LearningConcept[], rela
     summary: phase.summary,
     totalMinutes: 20,
     winCondition: phase.winCondition,
-    conceptIds: Array.from(new Set(phase.modes.flatMap((_, modeIndex) => { const primary = concepts[(phaseIndex + modeIndex) % concepts.length]!, secondary = pairFor(primary, concepts, relations); return secondary ? [primary.id, secondary.id] : [primary.id]; }))),
+    conceptIds: Array.from(new Set(phase.modes.flatMap(([modeKey], modeIndex) => { const primary = concepts[(phaseIndex + modeIndex) % concepts.length]!, secondary = strongestRelatedConcept(primary, concepts, relations, modeKey === "contrast-check" ? { preferredTypes: ["contrasts"], fallbackToAny: false } : undefined); return secondary ? [primary.id, secondary.id] : [primary.id]; }))),
     submodes: phase.modes.map(([modeKey, title, engineIds, challengeLevel], modeIndex) => {
       const primary = concepts[(phaseIndex + modeIndex) % concepts.length]!;
-      const secondary = pairFor(primary, concepts, relations);
-      const evidence = evidenceFor(blocks, primary);
+      const secondary = strongestRelatedConcept(primary, concepts, relations, modeKey === "contrast-check" ? { preferredTypes: ["contrasts"], fallbackToAny: false } : undefined);
+      const conceptBlocks = blocks.filter((block) => primary.sourceItemIds.includes(block.sourceItemId));
+      const evidence = selectEvidenceFragments(conceptBlocks.length ? conceptBlocks : blocks, primary);
       const copy = modeCopy(modeKey, primary, secondary, evidence.map((fragment, index) => `${index + 1}. ${fragment.excerpt}`));
       return { id: `${phase.id}-${modeKey}`, title, engineIds: [...engineIds], durationMinutes: 5, challengeLevel, objective: copy.objective, setup: copy.setup, prompt: copy.prompt, tasks: copy.tasks, reflection: copy.reflection, conceptIds: secondary ? [primary.id, secondary.id] : [primary.id], evidence };
     })

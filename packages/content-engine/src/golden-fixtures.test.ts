@@ -146,6 +146,9 @@ describe("content engine golden fixtures", () => {
     expect(report.structurallyIdenticalGroups).toBeGreaterThanOrEqual(1);
     expect(report.adminSignalScore).toBeGreaterThan(report.academicSignalScore);
     expect(report.dominantBoilerplatePhrase).toBe("reflection activity");
+    expect(learningBundle.synthesis.synthesisMode).toBe("degraded");
+    expect(learningBundle.synthesis.qualityWarnings).toEqual(report.warnings);
+    expect(learningBundle.synthesis.qualityBanner.length).toBeGreaterThan(0);
     expect(labels.some((label) => label.includes("operant conditioning"))).toBe(true);
     expect(labels).toHaveLength(1);
     expect(labels).not.toContain("reflection activity");

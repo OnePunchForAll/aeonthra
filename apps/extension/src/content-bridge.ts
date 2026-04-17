@@ -1,4 +1,4 @@
-import { BRIDGE_SOURCE, BridgeMessageSchema, type BridgeMessage } from "@learning/schema";
+import { BRIDGE_SOURCE, BridgeMessageSchema, stableHash, type BridgeMessage } from "@learning/schema";
 
 declare global {
   interface Window {
@@ -8,6 +8,13 @@ declare global {
 
 function postToPage(message: BridgeMessage): void {
   window.postMessage(message, "*");
+}
+
+function createBridgeRequestId(): string {
+  const seed = `${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : stableHash(seed);
 }
 
 async function relayToExtension(message: BridgeMessage): Promise<void> {
@@ -26,6 +33,7 @@ async function relayToExtension(message: BridgeMessage): Promise<void> {
     postToPage({
       source: BRIDGE_SOURCE,
       type: "NF_IMPORT_RESULT",
+      requestId: message.requestId,
       success: false,
       error: response.message ?? "Extension bridge request failed."
     });
@@ -55,7 +63,8 @@ if (!window.__aeonthraBridgeInstalled) {
     if (message.type === "bridge-request-import") {
       postToPage({
         source: BRIDGE_SOURCE,
-        type: "NF_IMPORT_REQUEST"
+        type: "NF_IMPORT_REQUEST",
+        requestId: createBridgeRequestId()
       });
       sendResponse({ ok: true });
       return true;

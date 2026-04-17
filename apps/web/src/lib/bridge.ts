@@ -1,5 +1,6 @@
 import {
   BRIDGE_SOURCE,
+  stableHash,
   BridgeMessageSchema,
   captureBundleId,
   type BridgeMessage,
@@ -12,6 +13,13 @@ function withSource(message: OutboundBridgeMessage): BridgeMessage {
   return ("source" in message
     ? message
     : { ...message, source: BRIDGE_SOURCE }) as BridgeMessage;
+}
+
+function createBridgeRequestId(): string {
+  const seed = `${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : stableHash(seed);
 }
 
 export function postBridgeMessage(message: OutboundBridgeMessage): void {
@@ -38,14 +46,22 @@ export function subscribeToBridgeMessages(
   return () => window.removeEventListener("message", listener);
 }
 
-export function requestImportFromBridge(): void {
-  postBridgeMessage({ type: "NF_IMPORT_REQUEST" });
+export function requestImportFromBridge(requestId = createBridgeRequestId()): string {
+  postBridgeMessage({ type: "NF_IMPORT_REQUEST", requestId });
+  return requestId;
 }
 
-export function acknowledgeImportedPack(bundle: CaptureBundle): void {
+export function acknowledgeImportedPack(input: {
+  bundle: CaptureBundle;
+  requestId: string;
+  handoffId: string;
+  packId?: string;
+}): void {
   postBridgeMessage({
     type: "NF_PACK_ACK",
-    packId: captureBundleId(bundle)
+    requestId: input.requestId,
+    handoffId: input.handoffId,
+    packId: input.packId ?? captureBundleId(input.bundle)
   });
 }
 

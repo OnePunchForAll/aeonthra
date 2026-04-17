@@ -2,6 +2,70 @@
 
 ## 2026-04-16
 
+### [BRIDGE] Fresh handoffs inherited stale capture timestamps and aged out of the queue incorrectly
+
+**Status**: FIXED
+**Root cause**: `createPendingHandoffEnvelope()` normalized `queuedAt` from `bundle.capturedAt` instead of the actual queue time.
+**Symptom**: a newly queued handoff built from an older saved capture could be treated as expired immediately or far too early under the `24h` queue TTL.
+**Fix**: queue envelopes now stamp `queuedAt` from the current time, while the bundle keeps its original capture timestamp.
+**Guard**: `apps/extension/src/core/storage.test.ts`, `apps/extension/src/core/service-worker.test.ts`.
+
+### [WEB] Explicit offline replay restore could reuse stale scoped notes in the mounted shell
+
+**Status**: FIXED
+**Root cause**: `AeonthraShell` seeds notes from scoped local storage on mount, but `App.tsx` restored offline replay bundles directly into the same mounted shell instance.
+**Symptom**: a restore could show stale notes from the previous workspace instance and then autosave them into the restored scope.
+**Fix**: `App.tsx` now bumps a shell instance epoch on explicit offline-site restore and keys `AeonthraShell` by `scope + epoch`, forcing a remount when the restored workspace directly replaces the current one.
+**Guard**: `apps/web/src/App.test.ts`.
+
+### [HYGIENE] Malformed tracked worktree gitlinks and disposable QA artifacts polluted repo truth
+
+**Status**: FIXED
+**Root cause**: `.claude/worktrees/**` had been tracked as broken gitlink entries without valid `.gitmodules` mapping, while disposable screenshots and QA outputs were left in the repo root.
+**Symptom**: stale extension manifests and build outputs could masquerade as valid unpacked targets, and the repo looked busier than the actual canonical source tree.
+**Fix**: removed the tracked worktree gitlinks and deleted the duplicate worktree directories, removed tracked root screenshots, and expanded `.gitignore` to cover disposable QA outputs.
+**Guard**: `.gitignore` now blocks `.claude/worktrees/`, `dse-extracted/`, `test-results/`, and temporary web logs from drifting back into the repo state.
+
+### [BRIDGE] Queued extension handoff and app import used different acceptance contracts
+
+**Status**: FIXED
+**Root cause**: the extension worker treated "schema-valid pending bundle" as sufficient for queue and relay, while the app required an importable Canvas extension capture. Those were different contracts.
+**Symptom**: queued packs could reach the app and fail there with misleading generic bridge messages instead of being rejected at the worker boundary.
+**Fix**: added the shared `inspectCanvasCourseKnowledgePack()` classifier in `packages/schema/src/index.ts`; the worker now uses it before queueing and again before `NF_PACK_READY`, and the app reuses the same classifier to emit exact `invalid-bundle`, `wrong-source`, `empty-bundle`, or `textbook-only` messages.
+**Guard**: `apps/extension/src/core/service-worker.test.ts`, `apps/web/src/App.test.ts`, and `apps/web/src/lib/bridge.test.ts`.
+
+### [STATE] Browser-local persistence drifted between legacy global keys and the scoped workspace model
+
+**Status**: FIXED
+**Root cause**: the older merged-bundle and unscoped-progress keys overlapped with the newer split `source-workspace` plus hash-scoped learner state, which obscured the canonical storage model.
+**Symptom**: contributor docs and intermediate code paths could still act as if there were one global workspace state, even though the live app had already moved to split source pointers and scoped learner state.
+**Fix**: current writes now treat `learning-freedom:source-workspace` as canonical, clear the legacy merged-bundle key during normal writes, and perform a one-time legacy unscoped-progress migration before clearing that compatibility key.
+**Guard**: `apps/web/src/App.test.ts` and `apps/web/src/lib/storage.test.ts`.
+
+### [DOCS] Truth claims drifted after the bridge repair and persistence canonicalization
+
+**Status**: FIXED
+**Root cause**: README, docs, `.omega` ledgers, and the phase-2 audit artifacts captured intermediate decisions and pre-fix failures as if they were still the current runtime truth.
+**Symptom**: docs could still describe the bridge failure as current, imply a global reset model, or omit verified open limits like the single-slot pending queue and web-build nondeterminism.
+**Fix**: updated README, `docs/**`, `.omega/**`, and the current audit artifacts to separate historical defects from current verified behavior and remaining open limits.
+**Guard**: these docs now match the checked-in bridge, storage, Atlas, semantic, and purge state plus the current verification loop.
+
+### [WEB] AeonthraShell duplicated Atlas readiness and chapter-reward derivation across multiple surfaces
+
+**Status**: FIXED
+**Root cause**: the shell was recomputing assignment readiness and chapter reward labels inline across home, journey, and assignment views instead of consuming one typed Atlas projection.
+**Symptom**: safe Atlas changes had a high debugging tail because multiple view-local branches needed to stay aligned by hand, and drift in one surface would be easy to miss.
+**Fix**: extracted `apps/web/src/lib/atlas-shell.ts` as the shared Atlas projection/readiness seam, then rewired `AeonthraShell.tsx` to consume that helper and added direct regression tests.
+**Guard**: `apps/web/src/lib/atlas-shell.test.ts`, `npm run test --workspace @learning/web -- src/lib/atlas-shell.test.ts src/lib/atlas-skill-tree.test.ts`, `npm run build --workspace @learning/web`.
+
+### [RELEASE] Extension build could succeed while `dist/manifest.json` referenced missing unpacked files
+
+**Status**: FIXED
+**Root cause**: `apps/extension/scripts/build.mjs` copied `manifest.json` into `dist` but never verified that every manifest-referenced file was actually present in the unpacked output.
+**Symptom**: a build/manifest rename drift could still produce a green `npm run build:extension`, while Chrome would load a broken unpacked extension because one or more referenced files were missing.
+**Fix**: refactored the build script around explicit entry/copy lists and added a post-build validation step that rejects missing, absolute, or out-of-tree manifest asset paths.
+**Guard**: `apps/extension/scripts/build.test.mjs`.
+
 ### [REPLAY] Offline bundle import rejected pre-notes exports
 
 **Status**: FIXED
@@ -68,13 +132,13 @@
 **Fix**: added a fail-closed dominant-concept resolver keyed to the active section text and routed reader hints/highlights/practice through it instead of `concepts[0]`.
 **Guard**: `apps/web/src/lib/shell-mapper.test.ts`.
 
-### [WEB] Unsolicited bridge packs could overwrite the current workspace
+### [WEB] Historical request-state hardening before validated extension-initiated pack acceptance
 
 **Status**: FIXED
 **Root cause**: `App.tsx` accepted any schema-valid `NF_PACK_READY` bridge message, even when no import request was active in the current session.
 **Symptom**: a stale or unsolicited extension handoff could replace the active Canvas workspace without the user explicitly requesting an import.
-**Fix**: introduced request-scoped bridge message resolution so `NF_PACK_READY` is ignored unless the request mode is `auto` or `manual`, and import-result handling now clears request state deterministically.
-**Guard**: `apps/web/src/App.test.ts` and `apps/web/src/lib/bridge.test.ts`.
+**Fix**: request-state handling was introduced first, then later relaxed so the app can still accept a validated extension-originated pack when request mode has already cleared. Safety now comes from the shared importability classifier and bridge envelope validation rather than request state alone.
+**Guard**: `apps/web/src/App.test.ts`, `apps/web/src/lib/bridge.test.ts`, and `packages/schema/src/index.ts`.
 
 ### [PIPELINE] Discussion scaffolds and wrapper variants could crowd out the true academic concept lane
 
@@ -129,7 +193,7 @@
 **Status**: FIXED
 **Root cause**: `resetWorkspace()` in `apps/web/src/App.tsx` only cleared bundle/source-workspace pointers, leaving `learning-freedom:notes` and all `learning-freedom:progress*` keys in local storage. Separately, `createOfflineSiteBundle()` in `apps/web/src/lib/offline-site.ts` populated `exportedAt` from `learningBundle.generatedAt`, which is the synthesis timestamp rather than the download/export time.
 **Symptom**: after Reset Workspace, re-importing the same course could resurrect old notes and mastery state; downloaded replay bundles displayed the synthesis date as if it were the export date.
-**Fix**: added storage helpers to clear notes and all progress scopes, wired Reset Workspace through them, and changed offline bundle creation to stamp `exportedAt` with the current time. Expanded storage regression coverage to lock the reset contract.
+**Fix**: added storage helpers that can clear notes and all progress scopes, changed offline bundle creation to stamp `exportedAt` with the current time, and wired the runtime reset path through scoped clearing for the active workspace. Expanded storage regression coverage to lock both the no-scope and scoped-clear contracts.
 **Guard**: `apps/web/src/lib/storage.test.ts` now verifies note clearing, default-progress clearing, scoped-progress clearing, and unrelated-key preservation.
 
 ### [WEB] Legacy source splitting leaked Canvas capture metadata into textbook state
@@ -254,6 +318,14 @@
 **Symptom**: Top concepts in Ethics courses were generic reflection scaffolds, not philosophical concepts.
 **Fix**: Added `buildCloneFamilies()` and `buildDiversityWeights()` to synthesis.ts. Clone families weighted 1.0 / 0.3 / 0.05 (first / second / third+ member). Textbook items always weight 1.0 (bypass discounting). Score formula updated to use weighted counts for canvas, textbook, and assignment buckets.
 **Guard**: `distinct-evidence-scoring` skill documents required outcome: clone families beyond first member contribute < 1/20 of naive weight.
+
+### [APP ORCHESTRATION] Legacy progress migration could bleed into a replaced workspace
+
+**Status**: FIXED
+**Root cause**: `legacyProgressMigrationRef` stayed `true` until the first scoped hydration pass cleared it. If the user imported a different Canvas bundle, restored a replay bundle, loaded demo mode, or reset before that hydration, the deprecated unscoped progress bucket remained armed and could later hydrate into the wrong workspace.
+**Symptom**: A newly imported or restored workspace could inherit stale concept/chapter/skill progress from an unrelated legacy bundle after synthesis completed.
+**Fix**: Added `discardLegacyProgressMigration()` in `apps/web/src/App.tsx` and invoked it on explicit workspace replacement flows so the legacy bucket is cleared and migration is canceled before the next workspace hydrates.
+**Guard**: `apps/web/src/App.test.ts` now proves the helper clears only pending legacy migration and leaves the bucket untouched when no migration is pending.
 
 ## 2026-04-09
 

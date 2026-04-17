@@ -186,6 +186,9 @@ describe("content engine", () => {
     expect(concept?.transferHook).not.toMatch(/^Use .+ to explain/i);
     expect(concept?.commonConfusion.toLowerCase()).toMatch(/confus|blur|failure mode/);
     expect(concept?.commonConfusion).not.toContain(" is not ");
+    expect(concept?.fieldSupport?.definition?.evidence[0]?.sourceItemId).toBe(bundle.items[0]?.id);
+    expect(concept?.fieldSupport?.commonConfusion?.quality).toMatch(/supported|strong/);
+    expect(concept?.fieldSupport?.transferHook?.quality).toMatch(/supported|strong/);
 
     const normalizedFields = [
       concept?.definition,
@@ -198,5 +201,68 @@ describe("content engine", () => {
       .map((entry) => entry.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim());
 
     expect(new Set(normalizedFields).size).toBe(normalizedFields.length);
+    expect(
+      learningBundle.relations.some((relation) =>
+        (relation.evidence?.length ?? 0) > 0
+        && relation.evidence?.some((fragment) => fragment.sourceItemId === bundle.items[0]?.id)
+      )
+    ).toBe(true);
+  });
+
+  it("keeps week-titled academic pages and lowercase definitions in the concept lane", () => {
+    const bundle = createManualCaptureBundle({
+      title: "Week 4 - Positive Reinforcement",
+      text: [
+        "positive reinforcement is the practice of increasing a behavior by adding a desired stimulus after the behavior occurs.",
+        "In classroom management, positive reinforcement helps a student repeat a productive habit after immediate feedback."
+      ].join(" "),
+      canonicalUrl: "https://local.learning/week-4-positive-reinforcement",
+      kind: "page"
+    });
+
+    const learningBundle = buildLearningBundle(bundle);
+    const labels = learningBundle.concepts.map((concept) => concept.label.toLowerCase());
+
+    expect(labels.some((label) => label.includes("positive reinforcement"))).toBe(true);
+    expect(labels).not.toContain("week 4 positive reinforcement");
+  });
+
+  it("does not promote malformed definition subjects from internal is-clauses", () => {
+    const bundle = createManualCaptureBundle({
+      title: "Memory Science",
+      text: [
+        "Spacing effect strengthens recall when review is distributed across sessions instead of massed into one sitting.",
+        "Retrieval practice is the process of actively recalling information from memory."
+      ].join(" ")
+    });
+
+    const learningBundle = buildLearningBundle(bundle);
+    const labels = learningBundle.concepts.map((concept) => concept.label.toLowerCase());
+
+    expect(labels).not.toContain("spacing effect strengthens recall when review");
+    expect(labels.some((label) => label.includes("retrieval practice"))).toBe(true);
+  });
+
+  it("treats canvas page items as canvas-backed synthesis sources", () => {
+    const bundle = createManualCaptureBundle({
+      title: "Operant Conditioning Page",
+      text: [
+        "Operant conditioning is learning shaped by consequences.",
+        "Positive reinforcement increases a behavior by adding a desired stimulus."
+      ].join(" "),
+      canonicalUrl: "https://local.learning/operant-conditioning-page",
+      kind: "page"
+    });
+
+    const learningBundle = buildLearningBundle(bundle);
+    const focusTheme = learningBundle.synthesis.focusThemes.find((theme) =>
+      theme.label.toLowerCase().includes("operant conditioning")
+      || theme.label.toLowerCase().includes("positive reinforcement")
+    );
+
+    expect(focusTheme?.sourceFamily).toBe("canvas");
+    expect(
+      learningBundle.synthesis.assignmentMappings.some((mapping) => mapping.sourceItemId === bundle.items[0]?.id)
+    ).toBe(true);
   });
 });

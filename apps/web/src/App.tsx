@@ -1,9 +1,17 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { createDemoSourceText, type LearningBuildStage } from "@learning/content-engine";
-import { CaptureBundleSchema, captureBundleId, type BridgeMessage, type CaptureBundle, type LearningBundle } from "@learning/schema";
+import {
+  CaptureBundleSchema,
+  inspectCanvasCourseKnowledgePack,
+  type BridgeMessage,
+  type CanvasCourseKnowledgePackIssueCode,
+  type CaptureBundle,
+  type LearningBundle
+} from "@learning/schema";
 import { createDemoBundle, createDemoProgress } from "./lib/demo";
 import { acknowledgeImportedPack, requestImportFromBridge, respondToBridgePing, subscribeToBridgeMessages } from "./lib/bridge";
 import {
+  clearLegacyProgress,
   clearStoredBundle,
   clearStoredNotes,
   clearStoredProgress,
@@ -15,7 +23,6 @@ import {
   loadStoredBundle,
   loadStoredSourceWorkspace,
   setActiveNoteScope,
-  storeBundle,
   storeSourceWorkspace
 } from "./lib/storage";
 import { deriveWorkspace, type AppProgress } from "./lib/workspace";
@@ -33,7 +40,6 @@ import {
 } from "./lib/offline-site";
 import {
   determineAppStage,
-  isCanvasCaptureBundle,
   isSameCourse,
   mergeSourceBundles,
   splitLegacyBundle,
@@ -43,6 +49,25 @@ import {
 import { AeonthraShell } from "./AeonthraShell";
 
 type ShellErrorBoundaryState = { error: Error | null };
+
+function loadInitialSourceState(): {
+  sourceState: ReturnType<typeof splitLegacyBundle>;
+  usedLegacyBundle: boolean;
+} {
+  const storedSourceState = loadStoredSourceWorkspace();
+  if (storedSourceState) {
+    return {
+      sourceState: storedSourceState,
+      usedLegacyBundle: false
+    };
+  }
+
+  const legacyBundle = loadStoredBundle();
+  return {
+    sourceState: splitLegacyBundle(legacyBundle),
+    usedLegacyBundle: Boolean(legacyBundle)
+  };
+}
 
 class ShellErrorBoundary extends Component<{ children: ReactNode }, ShellErrorBoundaryState> {
   state: ShellErrorBoundaryState = { error: null };
@@ -139,7 +164,111 @@ function parseCaptureBundle(raw: string): CaptureBundle | null {
   }
 }
 
+function describeCanvasCaptureImportFailure(
+  code: CanvasCourseKnowledgePackIssueCode,
+  context: "file" | "bridge"
+): string {
+  if (context === "file") {
+    switch (code) {
+      case "invalid-bundle":
+        return "That JSON file did not validate as a Canvas capture or saved site bundle.";
+      case "wrong-source":
+        return "That JSON file is valid, but it is not a Canvas extension capture. Import a SENTINEL Canvas bundle or restore a saved offline site bundle.";
+      case "empty-bundle":
+        return "That extension bundle is valid, but it contains zero captured Canvas items. Re-run SENTINEL on at least one readable Canvas page before importing.";
+      case "textbook-only":
+        return "That extension bundle only contains textbook-tagged items, so it cannot seed the Canvas workspace.";
+      case "missing-course-id":
+        return "That extension bundle is missing the Canvas course id required for import.";
+      case "missing-source-host":
+        return "That extension bundle is missing the Canvas source host required for import.";
+      case "missing-course-url":
+        return "That extension bundle did not preserve any Canvas page URL that resolves back to one course identity.";
+      case "ambiguous-course-identity":
+        return "That extension bundle does not resolve to one Canvas host and course identity, so it cannot seed the Canvas workspace.";
+      case "host-mismatch":
+        return "That extension bundle's recorded Canvas host does not match the captured Canvas URLs, so it was rejected.";
+      case "course-identity-mismatch":
+        return "That extension bundle's recorded Canvas course id does not match the captured Canvas URLs, so it was rejected.";
+    }
+  }
+
+  switch (code) {
+    case "invalid-bundle":
+      return "Queued bridge import was malformed and could not be parsed as a capture bundle.";
+    case "wrong-source":
+      return "Queued bridge import was valid JSON, but its source was not an extension capture.";
+    case "empty-bundle":
+      return "Queued bridge import came from the extension, but it contained zero captured Canvas items.";
+    case "textbook-only":
+      return "Queued bridge import contained only textbook-tagged items, so it could not seed the Canvas workspace.";
+    case "missing-course-id":
+      return "Queued bridge import was missing the Canvas course id required for import.";
+    case "missing-source-host":
+      return "Queued bridge import was missing the Canvas source host required for import.";
+    case "missing-course-url":
+      return "Queued bridge import did not preserve any Canvas page URL that resolves back to one course identity.";
+    case "ambiguous-course-identity":
+      return "Queued bridge import did not resolve to one Canvas host and course identity.";
+    case "host-mismatch":
+      return "Queued bridge import failed because its recorded Canvas host did not match the captured Canvas URLs.";
+    case "course-identity-mismatch":
+      return "Queued bridge import failed because its recorded Canvas course id did not match the captured Canvas URLs.";
+  }
+
+  return "Queued bridge import failed validation.";
+}
+
 type RestoredWorkspacePayload = ReturnType<typeof restoreOfflineSiteBundle>;
+type LegacyProgressMigrationState = { current: boolean };
+
+export function mergeProgressUpdate(current: AppProgress, update: Partial<AppProgress>): AppProgress {
+  return {
+    conceptMastery: {
+      ...current.conceptMastery,
+      ...(update.conceptMastery ?? {})
+    },
+    chapterCompletion: {
+      ...current.chapterCompletion,
+      ...(update.chapterCompletion ?? {})
+    },
+    goalCompletion: {
+      ...current.goalCompletion,
+      ...(update.goalCompletion ?? {})
+    },
+    skillHistory: {
+      ...current.skillHistory,
+      ...(update.skillHistory ?? {})
+    },
+    practiceMode: update.practiceMode ?? current.practiceMode
+  };
+}
+
+export function buildAeonthraShellInstanceKey(
+  progressScope: string | null,
+  shellEpoch: number
+): string {
+  return `${progressScope ?? "no-scope"}:${shellEpoch}`;
+}
+
+export function discardLegacyProgressMigration(state: LegacyProgressMigrationState): void {
+  if (!state.current) {
+    return;
+  }
+
+  clearLegacyProgress();
+  state.current = false;
+}
+
+export function normalizeRestoredWorkspacePayload(restored: RestoredWorkspacePayload): RestoredWorkspacePayload {
+  const workspace = deriveWorkspace(restored.mergedBundle, restored.learningBundle, restored.progress);
+  const baseShellData = mapToShellData(restored.mergedBundle, restored.learningBundle, workspace);
+  const shellData = enhanceShellData(baseShellData, restored.learningBundle, workspace, restored.textbookBundle);
+  return {
+    ...restored,
+    progress: normalizeProgressForWorkspace(restored.progress, shellData, workspace)
+  };
+}
 
 export type ImportedJsonResolution =
   | {
@@ -178,10 +307,11 @@ export function resolveImportedJsonPayload(raw: string): ImportedJsonResolution 
     };
   }
 
-  if (!isCanvasCaptureBundle(parsedCaptureBundle)) {
+  const inspection = inspectCanvasCourseKnowledgePack(parsedCaptureBundle);
+  if (!inspection.ok) {
     return {
       kind: "error",
-      message: "That JSON file is valid, but it is not a Canvas extension capture. Import a SENTINEL Canvas bundle or restore a saved offline site bundle."
+      message: describeCanvasCaptureImportFailure(inspection.code, "file")
     };
   }
 
@@ -204,10 +334,11 @@ export type BridgePackResolution =
     };
 
 export function resolveBridgePackImport(pack: CaptureBundle): BridgePackResolution {
-  if (!isCanvasCaptureBundle(pack)) {
+  const inspection = inspectCanvasCourseKnowledgePack(pack);
+  if (!inspection.ok) {
     return {
       ok: false,
-      message: "Queued bridge import was valid JSON, but it was not a Canvas extension capture."
+      message: describeCanvasCaptureImportFailure(inspection.code, "bridge")
     };
   }
 
@@ -218,53 +349,82 @@ export function resolveBridgePackImport(pack: CaptureBundle): BridgePackResoluti
   };
 }
 
-export type BridgeRequestMode = "auto" | "manual" | null;
+export type BridgeRequestMode = "auto" | "manual";
+export type BridgeRequestState =
+  | {
+      mode: BridgeRequestMode;
+      requestId: string;
+    }
+  | null;
 
 export type BridgeMessageAction =
   | {
       kind: "ignore";
-      nextRequestMode: BridgeRequestMode;
+      nextRequestState: BridgeRequestState;
     }
   | {
       kind: "pong";
-      nextRequestMode: BridgeRequestMode;
+      nextRequestState: BridgeRequestState;
+    }
+  | {
+      kind: "track-request";
+      nextRequestState: BridgeRequestState;
     }
   | {
       kind: "reject-pack";
       message: string;
-      nextRequestMode: null;
+      nextRequestState: null;
     }
   | {
       kind: "accept-pack";
       bundle: CaptureBundle;
       successMessage: string;
+      ackRequestId: string;
+      ackHandoffId: string;
       ackPackId: string;
-      nextRequestMode: null;
+      nextRequestState: null;
     }
   | {
       kind: "import-result";
       status: string | null;
-      nextRequestMode: null;
+      nextRequestState: null;
     };
 
 export function resolveBridgeMessageAction(
   message: BridgeMessage,
-  requestMode: BridgeRequestMode
+  requestState: BridgeRequestState
 ): BridgeMessageAction {
   if (message.type === "NF_PING") {
     return {
       kind: "pong",
-      nextRequestMode: requestMode
+      nextRequestState: requestState
+    };
+  }
+
+  if (message.type === "NF_IMPORT_REQUEST") {
+    return {
+      kind: "track-request",
+      nextRequestState: {
+        mode: requestState?.mode ?? "auto",
+        requestId: message.requestId
+      }
     };
   }
 
   if (message.type === "NF_PACK_READY") {
+    if (requestState && message.requestId !== requestState.requestId) {
+      return {
+        kind: "ignore",
+        nextRequestState: requestState
+      };
+    }
+
     const resolution = resolveBridgePackImport(message.pack);
     if (!resolution.ok) {
       return {
         kind: "reject-pack",
         message: resolution.message,
-        nextRequestMode: null
+        nextRequestState: null
       };
     }
 
@@ -272,25 +432,34 @@ export function resolveBridgeMessageAction(
       kind: "accept-pack",
       bundle: resolution.bundle,
       successMessage: resolution.successMessage,
-      ackPackId: captureBundleId(resolution.bundle),
-      nextRequestMode: null
+      ackRequestId: message.requestId,
+      ackHandoffId: message.handoffId,
+      ackPackId: message.packId,
+      nextRequestState: null
     };
   }
 
   if (message.type === "NF_IMPORT_RESULT") {
+    if (!requestState || message.requestId !== requestState.requestId) {
+      return {
+        kind: "ignore",
+        nextRequestState: requestState
+      };
+    }
+
     return {
       kind: "import-result",
       status:
-        !message.success && requestMode === "manual"
+        !message.success && requestState?.mode === "manual"
           ? message.error ?? "No queued extension handoff was available."
           : null,
-      nextRequestMode: null
+      nextRequestState: null
     };
   }
 
   return {
     kind: "ignore",
-    nextRequestMode: requestMode
+    nextRequestState: requestState
   };
 }
 
@@ -412,13 +581,10 @@ function statusCard(label: string, accent: string, headline: string, detail: str
 }
 
 export default function App() {
-  const initialSourceState = useMemo(
-    () => loadStoredSourceWorkspace() ?? splitLegacyBundle(loadStoredBundle()),
-    []
-  );
+  const initialSourceState = useMemo(loadInitialSourceState, []);
 
-  const [canvasBundle, setCanvasBundle] = useState<CaptureBundle | null>(initialSourceState.canvasBundle);
-  const [textbookBundle, setTextbookBundle] = useState<CaptureBundle | null>(initialSourceState.textbookBundle);
+  const [canvasBundle, setCanvasBundle] = useState<CaptureBundle | null>(initialSourceState.sourceState.canvasBundle);
+  const [textbookBundle, setTextbookBundle] = useState<CaptureBundle | null>(initialSourceState.sourceState.textbookBundle);
   const [learning, setLearning] = useState<LearningBundle | null>(null);
   const [status, setStatus] = useState("Waiting for Canvas course import.");
   const [pasteTitle, setPasteTitle] = useState("");
@@ -426,19 +592,21 @@ export default function App() {
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
   const [progress, setProgress] = useState<AppProgress>(EMPTY_PROGRESS);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
-  const [synthesisRequested, setSynthesisRequested] = useState(() => Boolean(initialSourceState.canvasBundle && initialSourceState.textbookBundle));
+  const [synthesisRequested, setSynthesisRequested] = useState(() => Boolean(initialSourceState.sourceState.canvasBundle && initialSourceState.sourceState.textbookBundle));
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
+  const [shellEpoch, setShellEpoch] = useState(0);
 
   const handleProgressUpdate = useCallback((update: Partial<AppProgress>) => {
-    setProgress((current) => ({ ...current, ...update }));
+    setProgress((current) => mergeProgressUpdate(current, update));
   }, []);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textbookInputRef = useRef<HTMLInputElement | null>(null);
-  const bridgeRequestModeRef = useRef<"auto" | "manual" | null>(null);
+  const bridgeRequestRef = useRef<BridgeRequestState>(null);
   const initialBridgeAttemptRef = useRef(false);
   const hydratedProgressScopeRef = useRef<string | null>(null);
   const textbookImportTokenRef = useRef(0);
+  const legacyProgressMigrationRef = useRef(initialSourceState.usedLegacyBundle);
 
   const mergedBundle = useMemo(
     () => mergeSourceBundles(canvasBundle, textbookBundle),
@@ -481,12 +649,8 @@ export default function App() {
     }
 
     storeSourceWorkspace({ canvasBundle, textbookBundle });
-
-    const persistedBundle = mergedBundle ?? canvasBundle ?? textbookBundle;
-    if (persistedBundle) {
-      storeBundle(persistedBundle);
-    }
-  }, [canvasBundle, textbookBundle, mergedBundle]);
+    clearStoredBundle();
+  }, [canvasBundle, textbookBundle]);
 
   useEffect(() => {
     if (!progressScope || !shellData || !workspace) {
@@ -497,8 +661,17 @@ export default function App() {
     }
 
     const scopedProgress = normalizeProgressForWorkspace(loadProgress(progressScope), shellData, workspace);
-    const legacyProgress = normalizeProgressForWorkspace(loadProgress(), shellData, workspace);
-    const restoredProgress = isEmptyProgress(scopedProgress) ? legacyProgress : scopedProgress;
+    let restoredProgress = scopedProgress;
+
+    if (legacyProgressMigrationRef.current) {
+      const legacyProgress = normalizeProgressForWorkspace(loadProgress(), shellData, workspace);
+      if (isEmptyProgress(scopedProgress) && !isEmptyProgress(legacyProgress)) {
+        restoredProgress = legacyProgress;
+      }
+      clearLegacyProgress();
+      legacyProgressMigrationRef.current = false;
+    }
+
     hydratedProgressScopeRef.current = progressScope;
     setProgress(restoredProgress);
   }, [progressScope, shellData, workspace]);
@@ -578,11 +751,15 @@ export default function App() {
 
   useEffect(() => {
     return subscribeToBridgeMessages((message) => {
-      const action = resolveBridgeMessageAction(message, bridgeRequestModeRef.current);
-      bridgeRequestModeRef.current = action.nextRequestMode;
+      const action = resolveBridgeMessageAction(message, bridgeRequestRef.current);
+      bridgeRequestRef.current = action.nextRequestState;
 
       if (action.kind === "pong") {
         respondToBridgePing();
+        return;
+      }
+
+      if (action.kind === "track-request") {
         return;
       }
 
@@ -593,7 +770,12 @@ export default function App() {
 
       if (action.kind === "accept-pack") {
         applyCanvasBundle(action.bundle, action.successMessage);
-        acknowledgeImportedPack(action.bundle);
+        acknowledgeImportedPack({
+          bundle: action.bundle,
+          requestId: action.ackRequestId,
+          handoffId: action.ackHandoffId,
+          packId: action.ackPackId
+        });
         return;
       }
 
@@ -608,8 +790,11 @@ export default function App() {
       return;
     }
     initialBridgeAttemptRef.current = true;
-    bridgeRequestModeRef.current = "auto";
-    requestImportFromBridge();
+    const requestId = requestImportFromBridge();
+    bridgeRequestRef.current = {
+      mode: "auto",
+      requestId
+    };
   }, []);
 
   useEffect(() => {
@@ -624,6 +809,7 @@ export default function App() {
     const keepTextbook = textbookBundle && isSameCourse(canvasBundle, nextBundle) ? textbookBundle : null;
 
     textbookImportTokenRef.current += 1;
+    discardLegacyProgressMigration(legacyProgressMigrationRef);
     setActiveNoteScope(null);
     setCanvasBundle(nextBundle);
     setTextbookBundle(keepTextbook);
@@ -647,6 +833,7 @@ export default function App() {
 
   const loadDemoMode = () => {
     textbookImportTokenRef.current += 1;
+    discardLegacyProgressMigration(legacyProgressMigrationRef);
     setActiveNoteScope(null);
     setCanvasBundle(createDemoBundle());
     setTextbookBundle(makeDemoTextbookBundle());
@@ -663,13 +850,16 @@ export default function App() {
     const resolution = resolveImportedJsonPayload(raw);
 
     if (resolution.kind === "offline-site") {
+      const restored = normalizeRestoredWorkspacePayload(resolution.restored);
       textbookImportTokenRef.current += 1;
+      discardLegacyProgressMigration(legacyProgressMigrationRef);
       setActiveNoteScope(resolution.noteScope);
-      storeNotes(resolution.restored.notes, resolution.noteScope);
-      setCanvasBundle(resolution.restored.canvasBundle);
-      setTextbookBundle(resolution.restored.textbookBundle);
-      setLearning(resolution.restored.learningBundle);
-      setProgress(resolution.restored.progress);
+      storeNotes(restored.notes, resolution.noteScope);
+      setShellEpoch((current) => current + 1);
+      setCanvasBundle(restored.canvasBundle);
+      setTextbookBundle(restored.textbookBundle);
+      setLearning(restored.learningBundle);
+      setProgress(restored.progress);
       setProcessing(null);
       setSynthesisRequested(false);
       setDemoBannerDismissed(false);
@@ -885,6 +1075,7 @@ export default function App() {
 
   const resetWorkspace = () => {
     textbookImportTokenRef.current += 1;
+    discardLegacyProgressMigration(legacyProgressMigrationRef);
     clearPersistedWorkspaceState(progressScope ?? undefined);
     setCanvasBundle(null);
     setTextbookBundle(null);
@@ -989,9 +1180,12 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => {
-                    bridgeRequestModeRef.current = "manual";
+                    const requestId = requestImportFromBridge();
+                    bridgeRequestRef.current = {
+                      mode: "manual",
+                      requestId
+                    };
                     setStatus("Checking extension handoff...");
-                    requestImportFromBridge();
                   }}
                   style={{
                     marginTop: 14,
@@ -1213,6 +1407,7 @@ export default function App() {
   return (
     <ShellErrorBoundary>
       <AeonthraShell
+        key={buildAeonthraShellInstanceKey(progressScope, shellEpoch)}
         data={shellData}
         progress={progress}
         onProgressUpdate={handleProgressUpdate}

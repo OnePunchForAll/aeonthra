@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildLearningBundleWithProgress, createDemoSourceText } from "@learning/content-engine";
 import { BRIDGE_SOURCE, captureBundleId, createManualCaptureBundle, type CaptureBundle } from "@learning/schema";
 import {
+  buildAeonthraShellInstanceKey,
   clearPersistedWorkspaceState,
+  discardLegacyProgressMigration,
+  mergeProgressUpdate,
+  normalizeRestoredWorkspacePayload,
   resolveBridgeMessageAction,
   resolveBridgePackImport,
   resolveImportedJsonPayload
@@ -62,7 +66,7 @@ function makeCanvasCaptureBundle(): CaptureBundle {
     ...bundle,
     source: "extension-capture",
     captureMeta: {
-      courseId: "course-42",
+      courseId: "42",
       courseName: "Canvas Ethics",
       sourceHost: "canvas.example.test"
     }
@@ -96,6 +100,35 @@ describe("App intake orchestration", () => {
     });
   });
 
+  it("rejects empty extension captures with an exact import message", () => {
+    const emptyExtensionBundle: CaptureBundle = {
+      ...createManualCaptureBundle({
+        title: "Empty Canvas Capture",
+        text: "placeholder"
+      }),
+      source: "extension-capture",
+      items: [],
+      manifest: {
+        itemCount: 0,
+        resourceCount: 0,
+        captureKinds: [],
+        sourceUrls: []
+      },
+      captureMeta: {
+        courseId: "42",
+        courseName: "Canvas Ethics",
+        sourceHost: "canvas.example.test"
+      }
+    };
+
+    const resolution = resolveImportedJsonPayload(JSON.stringify(emptyExtensionBundle));
+
+    expect(resolution).toEqual({
+      kind: "error",
+      message: "That extension bundle is valid, but it contains zero captured Canvas items. Re-run SENTINEL on at least one readable Canvas page before importing."
+    });
+  });
+
   it("accepts valid bridge packs from the extension path", () => {
     const bundle = makeCanvasCaptureBundle();
     const resolution = resolveBridgePackImport(bundle);
@@ -107,23 +140,50 @@ describe("App intake orchestration", () => {
     });
   });
 
-  it("accepts requested NF_PACK_READY bridge payloads and computes the ack pack id", () => {
+  it("tracks bridge import requests before a correlated pack arrives", () => {
+    const resolution = resolveBridgeMessageAction(
+      {
+        source: BRIDGE_SOURCE,
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-1"
+      },
+      null
+    );
+
+    expect(resolution).toEqual({
+      kind: "track-request",
+      nextRequestState: {
+        mode: "auto",
+        requestId: "request-1"
+      }
+    });
+  });
+
+  it("accepts requested NF_PACK_READY bridge payloads and computes the ack envelope", () => {
     const bundle = makeCanvasCaptureBundle();
     const resolution = resolveBridgeMessageAction(
       {
         source: BRIDGE_SOURCE,
         type: "NF_PACK_READY",
+        requestId: "request-1",
+        handoffId: "handoff-1",
+        packId: captureBundleId(bundle),
         pack: bundle
       },
-      "manual"
+      {
+        mode: "manual",
+        requestId: "request-1"
+      }
     );
 
     expect(resolution).toEqual({
       kind: "accept-pack",
       bundle,
       successMessage: "Canvas bundle imported: Canvas Ethics.",
+      ackRequestId: "request-1",
+      ackHandoffId: "handoff-1",
       ackPackId: captureBundleId(bundle),
-      nextRequestMode: null
+      nextRequestState: null
     });
   });
 
@@ -137,15 +197,55 @@ describe("App intake orchestration", () => {
       {
         source: BRIDGE_SOURCE,
         type: "NF_PACK_READY",
+        requestId: "request-2",
+        handoffId: "handoff-2",
+        packId: captureBundleId(bundle),
         pack: bundle
       },
-      "auto"
+      {
+        mode: "auto",
+        requestId: "request-2"
+      }
     );
 
     expect(resolution).toEqual({
       kind: "reject-pack",
-      message: "Queued bridge import was valid JSON, but it was not a Canvas extension capture.",
-      nextRequestMode: null
+      message: "Queued bridge import was valid JSON, but its source was not an extension capture.",
+      nextRequestState: null
+    });
+  });
+
+  it("rejects empty NF_PACK_READY bridge payloads with an exact reason", () => {
+    const emptyBundle: CaptureBundle = {
+      ...makeCanvasCaptureBundle(),
+      items: [],
+      manifest: {
+        itemCount: 0,
+        resourceCount: 0,
+        captureKinds: [],
+        sourceUrls: []
+      }
+    };
+
+    const resolution = resolveBridgeMessageAction(
+      {
+        source: BRIDGE_SOURCE,
+        type: "NF_PACK_READY",
+        requestId: "request-3",
+        handoffId: "handoff-3",
+        packId: captureBundleId(emptyBundle),
+        pack: emptyBundle
+      },
+      {
+        mode: "auto",
+        requestId: "request-3"
+      }
+    );
+
+    expect(resolution).toEqual({
+      kind: "reject-pack",
+      message: "Queued bridge import came from the extension, but it contained zero captured Canvas items.",
+      nextRequestState: null
     });
   });
 
@@ -155,6 +255,9 @@ describe("App intake orchestration", () => {
       {
         source: BRIDGE_SOURCE,
         type: "NF_PACK_READY",
+        requestId: "request-4",
+        handoffId: "handoff-4",
+        packId: captureBundleId(bundle),
         pack: bundle
       },
       null
@@ -164,8 +267,62 @@ describe("App intake orchestration", () => {
       kind: "accept-pack",
       bundle,
       successMessage: "Canvas bundle imported: Canvas Ethics.",
+      ackRequestId: "request-4",
+      ackHandoffId: "handoff-4",
       ackPackId: captureBundleId(bundle),
-      nextRequestMode: null
+      nextRequestState: null
+    });
+  });
+
+  it("ignores NF_PACK_READY payloads that belong to a different active request", () => {
+    const bundle = makeCanvasCaptureBundle();
+    const resolution = resolveBridgeMessageAction(
+      {
+        source: BRIDGE_SOURCE,
+        type: "NF_PACK_READY",
+        requestId: "request-5",
+        handoffId: "handoff-5",
+        packId: captureBundleId(bundle),
+        pack: bundle
+      },
+      {
+        mode: "manual",
+        requestId: "request-active"
+      }
+    );
+
+    expect(resolution).toEqual({
+      kind: "ignore",
+      nextRequestState: {
+        mode: "manual",
+        requestId: "request-active"
+      }
+    });
+  });
+
+  it("ignores stale bridge packs whose request id no longer matches the active request", () => {
+    const bundle = makeCanvasCaptureBundle();
+    const resolution = resolveBridgeMessageAction(
+      {
+        source: BRIDGE_SOURCE,
+        type: "NF_PACK_READY",
+        requestId: "request-old",
+        handoffId: "handoff-old",
+        packId: captureBundleId(bundle),
+        pack: bundle
+      },
+      {
+        mode: "manual",
+        requestId: "request-new"
+      }
+    );
+
+    expect(resolution).toEqual({
+      kind: "ignore",
+      nextRequestState: {
+        mode: "manual",
+        requestId: "request-new"
+      }
     });
   });
 
@@ -174,16 +331,20 @@ describe("App intake orchestration", () => {
       {
         source: BRIDGE_SOURCE,
         type: "NF_IMPORT_RESULT",
+        requestId: "request-5",
         success: false,
         error: "No pending AEONTHRA bundle was queued for import."
       },
-      "manual"
+      {
+        mode: "manual",
+        requestId: "request-5"
+      }
     );
 
     expect(resolution).toEqual({
       kind: "import-result",
       status: "No pending AEONTHRA bundle was queued for import.",
-      nextRequestMode: null
+      nextRequestState: null
     });
   });
 
@@ -192,17 +353,27 @@ describe("App intake orchestration", () => {
       {
         source: BRIDGE_SOURCE,
         type: "NF_IMPORT_RESULT",
+        requestId: "request-6",
         success: false,
         error: "No pending AEONTHRA bundle was queued for import."
       },
-      "auto"
+      {
+        mode: "auto",
+        requestId: "request-6"
+      }
     );
 
     expect(resolution).toEqual({
       kind: "import-result",
       status: null,
-      nextRequestMode: null
+      nextRequestState: null
     });
+  });
+
+  it("builds a new shell instance key when an explicit restore bumps the shell epoch", () => {
+    expect(buildAeonthraShellInstanceKey("scope-a", 0)).toBe("scope-a:0");
+    expect(buildAeonthraShellInstanceKey("scope-a", 1)).toBe("scope-a:1");
+    expect(buildAeonthraShellInstanceKey(null, 2)).toBe("no-scope:2");
   });
 
   it("restores offline site bundles with progress and note scope metadata", () => {
@@ -239,6 +410,135 @@ describe("App intake orchestration", () => {
     expect(resolution.status).toBe(`Offline site bundle restored: ${offlineBundle.title}`);
   });
 
+  it("normalizes restored offline workspace progress against the restored shell graph", () => {
+    const canvasBundle = createDemoBundle();
+    const textbookBundle = makeTextbookBundle();
+    const mergedBundle = mergeSourceBundles(canvasBundle, textbookBundle);
+
+    expect(mergedBundle).not.toBeNull();
+
+    const learningBundle = buildLearningBundleWithProgress(mergedBundle!);
+    const normalized = normalizeRestoredWorkspacePayload({
+      canvasBundle,
+      textbookBundle,
+      mergedBundle: mergedBundle!,
+      learningBundle,
+      progress: {
+        conceptMastery: {
+          [learningBundle.concepts[0]!.id]: 0.9,
+          staleConcept: 0.4
+        },
+        chapterCompletion: {
+          "module-1": 1,
+          staleChapter: 0.6
+        },
+        goalCompletion: {
+          "goal:demo:understand-core-ideas": true,
+          staleGoal: true
+        },
+        skillHistory: {
+          "skill-foundation-demo": true,
+          staleSkill: true
+        },
+        practiceMode: true
+      },
+      notes: "Recovered note lane."
+    });
+
+    expect(normalized.progress).toEqual({
+      conceptMastery: {
+        [learningBundle.concepts[0]!.id]: 0.9
+      },
+      chapterCompletion: {
+        "module-1": 1
+      },
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: true
+    });
+  });
+
+  it("merges progress updates without dropping sibling progress lanes", () => {
+    expect(mergeProgressUpdate(
+      {
+        conceptMastery: { conceptA: 0.5 },
+        chapterCompletion: { chapterA: 0.4 },
+        goalCompletion: { goalA: true },
+        skillHistory: { skillA: true },
+        practiceMode: true
+      },
+      {
+        conceptMastery: { conceptB: 0.9 },
+        chapterCompletion: { chapterB: 1 },
+        practiceMode: false
+      }
+    )).toEqual({
+      conceptMastery: {
+        conceptA: 0.5,
+        conceptB: 0.9
+      },
+      chapterCompletion: {
+        chapterA: 0.4,
+        chapterB: 1
+      },
+      goalCompletion: { goalA: true },
+      skillHistory: { skillA: true },
+      practiceMode: false
+    });
+  });
+
+  it("discards pending legacy progress migration when a new workspace replaces the old one", () => {
+    storeScopedProgress({
+      conceptMastery: { scoped: 0.8 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    }, "scope-next");
+    (window as MockWindow).localStorage.setItem("learning-freedom:progress", JSON.stringify({
+      conceptMastery: { legacy: 0.25 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: { legacySkill: true },
+      practiceMode: true
+    }));
+    const migration = { current: true };
+
+    discardLegacyProgressMigration(migration);
+
+    expect(migration.current).toBe(false);
+    expect(loadProgress()).toEqual(createEmptyProgress());
+    expect(loadProgress("scope-next")).toEqual({
+      conceptMastery: { scoped: 0.8 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    });
+  });
+
+  it("leaves legacy progress untouched when no migration is pending", () => {
+    (window as MockWindow).localStorage.setItem("learning-freedom:progress", JSON.stringify({
+      conceptMastery: { legacy: 0.4 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    }));
+    const migration = { current: false };
+
+    discardLegacyProgressMigration(migration);
+
+    expect(migration.current).toBe(false);
+    expect(loadProgress()).toEqual({
+      conceptMastery: { legacy: 0.4 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    });
+  });
+
   it("clears persisted workspace state on reset", () => {
     const canvasBundle = makeCanvasCaptureBundle();
     const textbookBundle = makeTextbookBundle();
@@ -246,6 +546,7 @@ describe("App intake orchestration", () => {
       conceptMastery: { c1: 1 },
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: true
     };
 
@@ -268,12 +569,14 @@ describe("App intake orchestration", () => {
       conceptMastery: { left: 1 },
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     }, "scope-a");
     storeScopedProgress({
       conceptMastery: { right: 0.5 },
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     }, "scope-b");
     storeNotes("Scope A notes", "scope-a");
@@ -287,6 +590,7 @@ describe("App intake orchestration", () => {
       conceptMastery: { right: 0.5 },
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     });
     expect(loadNotes("scope-b")).toBe("Scope B notes");

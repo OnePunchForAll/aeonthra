@@ -53,16 +53,21 @@ describe("web bridge helpers", () => {
       title: "Bridge Bundle",
       text: "The extension handoff should always carry the bridge source envelope."
     });
+    const requestId = requestImportFromBridge("request-1");
 
-    requestImportFromBridge();
-    acknowledgeImportedPack(bundle);
+    acknowledgeImportedPack({
+      bundle,
+      requestId,
+      handoffId: "handoff-1"
+    });
     respondToBridgePing();
 
     expect(posts).toEqual([
       {
         message: {
           source: BRIDGE_SOURCE,
-          type: "NF_IMPORT_REQUEST"
+          type: "NF_IMPORT_REQUEST",
+          requestId: "request-1"
         },
         targetOrigin: "https://aeonthra.example.test"
       },
@@ -70,6 +75,8 @@ describe("web bridge helpers", () => {
         message: {
           source: BRIDGE_SOURCE,
           type: "NF_PACK_ACK",
+          requestId: "request-1",
+          handoffId: "handoff-1",
           packId: captureBundleId(bundle)
         },
         targetOrigin: "https://aeonthra.example.test"
@@ -87,10 +94,6 @@ describe("web bridge helpers", () => {
   it("delivers only schema-valid same-window bridge messages to subscribers", () => {
     const { dispatch } = installMockWindow();
     const received: BridgeMessage[] = [];
-    const bundle = createManualCaptureBundle({
-      title: "Queued Capture",
-      text: "Bridge subscribers should receive valid pack payloads intact."
-    });
     const unsubscribe = subscribeToBridgeMessages((message) => {
       received.push(message);
     });
@@ -119,8 +122,8 @@ describe("web bridge helpers", () => {
       source: window,
       data: {
         source: BRIDGE_SOURCE,
-        type: "NF_PACK_READY",
-        pack: bundle
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-1"
       }
     } as unknown as MessageEvent<BridgeMessage>);
 
@@ -137,8 +140,8 @@ describe("web bridge helpers", () => {
     expect(received).toEqual([
       {
         source: BRIDGE_SOURCE,
-        type: "NF_PACK_READY",
-        pack: bundle
+        type: "NF_IMPORT_REQUEST",
+        requestId: "request-1"
       }
     ]);
   });

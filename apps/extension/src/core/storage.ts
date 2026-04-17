@@ -1,4 +1,14 @@
-import { createEmptyBundle, mergeCaptureBundle, type CaptureBundle } from "@learning/schema";
+import {
+  CaptureBundleSchema,
+  captureBundleId,
+  createEmptyBundle,
+  inspectCanvasCourseKnowledgePack,
+  mergeCaptureBundle,
+  stableHash,
+  type BridgeHandoffEnvelope,
+  type CanvasCourseKnowledgePackIssueCode,
+  type CaptureBundle
+} from "@learning/schema";
 import type {
   CaptureHistorySummary,
   CourseContext,
@@ -15,9 +25,12 @@ const SETTINGS_KEY = "aeonthra:settings";
 const SETTINGS_FALLBACK_KEY = "aeonthra:settings:local";
 const RUNTIME_KEY = "aeonthra:runtime";
 const HISTORY_KEY = "aeonthra:history";
-const PENDING_BUNDLE_KEY = "aeonthra:pending-bundle";
+const LEGACY_PENDING_BUNDLE_KEY = "aeonthra:pending-bundle";
+const PENDING_HANDOFFS_KEY = "aeonthra:pending-handoffs";
 const SESSION_STATES_KEY = "aeonthra:sessions";
 const QUOTA_BYTES = 100 * 1024 * 1024;
+const PENDING_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_PENDING_HANDOFFS = 5;
 
 function storageGet(area: chrome.storage.StorageArea, keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -74,7 +87,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   defaultMode: "learning",
   requestDelay: 650,
   autoHandoff: false,
-  autoDeleteAfterImport: true,
+  autoDeleteAfterImport: false,
   maxRetries: 3,
   retryBackoffMs: 1200,
   aeonthraUrl: "https://aeonthra.github.io/aeonthra/"
@@ -113,6 +126,171 @@ export function sessionKeyForCourse(course: Pick<CourseContext, "origin" | "cour
 
 function byteSize(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
+}
+
+function normalizeQueuedAt(value: string | undefined): string {
+  const parsed = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed)
+    ? new Date(parsed).toISOString()
+    : new Date().toISOString();
+}
+
+function isFreshPendingHandoff(handoff: BridgeHandoffEnvelope): boolean {
+  const queuedAtMs = Date.parse(handoff.queuedAt);
+  return Number.isFinite(queuedAtMs) && queuedAtMs >= Date.now() - PENDING_HANDOFF_TTL_MS;
+}
+
+function createPendingHandoffEnvelope(bundle: CaptureBundle): BridgeHandoffEnvelope {
+  const inspection = inspectCanvasCourseKnowledgePack(bundle);
+  if (!inspection.ok) {
+    throw new Error(inspection.code);
+  }
+
+  const queuedAt = normalizeQueuedAt(inspection.bundle.capturedAt);
+  const packId = captureBundleId(inspection.bundle);
+
+  return {
+    handoffId: stableHash(`${packId}:${queuedAt}`),
+    packId,
+    queuedAt,
+    courseId: inspection.courseId,
+    sourceHost: inspection.sourceHost,
+    pack: inspection.bundle
+  };
+}
+
+function coerceStoredPendingHandoff(value: unknown): BridgeHandoffEnvelope | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BridgeHandoffEnvelope> & {
+    pack?: unknown;
+  };
+  const parsedPack = CaptureBundleSchema.safeParse(candidate.pack);
+  if (!parsedPack.success) {
+    return null;
+  }
+
+  const pack = parsedPack.data;
+  const parsedQueuedAt = Date.parse(
+    typeof candidate.queuedAt === "string" ? candidate.queuedAt : pack.capturedAt
+  );
+  const queuedAt = Number.isFinite(parsedQueuedAt)
+    ? new Date(parsedQueuedAt).toISOString()
+    : new Date().toISOString();
+  const packId = captureBundleId(pack);
+  const handoffId =
+    typeof candidate.handoffId === "string" && candidate.handoffId.trim().length > 0
+      ? candidate.handoffId.trim()
+      : stableHash(`${packId}:${queuedAt}`);
+
+  return {
+    handoffId,
+    packId,
+    queuedAt,
+    courseId:
+      typeof candidate.courseId === "string" && candidate.courseId.trim().length > 0
+        ? candidate.courseId.trim().toLowerCase()
+        : pack.captureMeta?.courseId?.trim().toLowerCase() ?? "",
+    sourceHost:
+      typeof candidate.sourceHost === "string" && candidate.sourceHost.trim().length > 0
+        ? candidate.sourceHost.trim().toLowerCase()
+        : pack.captureMeta?.sourceHost?.trim().toLowerCase() ?? "",
+    pack
+  };
+}
+
+async function persistPendingHandoffQueue(queue: BridgeHandoffEnvelope[]): Promise<void> {
+  if (queue.length === 0) {
+    await storageRemove(chrome.storage.local, [PENDING_HANDOFFS_KEY, LEGACY_PENDING_BUNDLE_KEY]);
+    return;
+  }
+
+  await Promise.all([
+    storageSet(chrome.storage.local, { [PENDING_HANDOFFS_KEY]: queue }),
+    storageRemove(chrome.storage.local, LEGACY_PENDING_BUNDLE_KEY)
+  ]);
+}
+
+type PendingHandoffQueueSnapshot = {
+  queue: BridgeHandoffEnvelope[];
+  invalidCode: CanvasCourseKnowledgePackIssueCode | null;
+};
+
+async function sanitizePendingHandoffQueue(): Promise<PendingHandoffQueueSnapshot> {
+  const stored = await storageGet(chrome.storage.local, [
+    PENDING_HANDOFFS_KEY,
+    LEGACY_PENDING_BUNDLE_KEY
+  ]);
+
+  const nextQueue: BridgeHandoffEnvelope[] = [];
+  let invalidCode: CanvasCourseKnowledgePackIssueCode | null = null;
+  let changed = false;
+
+  const markInvalid = (code: CanvasCourseKnowledgePackIssueCode) => {
+    if (!invalidCode) {
+      invalidCode = code;
+    }
+    changed = true;
+  };
+
+  const rawQueue = stored[PENDING_HANDOFFS_KEY];
+  if (typeof rawQueue !== "undefined") {
+    if (!Array.isArray(rawQueue)) {
+      markInvalid("invalid-bundle");
+    } else {
+      for (const entry of rawQueue) {
+        const parsed = coerceStoredPendingHandoff(entry);
+        if (!parsed) {
+          markInvalid("invalid-bundle");
+          continue;
+        }
+        if (!isFreshPendingHandoff(parsed)) {
+          changed = true;
+          continue;
+        }
+        nextQueue.push(parsed);
+      }
+    }
+  }
+
+  const rawLegacyBundle = stored[LEGACY_PENDING_BUNDLE_KEY];
+  if (typeof rawLegacyBundle !== "undefined") {
+    changed = true;
+    const parsedBundle = CaptureBundleSchema.safeParse(rawLegacyBundle);
+    if (!parsedBundle.success) {
+      markInvalid("invalid-bundle");
+    } else {
+      const inspection = inspectCanvasCourseKnowledgePack(parsedBundle.data);
+      if (!inspection.ok) {
+        markInvalid(inspection.code);
+      } else {
+        nextQueue.push(createPendingHandoffEnvelope(inspection.bundle));
+      }
+    }
+  }
+
+  const dedupedQueue = Array.from(
+    new Map(
+      nextQueue
+        .sort((left, right) => Date.parse(right.queuedAt) - Date.parse(left.queuedAt))
+        .map((handoff) => [handoff.packId, handoff])
+    ).values()
+  ).slice(0, MAX_PENDING_HANDOFFS);
+
+  if (!changed && JSON.stringify(dedupedQueue) !== JSON.stringify(nextQueue)) {
+    changed = true;
+  }
+
+  if (changed) {
+    await persistPendingHandoffQueue(dedupedQueue);
+  }
+
+  return {
+    queue: dedupedQueue,
+    invalidCode
+  };
 }
 
 function normalizeSettings(value: unknown): ExtensionSettings {
@@ -388,7 +566,8 @@ export async function clearAllCaptures(): Promise<void> {
   await storageRemove(chrome.storage.local, [
     ...keys,
     HISTORY_KEY,
-    PENDING_BUNDLE_KEY,
+    PENDING_HANDOFFS_KEY,
+    LEGACY_PENDING_BUNDLE_KEY,
     SESSION_STATES_KEY,
     "aeonthra:partial-bundle",
     "aeonthra:partial-warnings",
@@ -396,17 +575,75 @@ export async function clearAllCaptures(): Promise<void> {
   ]);
 }
 
-export async function writePendingBundle(bundle: CaptureBundle): Promise<void> {
-  await storageSet(chrome.storage.local, { [PENDING_BUNDLE_KEY]: bundle });
+export async function queuePendingHandoff(bundle: CaptureBundle): Promise<BridgeHandoffEnvelope> {
+  const nextHandoff = createPendingHandoffEnvelope(bundle);
+  const snapshot = await sanitizePendingHandoffQueue();
+  const nextQueue = [
+    nextHandoff,
+    ...snapshot.queue.filter((handoff) => handoff.packId !== nextHandoff.packId)
+  ].slice(0, MAX_PENDING_HANDOFFS);
+
+  await persistPendingHandoffQueue(nextQueue);
+  return nextHandoff;
 }
 
-export async function readPendingBundle(): Promise<CaptureBundle | null> {
-  const stored = await storageGet(chrome.storage.local, PENDING_BUNDLE_KEY);
-  return (stored[PENDING_BUNDLE_KEY] as CaptureBundle | undefined) ?? null;
+export type PendingHandoffInspection =
+  | {
+      state: "missing";
+    }
+  | {
+      state: "invalid";
+      code: CanvasCourseKnowledgePackIssueCode;
+    }
+  | {
+      state: "ok";
+      handoff: BridgeHandoffEnvelope;
+      queueLength: number;
+    };
+
+export async function inspectPendingHandoff(): Promise<PendingHandoffInspection> {
+  const snapshot = await sanitizePendingHandoffQueue();
+  if (snapshot.queue.length > 0) {
+    return {
+      state: "ok",
+      handoff: snapshot.queue[0],
+      queueLength: snapshot.queue.length
+    };
+  }
+
+  if (snapshot.invalidCode) {
+    return {
+      state: "invalid",
+      code: snapshot.invalidCode
+    };
+  }
+
+  return { state: "missing" };
 }
 
-export async function clearPendingBundle(): Promise<void> {
-  await storageRemove(chrome.storage.local, PENDING_BUNDLE_KEY);
+export async function readPendingHandoffQueue(): Promise<BridgeHandoffEnvelope[]> {
+  return (await sanitizePendingHandoffQueue()).queue;
+}
+
+export async function clearPendingHandoff(
+  handoffId: string,
+  packId: string
+): Promise<boolean> {
+  const snapshot = await sanitizePendingHandoffQueue();
+  const nextQueue = snapshot.queue.filter(
+    (handoff) => !(handoff.handoffId === handoffId && handoff.packId === packId)
+  );
+
+  if (nextQueue.length === snapshot.queue.length) {
+    return false;
+  }
+
+  await persistPendingHandoffQueue(nextQueue);
+  return true;
+}
+
+export async function clearPendingHandoffs(): Promise<void> {
+  await storageRemove(chrome.storage.local, [PENDING_HANDOFFS_KEY, LEGACY_PENDING_BUNDLE_KEY]);
 }
 
 export async function latestCaptureId(): Promise<string | null> {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createManualCaptureBundle } from "@learning/schema";
 import {
+  clearLegacyProgress,
   clearStoredNotes,
   clearStoredProgress,
   clearStoredBundle,
@@ -86,6 +87,7 @@ describe("web storage", () => {
       conceptMastery: { c1: 0.75 },
       chapterCompletion: { chapter1: 1 },
       goalCompletion: { goal1: true },
+      skillHistory: { "skill-foundation-c1": true },
       practiceMode: true
     };
 
@@ -96,6 +98,41 @@ describe("web storage", () => {
       conceptMastery: {},
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    });
+  });
+
+  it("clears only the unscoped legacy progress bucket when requested", () => {
+    storeScopedProgress({
+      conceptMastery: { scoped: 0.8 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: { "skill-foundation-scoped": true },
+      practiceMode: false
+    }, "hash-legacy");
+    (window as MockWindow).localStorage.setItem("learning-freedom:progress", JSON.stringify({
+      conceptMastery: { legacy: 0.25 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: { legacySkill: true },
+      practiceMode: true
+    }));
+
+    clearLegacyProgress();
+
+    expect(loadProgress()).toEqual({
+      conceptMastery: {},
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: {},
+      practiceMode: false
+    });
+    expect(loadProgress("hash-legacy")).toEqual({
+      conceptMastery: { scoped: 0.8 },
+      chapterCompletion: {},
+      goalCompletion: {},
+      skillHistory: { "skill-foundation-scoped": true },
       practiceMode: false
     });
   });
@@ -127,6 +164,7 @@ describe("web storage", () => {
         conceptMastery: { c1: 1 },
         chapterCompletion: {},
         goalCompletion: {},
+        skillHistory: { "skill-foundation-c1": true },
         practiceMode: false
       },
       "scope-a"
@@ -136,6 +174,7 @@ describe("web storage", () => {
         conceptMastery: { c2: 0.5 },
         chapterCompletion: { chapter2: 0.5 },
         goalCompletion: {},
+        skillHistory: {},
         practiceMode: true
       },
       "scope-b"
@@ -144,6 +183,7 @@ describe("web storage", () => {
       conceptMastery: { legacy: 0.25 },
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: { legacySkill: true },
       practiceMode: false
     }));
     (window as MockWindow).localStorage.setItem("learning-freedom:unrelated", "keep");
@@ -156,18 +196,21 @@ describe("web storage", () => {
       conceptMastery: {},
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     });
     expect(loadProgress("scope-a")).toEqual({
       conceptMastery: {},
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     });
     expect(loadProgress("scope-b")).toEqual({
       conceptMastery: {},
       chapterCompletion: {},
       goalCompletion: {},
+      skillHistory: {},
       practiceMode: false
     });
     expect((window as MockWindow).localStorage.getItem("learning-freedom:unrelated")).toBe("keep");

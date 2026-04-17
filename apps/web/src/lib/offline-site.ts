@@ -35,6 +35,7 @@ function toStoredProgress(progress: AppProgress): StoredAppProgress {
     conceptMastery: progress.conceptMastery,
     chapterCompletion: progress.chapterCompletion,
     goalCompletion: progress.goalCompletion,
+    skillHistory: progress.skillHistory,
     // Practice mode is a transient shell session, not durable workspace truth.
     practiceMode: false
   };
@@ -45,6 +46,7 @@ function fromStoredProgress(progress: StoredAppProgress): AppProgress {
     conceptMastery: progress.conceptMastery,
     chapterCompletion: progress.chapterCompletion,
     goalCompletion: progress.goalCompletion,
+    skillHistory: progress.skillHistory ?? {},
     practiceMode: false
   };
 }
@@ -58,19 +60,28 @@ function buildOfflineSiteHashPayload(input: {
   notes?: string;
 }, options?: {
   includeNotes?: boolean;
+  includeSkillHistory?: boolean;
 }): string {
+  const serializedProgress = options?.includeSkillHistory === false
+    ? {
+        conceptMastery: input.progress.conceptMastery,
+        chapterCompletion: input.progress.chapterCompletion,
+        goalCompletion: input.progress.goalCompletion,
+        practiceMode: input.progress.practiceMode
+      }
+    : input.progress;
   const payload = {
     canvasBundle: input.canvasBundle,
     textbookBundle: input.textbookBundle,
     mergedBundle: input.mergedBundle,
     learningBundle: input.learningBundle,
-    progress: input.progress
+    progress: serializedProgress
   } as {
     canvasBundle: CaptureBundle;
     textbookBundle: CaptureBundle;
     mergedBundle: CaptureBundle;
     learningBundle: LearningBundle;
-    progress: StoredAppProgress;
+    progress: StoredAppProgress | Omit<StoredAppProgress, "skillHistory">;
     notes?: string;
   };
 
@@ -112,6 +123,11 @@ export function parseOfflineSiteBundle(raw: string): OfflineSiteBundle | null {
   try {
     const json = JSON.parse(raw);
     const hadNotesField = typeof json === "object" && json !== null && Object.prototype.hasOwnProperty.call(json, "notes");
+    const hadSkillHistoryField = typeof json === "object"
+      && json !== null
+      && typeof (json as { progress?: unknown }).progress === "object"
+      && (json as { progress?: unknown }).progress !== null
+      && Object.prototype.hasOwnProperty.call((json as { progress: object }).progress, "skillHistory");
     const parsed = OfflineSiteBundleSchema.safeParse(json);
     if (!parsed.success) {
       return null;
@@ -129,17 +145,39 @@ export function parseOfflineSiteBundle(raw: string): OfflineSiteBundle | null {
       return parsed.data;
     }
 
+    const legacyHashes = new Set<string>();
     if (!hadNotesField) {
-      const legacyHash = buildOfflineSiteHashPayload({
+      legacyHashes.add(buildOfflineSiteHashPayload({
         canvasBundle,
         textbookBundle,
         mergedBundle,
         learningBundle,
         progress
-      }, { includeNotes: false });
-      if (legacyHash === parsed.data.deterministicHash) {
-        return parsed.data;
-      }
+      }, { includeNotes: false }));
+    }
+    if (!hadSkillHistoryField) {
+      legacyHashes.add(buildOfflineSiteHashPayload({
+        canvasBundle,
+        textbookBundle,
+        mergedBundle,
+        learningBundle,
+        progress
+      }, { includeSkillHistory: false }));
+    }
+    if (!hadNotesField || !hadSkillHistoryField) {
+      legacyHashes.add(buildOfflineSiteHashPayload({
+        canvasBundle,
+        textbookBundle,
+        mergedBundle,
+        learningBundle,
+        progress
+      }, {
+        includeNotes: false,
+        includeSkillHistory: false
+      }));
+    }
+    if (legacyHashes.has(parsed.data.deterministicHash)) {
+      return parsed.data;
     }
 
     return null;

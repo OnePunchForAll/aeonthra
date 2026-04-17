@@ -231,6 +231,7 @@ function Popup() {
   };
 
   const host = hostnameFromUrl(ext?.url);
+  const activeModeLabel = ext?.settings?.defaultMode === "complete" ? "COMPLETE SNAPSHOT" : "LEARNING CONTENT";
 
   return (
     <div
@@ -343,6 +344,12 @@ function Popup() {
             <div style={{ fontSize: "0.7rem", color: "#6a6a9a", marginTop: "4px" }}>
               {host}
             </div>
+            <div style={{ fontSize: "0.64rem", color: "#8aa0d5", marginTop: "10px", letterSpacing: "0.08em" }}>
+              MODE: {activeModeLabel}
+            </div>
+            <div style={{ fontSize: "0.6rem", color: "#6a6a9a", marginTop: "6px", lineHeight: 1.5 }}>
+              Review handoff settings in Options before relying on automatic import.
+            </div>
           </div>
 
           <button
@@ -363,7 +370,7 @@ function Popup() {
               marginBottom: "10px"
             }}
           >
-            CAPTURE SUPPORTED COURSE CONTENT
+            CAPTURE {activeModeLabel}
           </button>
 
           <button
@@ -396,7 +403,7 @@ function Popup() {
         >
           <div style={{ fontSize: "1.5rem", marginBottom: "12px" }}>AE</div>
           <p style={{ fontSize: "0.85rem", color: "#b0b0d0", lineHeight: 1.6 }}>
-            Navigate to any page of a Canvas course and I&apos;ll detect it automatically.
+            Navigate to a supported Canvas course surface and I&apos;ll detect the course automatically.
           </p>
         </div>
       )}

@@ -72,6 +72,7 @@ export type AppProgress = {
   conceptMastery: Record<string, number>;
   chapterCompletion: Record<string, number>;
   goalCompletion: Record<string, boolean>;
+  skillHistory: Record<string, boolean>;
   practiceMode: boolean;
 };
 

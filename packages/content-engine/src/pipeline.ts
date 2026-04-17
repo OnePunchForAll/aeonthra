@@ -1,4 +1,5 @@
 ﻿import type { CaptureBundle, CaptureItem, ConceptRelation, LearningConcept } from "@learning/schema";
+import type { EvidenceFragment } from "@learning/schema";
 import {
   ANTONYMS,
   CANVAS_CHROME,
@@ -395,6 +396,27 @@ const labelTokenSet = (label: string): Set<string> =>
       .filter(Boolean)
   );
 
+const stemmedPhrase = (text: string): string =>
+  normalizePhrase(text)
+    .split(/\s+/)
+    .map(stem)
+    .filter(Boolean)
+    .join(" ");
+
+const mentionsConceptText = (text: string, label: string): boolean => {
+  const normalizedText = normalizePhrase(text);
+  const normalizedLabel = normalizePhrase(label);
+  if (!normalizedText || !normalizedLabel) {
+    return false;
+  }
+  if (normalizedText.includes(normalizedLabel)) {
+    return true;
+  }
+  const compactText = stemmedPhrase(text);
+  const compactLabel = stemmedPhrase(label);
+  return Boolean(compactLabel) && compactText.includes(compactLabel);
+};
+
 const sharesPrimarySource = (
   left: Pick<LearningConcept, "sourceItemIds">,
   right: Pick<LearningConcept, "sourceItemIds">
@@ -478,8 +500,9 @@ const skipForConceptMining = (item: CaptureItem): boolean => {
   const genericActivity = GENERIC_ACTIVITY_PATTERNS.some((pattern) => pattern.test(title));
   const hasInstructionalSignals = INSTRUCTIONAL_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
   const meaningfulCount = meaningfulWords(text).length;
+  const weekWrapperOnly = /^week\s+\d+\s*[-–]/i.test(item.title);
   return REFLECTION_PATTERNS.some((pattern) => pattern.test(item.title) || pattern.test(url) || pattern.test(text))
-    || /^week\s+\d+\s*[-–]/i.test(item.title)
+    || (weekWrapperOnly && (!hasInstructionalSignals || meaningfulCount < 10))
     || (genericActivity && (!hasInstructionalSignals || meaningfulCount < 8))
     || title.includes("welcome to orientation")
     || title.includes("why this orientation")
@@ -491,6 +514,12 @@ const skipForConceptMining = (item: CaptureItem): boolean => {
     || title.includes("writing center & library");
 };
 
+const normalizeSentenceCase = (text: string): string => {
+  const normalized = cleanPassage(text);
+  if (!normalized) return normalized;
+  return /^[a-z]/.test(normalized) ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : normalized;
+};
+
 const hasSentenceShape = (normalized: string): boolean => {
   if (!normalized || normalized.length < 10 || normalized.length > 500) return false;
   if (!/^[A-Z"']/.test(normalized.trim())) return false;
@@ -499,14 +528,50 @@ const hasSentenceShape = (normalized: string): boolean => {
   return !/\{[^}]+\}/.test(normalized);
 };
 
+const SUBJECT_VERB_PATTERN =
+  /\b(asks|weighs|helps|guides|shows|reveals|supports|offers|provides|allows|increases|decreases|reduces|weakens|strengthens|improves|focuses|develops|compares|contrasts)\b/i;
+
+const EXPLICIT_DEFINITION_FRAME =
+  /\b(is defined as|refers to|means|consists of|occurs when|results when|involves|encompasses|explains how|describes how)\b/i;
+
+const hasExplicitDefinitionFrame = (sentence: string): boolean => {
+  const normalized = normalizeSentenceCase(sentence);
+  if (!normalized) return false;
+  if (EXPLICIT_DEFINITION_FRAME.test(normalized)) {
+    return true;
+  }
+
+  const lower = normalized.toLowerCase();
+  const isIndex = lower.indexOf(" is ");
+  const areIndex = lower.indexOf(" are ");
+  const frameIndex = isIndex >= 0 ? isIndex : areIndex;
+  if (frameIndex < 0) {
+    return false;
+  }
+
+  const subject = cleanPassage(normalized.slice(0, frameIndex));
+  const frameWidth = isIndex >= 0 ? 4 : 5;
+  const remainder = cleanPassage(normalized.slice(frameIndex + frameWidth));
+  if (!subject || !remainder) {
+    return false;
+  }
+  if (subject.split(/\s+/).length > 8) {
+    return false;
+  }
+  if (SUBJECT_VERB_PATTERN.test(subject)) {
+    return false;
+  }
+  return /^(an?|the)\b/i.test(remainder);
+};
+
 const STRICT_SENTENCE_VERBS =
-  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides)\b/i;
+  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides|explains|describes)\b/i;
 
 const EVIDENCE_SENTENCE_VERBS =
-  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides|use|apply|repeat|increase|decrease|remove|add|confuse|mistake|mix|blur|want|need|practice|respond|evaluate|analyze|interpret|decide|justify|compare|explain|illustrate|demonstrate)\b/i;
+  /\b(is|are|was|were|be|being|been|have|has|had|do|does|did|can|could|should|would|may|might|asks|weighs|compares|contrasts|improves|develops|focuses|supports|helps|reveals|shows|provides|allows|guides|explains|describes|use|apply|repeat|increase|decrease|remove|add|confuse|mistake|mix|blur|want|need|practice|respond|evaluate|analyze|interpret|decide|justify|compare|explain|illustrate|demonstrate)\b/i;
 
 const isValidSentence = (text: string): boolean => {
-  const normalized = cleanPassage(text);
+  const normalized = normalizeSentenceCase(text);
   if (!hasSentenceShape(normalized)) return false;
   if (!STRICT_SENTENCE_VERBS.test(normalized)) return false;
   if (lexicalDiversity(normalized) < 0.4) return false;
@@ -514,7 +579,7 @@ const isValidSentence = (text: string): boolean => {
 };
 
 const isValidEvidenceSentence = (text: string): boolean => {
-  const normalized = cleanPassage(text);
+  const normalized = normalizeSentenceCase(text);
   if (!hasSentenceShape(normalized)) return false;
   if (!EVIDENCE_SENTENCE_VERBS.test(normalized)) return false;
   if (lexicalDiversity(normalized) < 0.32) return false;
@@ -583,7 +648,7 @@ const scoreContentBlock = (block: Omit<ContentBlock, "score">): number => {
   if (block.parentHeading) score += 3;
   if (block.sentenceCount >= 2) score += 5;
   if (block.sentenceCount >= 1) { const averageLength = block.wordCount / block.sentenceCount; if (averageLength >= 8 && averageLength <= 25) score += 5; }
-  if (DEFINITION_PATTERNS.some((pattern) => { pattern.regex.lastIndex = 0; return pattern.regex.test(block.text); })) score += 18;
+  if (splitIntoSentences(block.text).some((sentence) => hasExplicitDefinitionFrame(sentence))) score += 18;
   if (/\b(for example|for instance|such as|including|specifically)\b/i.test(block.text)) score += 4;
   if (block.emphasizedTerms.length > 0) score += 8;
   if (block.parentHeading && !blockedLabel(block.parentHeading)) score += Math.max(0, 10 - Math.floor(frequencyRank(block.parentHeading.split(/\s+/)[0] ?? "") / 3000));
@@ -702,6 +767,8 @@ const titleCandidatesFromText = (item: CaptureItem): string[] =>
     .split(/\n+/)
     .map((entry) => cleanTitle(entry))
     .filter((entry) => entry.length >= 6 && entry.length <= 90)
+    .filter((entry) => !/[.!?]/.test(entry))
+    .filter((entry) => meaningfulWords(entry).length <= 6)
     .filter((entry) => !blockedLabel(entry));
 
 const preferredItemTitle = (item: CaptureItem, structured: ContentBlock[]): string => {
@@ -727,11 +794,22 @@ const preferredItemTitle = (item: CaptureItem, structured: ContentBlock[]): stri
 
 const findTopicSentences = (block: ContentBlock): string[] => {
   const sentences = splitIntoSentences(block.text);
-  return sentences.filter((sentence) => DEFINITION_PATTERNS.some((pattern) => { pattern.regex.lastIndex = 0; return pattern.regex.test(sentence); }) || /\b(involves|includes|requires|consists of|focuses on|emphasizes)\b/i.test(sentence) || /\b(unlike|in contrast to|whereas|while)\b/i.test(sentence) || /\b(for example|for instance|such as|e\.g\.)\b/i.test(sentence));
+  return sentences.filter((sentence) => hasExplicitDefinitionFrame(sentence) || /\b(involves|includes|requires|consists of|focuses on|emphasizes)\b/i.test(sentence) || /\b(unlike|in contrast to|whereas|while)\b/i.test(sentence) || /\b(for example|for instance|such as|e\.g\.)\b/i.test(sentence));
 };
 
 const nearestSentenceForTerm = (term: string, block: ContentBlock): string | null => splitIntoSentences(block.text).find((sentence) => normalizePhrase(sentence).includes(normalizePhrase(term))) ?? null;
-const nounPhrases = (text: string): string[] => [...text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/g), ...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]{4,})\b/g), ...text.matchAll(/\b([a-z]+(?:ism|ity|tion|ics|ology))\b/gi), ...text.matchAll(/\b([a-z]+(?:\s+[a-z]+){0,2}\s+(?:framework|principle|theory|approach|report|services|support|management|portal|tutoring|analysis|reasoning))\b/gi)].map((match) => titleCase(normalizeCandidateName(match[1] ?? ""))).filter((phrase) => phrase.length >= 3 && phrase.length <= 60 && !blockedLabel(phrase));
+
+const SUBJECT_LABEL_TRAILING_VERBS =
+  /\b(asks|weighs|helps|guides|shows|reveals|supports|offers|provides|allows|increases|decreases|reduces|weakens|strengthens|improves|focuses|develops|compares|contrasts|explains|describes)\b$/i;
+
+const candidateLabelFromPhrase = (value: string): string =>
+  titleCase(
+    normalizeCandidateName(value)
+      .replace(SUBJECT_LABEL_TRAILING_VERBS, "")
+      .trim()
+  );
+
+const nounPhrases = (text: string): string[] => [...text.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/g), ...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]{4,})\b/g), ...text.matchAll(/\b([a-z]+(?:ism|ity|tion|ics|ology))\b/gi), ...text.matchAll(/\b([a-z]+(?:\s+[a-z]+){0,2}\s+(?:framework|principle|theory|approach|analysis|reasoning|system|practice|strategy|method|habit))\b/gi)].map((match) => candidateLabelFromPhrase(match[1] ?? "")).filter((phrase) => phrase.length >= 3 && phrase.length <= 60 && !blockedLabel(phrase));
 
 const relatedContextBlocks = (block: ContentBlock, blocks: ContentBlock[]): ContentBlock[] =>
   blocks
@@ -766,14 +844,15 @@ const topicCandidatesFromBlock = (block: ContentBlock, blocks: ContentBlock[]): 
   const candidates: ConceptCandidate[] = [];
   const topicSentences = findTopicSentences(block);
   const subjectMatch = splitIntoSentences(block.text)
-    .map((sentence) => ({ sentence, match: sentence.match(/^([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s+(asks|weighs|helps|guides|shows|reveals|supports|offers|provides|increases|decreases|reduces|weakens|strengthens)\b/) }))
+    .map((sentence) => ({ sentence, match: sentence.match(/^([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s+(asks|weighs|helps|guides|shows|reveals|supports|offers|provides|increases|decreases|reduces|weakens|strengthens|explains|describes)\b/) }))
     .find((entry) => entry.match);
   for (const sentence of topicSentences) {
     for (const pattern of DEFINITION_PATTERNS) {
       pattern.regex.lastIndex = 0;
       const match = pattern.regex.exec(sentence);
       if (!match) continue;
-      const name = titleCase(normalizeCandidateName(match[1] ?? ""));
+      if (!hasExplicitDefinitionFrame(sentence)) continue;
+      const name = candidateLabelFromPhrase(match[1] ?? "");
       if (blockedLabel(name)) continue;
       candidates.push({
         name,
@@ -821,7 +900,7 @@ const topicCandidatesFromBlock = (block: ContentBlock, blocks: ContentBlock[]): 
   }
   if (subjectMatch?.match?.[1] && !blockedLabel(subjectMatch.match[1])) {
     candidates.push({
-      name: titleCase(subjectMatch.match[1]),
+      name: candidateLabelFromPhrase(subjectMatch.match[1]),
       sourceItemId: block.sourceItemId,
       sourceSentence: subjectMatch.sentence,
       definition: ensureSentence(subjectMatch.sentence),
@@ -1087,6 +1166,136 @@ type FinalizedConceptFields = {
   evidence: string[];
 };
 
+type SupportedConceptFieldId =
+  | "definition"
+  | "summary"
+  | "primer"
+  | "mnemonic"
+  | "commonConfusion"
+  | "transferHook";
+
+type SupportedConceptFieldMap = NonNullable<LearningConcept["fieldSupport"]>;
+
+const supportedConceptFieldIds: SupportedConceptFieldId[] = [
+  "definition",
+  "summary",
+  "primer",
+  "mnemonic",
+  "commonConfusion",
+  "transferHook"
+];
+
+function supportLabel(fieldId: SupportedConceptFieldId, index: number): string {
+  const prefix = fieldId === "commonConfusion"
+    ? "Confusion"
+    : fieldId === "transferHook"
+      ? "Transfer"
+      : fieldId.charAt(0).toUpperCase() + fieldId.slice(1);
+  return index === 0 ? `${prefix} anchor` : `${prefix} support`;
+}
+
+function evidenceFragmentsFromExcerpts(
+  fieldId: SupportedConceptFieldId,
+  sourceItemIds: string[],
+  excerpts: string[]
+): EvidenceFragment[] {
+  const distinctSourceIds = Array.from(new Set(sourceItemIds.filter(Boolean)));
+  if (distinctSourceIds.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const fragments: EvidenceFragment[] = [];
+  for (const excerpt of excerpts.map((entry) => cleanPassage(entry)).filter(isValidEvidenceSentence)) {
+    const key = normalizePhrase(excerpt);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const sourceItemId = distinctSourceIds[fragments.length % distinctSourceIds.length];
+    if (!sourceItemId) {
+      continue;
+    }
+    fragments.push({
+      label: supportLabel(fieldId, fragments.length),
+      excerpt: truncateReadable(excerpt, 180),
+      sourceItemId
+    });
+    if (fragments.length >= 2) {
+      break;
+    }
+  }
+  return fragments;
+}
+
+function buildFieldSupportEntry(
+  fieldId: SupportedConceptFieldId,
+  fieldText: string,
+  sourceItemIds: string[],
+  supportScoreSeed: number,
+  evidenceCandidates: string[]
+): SupportedConceptFieldMap[SupportedConceptFieldId] | undefined {
+  if (!normalizeFieldText(fieldText)) {
+    return undefined;
+  }
+
+  const evidence = evidenceFragmentsFromExcerpts(fieldId, sourceItemIds, evidenceCandidates);
+  const distinctSourceCount = new Set(evidence.map((fragment) => fragment.sourceItemId)).size;
+  const quality = evidence.length >= 2 && distinctSourceCount >= 2
+    ? "strong"
+    : evidence.length >= 1
+      ? "supported"
+      : "weak";
+
+  return {
+    quality,
+    supportScore: Number((Math.max(8, supportScoreSeed) + evidence.length * 10 + distinctSourceCount * 6).toFixed(2)),
+    evidence
+  };
+}
+
+function buildConceptFieldSupport(input: {
+  score: number;
+  definition: string;
+  summary: string;
+  primer: string;
+  mnemonic: string;
+  commonConfusion: string;
+  transferHook: string;
+  excerpt: string;
+  sourceItemIds: string[];
+  evidence: string[];
+}): SupportedConceptFieldMap | undefined {
+  const evidenceLane = [
+    input.excerpt,
+    ...input.evidence,
+    input.definition,
+    input.summary,
+    input.primer,
+    input.commonConfusion,
+    input.transferHook
+  ];
+  const fieldSupport: Partial<SupportedConceptFieldMap> = {};
+
+  for (const fieldId of supportedConceptFieldIds) {
+    const fieldText = input[fieldId];
+    const entry = buildFieldSupportEntry(
+      fieldId,
+      fieldText,
+      input.sourceItemIds,
+      input.score,
+      [fieldText, ...evidenceLane]
+    );
+    if (entry) {
+      fieldSupport[fieldId] = entry;
+    }
+  }
+
+  return Object.keys(fieldSupport).length > 0
+    ? fieldSupport as SupportedConceptFieldMap
+    : undefined;
+}
+
 const finalizeConceptFields = (
   label: string,
   definition: string,
@@ -1233,7 +1442,20 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
   }
   const concepts = chosen.map((seed, _index, source) => {
     const related = source.filter((candidate) => candidate.name !== seed.name);
-    const confusion = related.find((candidate) => candidate.category === seed.category || trigramJaccard(candidate.definition, seed.definition) > 0.2)?.name ?? null;
+    const confusion = related
+      .map((candidate) => ({
+        candidate,
+        score:
+          (candidate.category === seed.category ? 3 : 0)
+          + trigramJaccard(candidate.definition, seed.definition) * 4
+          + Array.from(candidate.keywords).filter((keyword) => seed.keywords.has(keyword)).length * 0.5
+          + (Array.from(candidate.sourceItemIds).some((sourceItemId) => seed.sourceItemIds.has(sourceItemId)) ? 0.25 : 0)
+      }))
+      .filter((entry) => entry.score >= 0.8)
+      .sort((left, right) =>
+        right.score - left.score
+        || left.candidate.name.localeCompare(right.candidate.name)
+      )[0]?.candidate.name ?? null;
     const label = dedupeAdjacentPhraseRepeats(seed.name);
     const definition = truncateReadable(dedupeAdjacentPhraseRepeats(seed.definition), 220);
     const detail = truncateReadable(dedupeAdjacentPhraseRepeats(seed.detail), 240);
@@ -1243,7 +1465,7 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     // Must use the same ID derivation as concept.id (dedupeAdjacentPhraseRepeats → slug)
     // to avoid relatedConceptId mismatches that silently break relatedPool() lookups.
     const relatedConceptIds = related.filter((candidate) => [...candidate.keywords].some((keyword) => seed.keywords.has(keyword))).slice(0, 3).map((candidate) => dedupeAdjacentPhraseRepeats(candidate.name).toLowerCase().replace(/[^a-z0-9]+/g, "-"));
-    return {
+    const concept = {
       id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
       label,
       score: Math.max(1, Math.round(seed.score)),
@@ -1260,6 +1482,21 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
       sourceItemIds: [...seed.sourceItemIds].filter(Boolean),
       relatedConceptIds
     };
+    return {
+      ...concept,
+      fieldSupport: buildConceptFieldSupport({
+        score: concept.score,
+        definition: concept.definition,
+        summary: concept.summary,
+        primer: concept.primer,
+        mnemonic: concept.mnemonic,
+        commonConfusion: concept.commonConfusion,
+        transferHook: concept.transferHook,
+        excerpt: concept.excerpt,
+        sourceItemIds: concept.sourceItemIds,
+        evidence: finalized.evidence
+      })
+    };
   });
   const validConceptsPool = concepts.filter((concept) => isValidConcept({ label: concept.label, definition: concept.definition, summary: concept.summary }));
   const validConcepts = (validConceptsPool.filter((concept) => !isBundleEchoLabel(concept.label, bundle)).length >= 2
@@ -1273,11 +1510,12 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
     .filter((block) => !existingIds.has(block.cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")))
     .sort((left, right) => right.score - left.score)
     .slice(0, MAX_CONCEPTS)
-    .map((block) => ({
-      id: block.cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      label: block.cleanTitle,
-      score: Math.max(1, Math.round(block.score)),
-      ...(() => {
+    .map((block) => {
+      const baseConcept = {
+        id: block.cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        label: block.cleanTitle,
+        score: Math.max(1, Math.round(block.score)),
+        ...(() => {
         const definition = ensureSentence(block.lead);
         const finalized = finalizeConceptFields(
           block.cleanTitle,
@@ -1303,7 +1541,23 @@ export function buildConcepts(bundle: CaptureBundle, blocks: Block[]): LearningC
       keywords: block.keywords.slice(0, 8),
       sourceItemIds: [block.sourceItemId],
       relatedConceptIds: []
-    }));
+      };
+      return {
+        ...baseConcept,
+        fieldSupport: buildConceptFieldSupport({
+          score: baseConcept.score,
+          definition: baseConcept.definition,
+          summary: baseConcept.summary,
+          primer: baseConcept.primer,
+          mnemonic: baseConcept.mnemonic,
+          commonConfusion: baseConcept.commonConfusion,
+          transferHook: baseConcept.transferHook,
+          excerpt: baseConcept.excerpt,
+          sourceItemIds: baseConcept.sourceItemIds,
+          evidence: [baseConcept.excerpt, block.summary]
+        })
+      };
+    });
   const mergedConcepts = [...validConcepts, ...supplements];
   const filteredConcepts = mergedConcepts.filter((concept) => !isBundleEchoLabel(concept.label, bundle));
   const aliasDedupedConcepts = dedupeConceptAliases(filteredConcepts.length > 0 ? filteredConcepts : mergedConcepts);
@@ -1321,6 +1575,39 @@ function hypernymOverlap(leftLabel: string, rightLabel: string): boolean {
   return left.some((candidate) => right.includes(candidate));
 }
 
+function buildRelationEvidence(left: LearningConcept, right: LearningConcept): EvidenceFragment[] {
+  const candidates = [
+    {
+      label: `${left.label} anchor`,
+      excerpt: left.excerpt || left.definition || left.summary,
+      sourceItemId: left.sourceItemIds[0]
+    },
+    {
+      label: `${right.label} anchor`,
+      excerpt: right.excerpt || right.definition || right.summary,
+      sourceItemId: right.sourceItemIds[0]
+    }
+  ];
+
+  const seen = new Set<string>();
+  return candidates
+    .filter((candidate) => Boolean(candidate.sourceItemId) && isValidEvidenceSentence(candidate.excerpt))
+    .filter((candidate) => {
+      const key = `${candidate.sourceItemId}:${normalizePhrase(candidate.excerpt)}`;
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 2)
+    .map((candidate) => ({
+      label: candidate.label,
+      excerpt: truncateReadable(candidate.excerpt, 180),
+      sourceItemId: candidate.sourceItemId as string
+    }));
+}
+
 export function buildRelations(concepts: LearningConcept[]): ConceptRelation[] {
   const relations: ConceptRelation[] = [];
   for (let i = 0; i < concepts.length; i += 1) {
@@ -1329,17 +1616,57 @@ export function buildRelations(concepts: LearningConcept[]): ConceptRelation[] {
       const right = concepts[j]!;
       const sharedKeywords = left.keywords.filter((keyword) => right.keywords.includes(keyword));
       const sharedSources = left.sourceItemIds.filter((sourceId) => right.sourceItemIds.includes(sourceId));
-      const directMention = normalizePhrase(left.definition).includes(stem(right.label)) || normalizePhrase(right.definition).includes(stem(left.label));
-      const contrast = left.commonConfusion.includes(right.label) || right.commonConfusion.includes(left.label) || antonymMatch(left.keywords, right.keywords);
-      const hierarchy = hypernymOverlap(left.label, right.label);
-      const strength = sharedKeywords.length * 0.4 + sharedSources.length * 0.6 + (directMention ? 0.6 : 0) + (contrast ? 0.35 : 0) + (hierarchy ? 0.3 : 0);
+      const directMention = (
+        mentionsConceptText(`${left.definition} ${left.summary}`, right.label)
+        || mentionsConceptText(`${right.definition} ${right.summary}`, left.label)
+      );
+      const contrast = (
+        mentionsConceptText(left.commonConfusion, right.label)
+        || mentionsConceptText(right.commonConfusion, left.label)
+        || antonymMatch(left.keywords, right.keywords)
+      );
+      const application = (
+        mentionsConceptText(left.transferHook, right.label)
+        || mentionsConceptText(right.transferHook, left.label)
+      );
+      const hierarchy = hypernymOverlap(left.label, right.label) && (directMention || sharedSources.length > 0);
+      const strength = sharedKeywords.length * 0.4
+        + sharedSources.length * 0.6
+        + (directMention ? 0.6 : 0)
+        + (contrast ? 0.35 : 0)
+        + (application ? 0.45 : 0)
+        + (hierarchy ? 0.25 : 0);
       if (strength < 0.7) continue;
-      const type: ConceptRelation["type"] = contrast ? "contrasts" : hierarchy ? "extends" : directMention || sharedSources.length > 0 ? "supports" : "applies";
-      const label = contrast ? `${left.label} stands in contrast to ${right.label}.` : hierarchy ? `${left.label} builds on the same family of ideas as ${right.label}.` : sharedKeywords.length ? `${left.label} and ${right.label} both address ${sharedKeywords.slice(0, 2).join(" and ")}.` : `${left.label} and ${right.label} are taught in the same source corridor.`;
-      relations.push({ fromId: left.id, toId: right.id, type, label, strength: Number(strength.toFixed(2)) });
+      const type: ConceptRelation["type"] = contrast
+        ? "contrasts"
+        : hierarchy
+          ? "extends"
+          : directMention || sharedSources.length > 0
+            ? "supports"
+            : application || sharedKeywords.length > 1
+              ? "applies"
+              : "supports";
+      const label = contrast
+        ? `${left.label} stands in contrast to ${right.label}.`
+        : hierarchy
+          ? `${left.label} and ${right.label} sit in the same conceptual family.`
+          : type === "applies"
+            ? `${left.label} and ${right.label} connect when the source moves from explanation into use.`
+            : sharedKeywords.length
+              ? `${left.label} and ${right.label} both address ${sharedKeywords.slice(0, 2).join(" and ")}.`
+              : `${left.label} and ${right.label} are taught in the same source corridor.`;
+      relations.push({
+        fromId: left.id,
+        toId: right.id,
+        type,
+        label,
+        strength: Number(strength.toFixed(2)),
+        evidence: buildRelationEvidence(left, right)
+      });
     }
   }
-  return relations.sort((left, right) => right.strength - left.strength).slice(0, 24);
+  const relationLimit = Math.max(24, concepts.length * 3);
+  return relations.sort((left, right) => right.strength - left.strength).slice(0, relationLimit);
 }
 
 export function relatedPhilosopher(text: string): string | null {
