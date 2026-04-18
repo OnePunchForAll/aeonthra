@@ -1,5 +1,7 @@
 # offline-export-determinism
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 AEONTHRA is a fully offline, client-side application. Every output it produces
 must be deterministic: the same CaptureBundle input always produces the same
 LearningBundle output.

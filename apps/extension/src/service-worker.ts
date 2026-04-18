@@ -39,6 +39,7 @@ import {
   writeRuntimeState,
   writeSettings
 } from "./core/storage";
+import { CAPTURE_AUTO_START_NODE_ID } from "./capture-autostart";
 import {
   parseCourseContextFromUrl,
   validateAeonthraUrl
@@ -49,6 +50,7 @@ import type {
   CaptureItemVerdict,
   CaptureStats,
   CaptureWarning,
+  CourseDetectionSource,
   CourseContext,
   ExtensionBuildIdentity,
   ExtensionStatusPayload,
@@ -65,12 +67,45 @@ type CanvasTabContextResponse = {
   message?: string;
 };
 
+type DetectedCourseContext = {
+  course: CourseContext | null;
+  source: CourseDetectionSource;
+};
+
+type CanvasBootstrapInvocation<T> = {
+  response: T | null;
+  reason: string | null;
+};
+
+type MissingReceiverRecoveryTrace = {
+  bootstrapBeforeInjection: string[];
+  bootstrapAfterInjection: string[];
+  injectionAttempted: boolean;
+  injectionRecovered: boolean;
+  injectionError: string | null;
+  autoStartSeeded: boolean;
+  autoStartSeedError: string | null;
+  autoStartSignal: string | null;
+};
+
+type MissingReceiverStrategy = "recover" | "wait-for-receiver";
+
+type CaptureStartSignal =
+  | { kind: "started"; detail: string }
+  | { kind: "error"; detail: string };
+
 type CaptureStartPayload = {
   jobId: string;
   mode: CaptureMode;
   course: CourseContext;
   settings: ReturnType<typeof readSettings> extends Promise<infer T> ? T : never;
 };
+
+type CanvasBootstrapRequest =
+  | { type: "aeon:get-course-context" }
+  | { type: "aeon:start-course-capture"; payload: CaptureStartPayload }
+  | { type: "aeon:set-capture-control"; control: "pause" | "resume" | "cancel" }
+  | { type: "aeon:overlay-state"; runtime: RuntimeState };
 
 type ContentProgressMessage =
   | { type: "aeon:job-discovered"; jobId: string; counts: RuntimeState["discovered"]; queue: QueueItem[]; course: CourseContext }
@@ -84,6 +119,19 @@ type ContentProgressMessage =
 const PARTIAL_BUNDLE_KEY = "aeonthra:partial-bundle";
 const PARTIAL_WARNINGS_KEY = "aeonthra:partial-warnings";
 const PARTIAL_RAW_HTML_KEY = "aeonthra:partial-raw-html";
+const COMPLETE_CAPTURE_MODE: CaptureMode = "complete";
+const WORKER_CODE_SIGNATURE = "sw-recovery-trace-v5";
+const CAPTURE_START_SIGNAL_TIMEOUT_MS = 3000;
+const RETRYABLE_CANVAS_MESSAGE_ERRORS = [
+  "Receiving end does not exist",
+  "Could not establish connection",
+  "message port closed before a response was received",
+  "The message port closed before a response was received"
+] as const;
+const MISSING_CANVAS_RECEIVER_ERRORS = [
+  "Receiving end does not exist",
+  "Could not establish connection"
+] as const;
 
 function storageLocalGet(keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -221,6 +269,51 @@ function tabsSendMessage<T>(tabId: number, payload: Record<string, unknown>): Pr
   });
 }
 
+function scriptingExecuteScript(
+  target: chrome.scripting.InjectionTarget,
+  files: string[]
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.scripting.executeScript({ target, files }, () => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function scriptingExecuteFunction<TArgs extends unknown[], TResult>(
+  target: chrome.scripting.InjectionTarget,
+  func: (...args: TArgs) => TResult,
+  args: TArgs,
+  world: chrome.scripting.ExecutionWorld = "ISOLATED"
+): Promise<TResult | undefined> {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.scripting.executeScript(
+        { target, func, args, world } as chrome.scripting.ScriptInjection<TArgs, TResult>,
+        (results) => {
+          const error = chrome.runtime.lastError;
+          if (error) {
+            reject(new Error(error.message));
+            return;
+          }
+          resolve(results?.[0]?.result as TResult | undefined);
+        }
+      );
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function windowsUpdate(windowId: number, updateInfo: chrome.windows.UpdateInfo): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
@@ -311,6 +404,11 @@ async function clearPartialState(): Promise<void> {
 }
 
 let buildIdentityPromise: Promise<ExtensionBuildIdentity | null> | null = null;
+const captureStartSignalWaiters = new Map<string, {
+  resolve: (signal: CaptureStartSignal) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}>();
+const bufferedCaptureStartSignals = new Map<string, CaptureStartSignal>();
 
 async function readBuildIdentity(): Promise<ExtensionBuildIdentity | null> {
   if (!buildIdentityPromise) {
@@ -394,6 +492,20 @@ let jobCounter = 0;
 
 function randomJobId(): string {
   return `job-${Date.now().toString(36)}-${(++jobCounter).toString(36)}`;
+}
+
+function waitMs(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+function isRetryableCanvasMessageError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return RETRYABLE_CANVAS_MESSAGE_ERRORS.some((fragment) => message.includes(fragment));
+}
+
+function isMissingCanvasReceiverError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return MISSING_CANVAS_RECEIVER_ERRORS.some((fragment) => message.includes(fragment));
 }
 
 function describeQueueableCanvasBundleIssue(
@@ -523,42 +635,390 @@ async function sendCanvasMessage<T>(tabId: number, payload: Record<string, unkno
   return tabsSendMessage<T>(tabId, payload);
 }
 
-async function detectCourseContext(tab: chrome.tabs.Tab | null): Promise<CourseContext | null> {
+function toCanvasBootstrapRequest(payload: Record<string, unknown>): CanvasBootstrapRequest | null {
+  if (payload.type === "aeon:get-course-context") {
+    return { type: "aeon:get-course-context" };
+  }
+
+  if (payload.type === "aeon:start-course-capture" && payload.payload) {
+    return {
+      type: "aeon:start-course-capture",
+      payload: payload.payload as CaptureStartPayload
+    };
+  }
+
+  if (
+    payload.type === "aeon:set-capture-control"
+    && (payload.control === "pause" || payload.control === "resume" || payload.control === "cancel")
+  ) {
+    return {
+      type: "aeon:set-capture-control",
+      control: payload.control
+    };
+  }
+
+  if (payload.type === "aeon:overlay-state" && payload.runtime) {
+    return {
+      type: "aeon:overlay-state",
+      runtime: payload.runtime as RuntimeState
+    };
+  }
+
+  return null;
+}
+
+function pushUniqueDiagnostic(list: string[], detail: string | null | undefined): void {
+  const normalized = typeof detail === "string" ? detail.trim() : "";
+  if (!normalized || list.includes(normalized)) {
+    return;
+  }
+  list.push(normalized);
+}
+
+function formatMissingReceiverRecoveryError(error: unknown, trace: MissingReceiverRecoveryTrace): Error {
+  const baseMessage = error instanceof Error
+    ? error.message
+    : "Could not establish connection. Receiving end does not exist.";
+  const details: string[] = [];
+
+  if (trace.bootstrapBeforeInjection.length > 0) {
+    details.push(`bootstrap before injection: ${trace.bootstrapBeforeInjection.join(" | ")}`);
+  }
+
+  if (trace.injectionAttempted) {
+    details.push(
+      trace.injectionRecovered
+        ? "content-canvas.js injection: succeeded"
+        : `content-canvas.js injection: failed${trace.injectionError ? ` (${trace.injectionError})` : ""}`
+    );
+  } else {
+    details.push("content-canvas.js injection: not attempted");
+  }
+
+  if (trace.bootstrapAfterInjection.length > 0) {
+    details.push(`bootstrap after injection: ${trace.bootstrapAfterInjection.join(" | ")}`);
+  }
+
+  if (trace.autoStartSeeded || trace.autoStartSeedError) {
+    details.push(
+      trace.autoStartSeeded
+        ? "content-canvas auto-start seed: prepared"
+        : `content-canvas auto-start seed: failed${trace.autoStartSeedError ? ` (${trace.autoStartSeedError})` : ""}`
+    );
+  }
+
+  if (trace.autoStartSignal) {
+    details.push(`content-canvas auto-start signal: ${trace.autoStartSignal}`);
+  }
+
+  return new Error(`${baseMessage} Recovery trace: ${details.join("; ")}.`);
+}
+
+function isCaptureStartBootstrapRequest(
+  request: CanvasBootstrapRequest | null
+): request is Extract<CanvasBootstrapRequest, { type: "aeon:start-course-capture" }> {
+  return request?.type === "aeon:start-course-capture";
+}
+
+function isStartCaptureAlreadyRunningResponse(response: unknown): boolean {
+  if (!response || typeof response !== "object") {
+    return false;
+  }
+  const typed = response as { ok?: boolean; message?: unknown };
+  return typed.ok === false
+    && typeof typed.message === "string"
+    && /already running/i.test(typed.message);
+}
+
+function resolveCaptureStartSignal(jobId: string, signal: CaptureStartSignal): void {
+  const waiter = captureStartSignalWaiters.get(jobId);
+  if (!waiter) {
+    bufferedCaptureStartSignals.set(jobId, signal);
+    return;
+  }
+  captureStartSignalWaiters.delete(jobId);
+  clearTimeout(waiter.timeoutId);
+  waiter.resolve(signal);
+}
+
+function waitForCaptureStartSignal(jobId: string, timeoutMs = CAPTURE_START_SIGNAL_TIMEOUT_MS): Promise<CaptureStartSignal> {
+  const bufferedSignal = bufferedCaptureStartSignals.get(jobId);
+  if (bufferedSignal) {
+    bufferedCaptureStartSignals.delete(jobId);
+    return Promise.resolve(bufferedSignal);
+  }
+
+  const existing = captureStartSignalWaiters.get(jobId);
+  if (existing) {
+    clearTimeout(existing.timeoutId);
+    captureStartSignalWaiters.delete(jobId);
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      captureStartSignalWaiters.delete(jobId);
+      reject(new Error(`capture start handshake timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    captureStartSignalWaiters.set(jobId, { resolve, timeoutId });
+  });
+}
+
+async function seedCaptureAutoStart(tabId: number, payload: CaptureStartPayload): Promise<void> {
+  await scriptingExecuteFunction(
+    { tabId },
+    (nodeId: string, serializedPayload: string) => {
+      document.getElementById(nodeId)?.remove();
+      const node = document.createElement("script");
+      node.id = nodeId;
+      node.type = "application/json";
+      node.textContent = serializedPayload;
+      (document.documentElement ?? document.body ?? document.head)?.appendChild(node);
+      return true;
+    },
+    [CAPTURE_AUTO_START_NODE_ID, JSON.stringify(payload)],
+    "MAIN"
+  );
+}
+
+async function invokeCanvasBootstrap<T>(tabId: number, request: CanvasBootstrapRequest): Promise<CanvasBootstrapInvocation<T>> {
+  try {
+    const result = await scriptingExecuteFunction(
+      { tabId },
+      (bootstrapRequest: CanvasBootstrapRequest) => {
+        const bootstrap = (
+          window as Window & {
+            __aeonthraCaptureBootstrap?: {
+              getCourseContext: () => unknown;
+              startCapture: (payload: unknown) => unknown;
+              setCaptureControl: (control: unknown) => unknown;
+              renderOverlay: (runtime: unknown) => unknown;
+            };
+          }
+        ).__aeonthraCaptureBootstrap;
+
+        if (!bootstrap) {
+          return null;
+        }
+
+        if (bootstrapRequest.type === "aeon:get-course-context") {
+          return bootstrap.getCourseContext();
+        }
+        if (bootstrapRequest.type === "aeon:start-course-capture") {
+          return bootstrap.startCapture(bootstrapRequest.payload);
+        }
+        if (bootstrapRequest.type === "aeon:set-capture-control") {
+          return bootstrap.setCaptureControl(bootstrapRequest.control);
+        }
+        if (bootstrapRequest.type === "aeon:overlay-state") {
+          return bootstrap.renderOverlay(bootstrapRequest.runtime);
+        }
+
+        return null;
+      },
+      [request],
+      "ISOLATED"
+    );
+
+    if (result === null) {
+      return {
+        response: null,
+        reason: "bootstrap API unavailable in isolated extension context"
+      };
+    }
+
+    if (typeof result === "undefined") {
+      return {
+        response: null,
+        reason: "bootstrap executeScript returned no result"
+      };
+    }
+
+    return {
+      response: result as T,
+      reason: null
+    };
+  } catch (error) {
+    return {
+      response: null,
+      reason: error instanceof Error ? `bootstrap executeScript failed: ${error.message}` : "bootstrap executeScript failed"
+    };
+  }
+}
+
+async function sendCanvasMessageWithRetry<T>(
+  tabId: number,
+  payload: Record<string, unknown>,
+  options: { attempts?: number; retryDelayMs?: number; missingReceiverStrategy?: MissingReceiverStrategy } = {}
+): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? 4);
+  const retryDelayMs = Math.max(50, options.retryDelayMs ?? 250);
+  const missingReceiverStrategy = options.missingReceiverStrategy ?? "recover";
+  let lastError: unknown = null;
+  let injectedCanvasScript = false;
+  const bootstrapRequest = toCanvasBootstrapRequest(payload);
+  const recoveryTrace: MissingReceiverRecoveryTrace = {
+    bootstrapBeforeInjection: [],
+    bootstrapAfterInjection: [],
+    injectionAttempted: false,
+    injectionRecovered: false,
+    injectionError: null,
+    autoStartSeeded: false,
+    autoStartSeedError: null,
+    autoStartSignal: null
+  };
+  const startCaptureRequest = isCaptureStartBootstrapRequest(bootstrapRequest) ? bootstrapRequest : null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await sendCanvasMessage<T>(tabId, payload);
+    } catch (error) {
+      lastError = error;
+      if (isMissingCanvasReceiverError(error)) {
+        if (missingReceiverStrategy === "wait-for-receiver") {
+          if (attempt === attempts - 1) {
+            throw new Error("Fresh background capture tab never exposed a live Canvas receiver after page load.");
+          }
+          await ensureTabLoaded(tabId, 8000);
+          await waitMs(retryDelayMs * (attempt + 1));
+          continue;
+        }
+        if (bootstrapRequest) {
+          const directResponse = await invokeCanvasBootstrap<T>(tabId, bootstrapRequest);
+          if (directResponse.response !== null) {
+            return directResponse.response;
+          }
+          pushUniqueDiagnostic(recoveryTrace.bootstrapBeforeInjection, directResponse.reason);
+        }
+        if (!injectedCanvasScript) {
+          injectedCanvasScript = true;
+          recoveryTrace.injectionAttempted = true;
+          await ensureTabLoaded(tabId, 8000);
+          if (startCaptureRequest) {
+            try {
+              await seedCaptureAutoStart(tabId, startCaptureRequest.payload);
+              recoveryTrace.autoStartSeeded = true;
+            } catch (autoStartSeedError) {
+              recoveryTrace.autoStartSeeded = false;
+              recoveryTrace.autoStartSeedError = autoStartSeedError instanceof Error
+                ? autoStartSeedError.message
+                : String(autoStartSeedError ?? "unknown auto-start seed error");
+            }
+          }
+          try {
+            await scriptingExecuteScript({ tabId }, ["content-canvas.js"]);
+            recoveryTrace.injectionRecovered = true;
+          } catch (injectionError) {
+            recoveryTrace.injectionRecovered = false;
+            recoveryTrace.injectionError = injectionError instanceof Error
+              ? injectionError.message
+              : String(injectionError ?? "unknown injection error");
+          }
+        }
+        let bootstrapReportedRunning = false;
+        if (bootstrapRequest) {
+          const directResponse = await invokeCanvasBootstrap<T>(tabId, bootstrapRequest);
+          if (directResponse.response !== null) {
+            if (startCaptureRequest && isStartCaptureAlreadyRunningResponse(directResponse.response)) {
+              bootstrapReportedRunning = true;
+            } else {
+              return directResponse.response;
+            }
+          }
+          pushUniqueDiagnostic(
+            recoveryTrace.bootstrapAfterInjection,
+            bootstrapReportedRunning ? "bootstrap reported capture already running" : directResponse.reason
+          );
+        }
+        if (startCaptureRequest && recoveryTrace.autoStartSeeded && recoveryTrace.injectionRecovered) {
+          try {
+            const signal = await waitForCaptureStartSignal(startCaptureRequest.payload.jobId);
+            recoveryTrace.autoStartSignal = signal.detail;
+            if (signal.kind === "error") {
+              throw new Error(signal.detail);
+            }
+            return { ok: true } as T;
+          } catch (autoStartError) {
+            recoveryTrace.autoStartSignal = autoStartError instanceof Error
+              ? autoStartError.message
+              : String(autoStartError ?? "unknown auto-start handshake failure");
+          }
+        }
+        if (attempt === attempts - 1) {
+          throw formatMissingReceiverRecoveryError(error, recoveryTrace);
+        }
+      }
+      if (!isRetryableCanvasMessageError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await ensureTabLoaded(tabId, 8000);
+      await waitMs(retryDelayMs * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Canvas capture tab did not respond to the extension message.");
+}
+
+async function detectCourseContext(tab: chrome.tabs.Tab | null): Promise<DetectedCourseContext> {
   if (!tab?.id) {
-    return null;
+    return { course: null, source: "none" };
   }
 
   const candidate = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
     requireKnownCanvasHost: false
   });
   if (!candidate) {
-    return null;
+    return { course: null, source: "none" };
   }
 
   const fallback = parseCourseContextFromUrl(tab.url, tab.title ?? "Canvas Course", {
     requireKnownCanvasHost: true
   });
   try {
-    const response = await sendCanvasMessage<CanvasTabContextResponse>(tab.id, { type: "aeon:get-course-context" });
+    const response = await sendCanvasMessageWithRetry<CanvasTabContextResponse>(
+      tab.id,
+      { type: "aeon:get-course-context" },
+      { attempts: 2, retryDelayMs: 150 }
+    );
     if (response?.ok && response.course) {
       return {
-        ...response.course,
-        sourceTabId: tab.id
+        course: {
+          ...response.course,
+          sourceTabId: tab.id
+        },
+        source: "live-content-script"
       };
     }
   } catch {
-    return fallback ? { ...fallback, sourceTabId: tab.id } : null;
+    return fallback
+      ? {
+          course: { ...fallback, sourceTabId: tab.id },
+          source: "url-fallback"
+        }
+      : { course: null, source: "none" };
   }
 
-  return fallback ? { ...fallback, sourceTabId: tab.id } : null;
+  return fallback
+    ? {
+        course: { ...fallback, sourceTabId: tab.id },
+        source: "url-fallback"
+      }
+    : { course: null, source: "none" };
 }
 
 async function broadcastOverlay(state: RuntimeState): Promise<void> {
-  const targets = [state.sourceTabId, state.captureTabId].filter((value): value is number => typeof value === "number");
+  const targets = [...new Set(
+    [state.sourceTabId, state.captureTabId].filter((value): value is number => typeof value === "number")
+  )];
   await Promise.all(
     targets.map(async (tabId) => {
       try {
-        await tabsSendMessage(tabId, { type: "aeon:overlay-state", runtime: state });
+        await sendCanvasMessageWithRetry<{ ok: boolean }>(
+          tabId,
+          { type: "aeon:overlay-state", runtime: state },
+          { attempts: 2, retryDelayMs: 100 }
+        );
       } catch {
         return undefined;
       }
@@ -579,7 +1039,7 @@ function runtimeIsBusy(runtime: RuntimeState): boolean {
 
 async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
   const tab = await activeTab();
-  const [course, runtime, settings, history, latestId, storage, build, forensics] = await Promise.all([
+  const [courseDetection, runtime, settings, history, latestId, storage, build, forensics] = await Promise.all([
     detectCourseContext(tab),
     readRuntimeState(),
     readSettings(),
@@ -589,11 +1049,14 @@ async function buildStatusPayload(): Promise<ExtensionStatusPayload> {
     readBuildIdentity(),
     readCaptureForensics()
   ]);
+  const course = courseDetection.course;
   const session = await readSessionSummary(course ?? runtime.course ?? "").catch(() => null);
 
   return {
     ok: true,
     activeCourse: course,
+    activeCourseSource: courseDetection.source,
+    workerCodeSignature: WORKER_CODE_SIGNATURE,
     runtime,
     settings,
     history,
@@ -674,6 +1137,24 @@ async function openWorkspaceOnly(): Promise<{ ok: true } | { ok: false; message:
   return { ok: true };
 }
 
+async function focusCaptureTab(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const runtime = await readRuntimeState();
+  if (!runtime.captureTabId) {
+    return { ok: false, message: "No active capture tab is available." };
+  }
+
+  const tab = await tabsGet(runtime.captureTabId);
+  if (!tab?.id) {
+    return { ok: false, message: "The capture tab is no longer available." };
+  }
+
+  if (typeof tab.windowId === "number") {
+    await windowsUpdate(tab.windowId, { focused: true });
+  }
+  await tabsUpdate(tab.id, { active: true });
+  return { ok: true };
+}
+
 function buildStoredRecordFromSession(session: SessionCaptureState): StoredCaptureRecord {
   const durationMs = Math.max(0, Date.parse(session.lastSeenAt) - Date.parse(session.firstSeenAt));
   const title = `${session.course.courseName} Visited Session`;
@@ -749,7 +1230,7 @@ async function resolveSessionTarget(message: unknown): Promise<Pick<CourseContex
   }
 
   const tab = await activeTab();
-  const course = await detectCourseContext(tab);
+  const course = (await detectCourseContext(tab)).course;
   if (!course) {
     return null;
   }
@@ -933,26 +1414,35 @@ async function finalizeCapture(jobId: string, mode: CaptureMode, course: CourseC
   }
 }
 
-async function startCapture(mode: CaptureMode): Promise<{ ok: true } | { ok: false; message: string }> {
+async function startCapture(): Promise<{ ok: true } | { ok: false; message: string }> {
   const runtime = await readRuntimeState();
   if (runtime.status === "discovering" || runtime.status === "capturing" || runtime.status === "paused" || runtime.status === "starting") {
     return { ok: false, message: "A capture is already running." };
   }
 
   const tab = await activeTab();
-  const course = await detectCourseContext(tab);
+  const courseDetection = await detectCourseContext(tab);
+  const course = courseDetection.course;
   if (!course) {
     return { ok: false, message: "Open a Canvas course page first so AEONTHRA knows what to capture." };
+  }
+  if (!tab?.id || course.sourceTabId !== tab.id) {
+    return { ok: false, message: "Capture must start from an active Canvas course tab." };
   }
 
   const settings = await readSettings();
   const jobId = randomJobId();
-  const captureTab = await tabsCreate({ url: course.modulesUrl, active: false });
-  if (!captureTab.id) {
-    return { ok: false, message: "Chrome could not create the background capture tab." };
+  const mode = COMPLETE_CAPTURE_MODE;
+  let captureTabId = tab.id;
+  const freshBackgroundTab = courseDetection.source !== "live-content-script";
+  if (freshBackgroundTab) {
+    const captureTab = await tabsCreate({ url: course.modulesUrl, active: false });
+    if (!captureTab.id) {
+      return { ok: false, message: "Chrome could not create the background capture tab." };
+    }
+    captureTabId = captureTab.id;
   }
-
-  await ensureTabLoaded(captureTab.id);
+  await ensureTabLoaded(captureTabId);
   const bundle = {
     ...createEmptyBundle(course.courseName || "AEONTHRA Capture"),
     source: "extension-capture" as const,
@@ -982,7 +1472,7 @@ async function startCapture(mode: CaptureMode): Promise<{ ok: true } | { ok: fal
       warningCount: 0,
       startedAt: new Date().toISOString(),
       finishedAt: null,
-      captureTabId: captureTab.id,
+      captureTabId,
       sourceTabId: course.sourceTabId ?? null,
       captureId: null,
       errorMessage: null
@@ -1000,10 +1490,18 @@ async function startCapture(mode: CaptureMode): Promise<{ ok: true } | { ok: fal
   };
 
   try {
-    const response = await sendCanvasMessage<{ ok: boolean; message?: string }>(captureTab.id, {
-      type: "aeon:start-course-capture",
-      payload
-    });
+    const response = await sendCanvasMessageWithRetry<{ ok: boolean; message?: string }>(
+      captureTabId,
+      {
+        type: "aeon:start-course-capture",
+        payload
+      },
+      {
+        attempts: freshBackgroundTab ? 8 : 4,
+        retryDelayMs: freshBackgroundTab ? 350 : 250,
+        missingReceiverStrategy: freshBackgroundTab ? "wait-for-receiver" : "recover"
+      }
+    );
     if (!response?.ok) {
       throw new Error(response?.message ?? "Capture tab did not accept the job.");
     }
@@ -1026,10 +1524,14 @@ async function setCaptureControl(action: "pause" | "resume" | "cancel"): Promise
   }
 
   try {
-    const response = await sendCanvasMessage<{ ok: boolean; message?: string }>(runtime.captureTabId, {
-      type: "aeon:set-capture-control",
-      control: action
-    });
+    const response = await sendCanvasMessageWithRetry<{ ok: boolean; message?: string }>(
+      runtime.captureTabId,
+      {
+        type: "aeon:set-capture-control",
+        control: action
+      },
+      { attempts: 3, retryDelayMs: 200 }
+    );
     if (!response?.ok) {
       return { ok: false, message: response?.message ?? "Unable to update capture control." };
     }
@@ -1100,6 +1602,7 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<R
   }
 
   if (message.type === "aeon:job-discovered") {
+    resolveCaptureStartSignal(message.jobId, { kind: "started", detail: "received aeon:job-discovered" });
     await updateRuntime({
       status: "discovering",
       phaseLabel: "Discovery Complete",
@@ -1120,6 +1623,7 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<R
   }
 
   if (message.type === "aeon:item-captured") {
+    resolveCaptureStartSignal(message.jobId, { kind: "started", detail: "received aeon:item-captured" });
     const partial = await getPartialBundle();
     const merged = mergeCaptureBundle(partial, message.item, message.resources);
     await writePartialBundle(merged);
@@ -1152,6 +1656,7 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<R
   }
 
   if (message.type === "aeon:job-progress") {
+    resolveCaptureStartSignal(message.jobId, { kind: "started", detail: "received aeon:job-progress" });
     await updateRuntime({
       status: runtime.status === "paused" ? "paused" : "capturing",
       phaseLabel: message.phaseLabel,
@@ -1186,11 +1691,13 @@ async function handleContentProgress(message: ContentProgressMessage): Promise<R
   }
 
   if (message.type === "aeon:job-complete") {
+    resolveCaptureStartSignal(message.jobId, { kind: "started", detail: "received aeon:job-complete" });
     await finalizeCapture(message.jobId, message.mode, message.course, message.stats, Boolean(message.cancelled));
     return;
   }
 
   if (message.type === "aeon:job-error") {
+    resolveCaptureStartSignal(message.jobId, { kind: "error", detail: message.errorMessage });
     const partial = await getPartialBundle();
     if (runtime.course && partial.items.length > 0) {
       await finalizeCapture(
@@ -1288,6 +1795,8 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
     return {
       ok: true as const,
       activeCourse: null,
+      activeCourseSource: "none" as const,
+      workerCodeSignature: WORKER_CODE_SIGNATURE,
       runtime,
       settings,
       history,
@@ -1303,10 +1812,16 @@ async function getExtensionState(): Promise<ExtensionStatusPayload & {
     requireKnownCanvasHost: true
   });
   const activeCourse = status.activeCourse ?? fallbackCourse;
+  const detectionSource: CourseDetectionSource = status.activeCourseSource === "live-content-script"
+    ? "live-content-script"
+    : activeCourse
+      ? "url-fallback"
+      : "none";
 
   return {
     ...status,
     activeCourse,
+    activeCourseSource: detectionSource,
     state: activeCourse ? "course-detected" : "idle",
     isCanvas: Boolean(activeCourse),
     courseId: activeCourse?.courseId ?? null,
@@ -1361,7 +1876,7 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
   }
 
   if (type === "START_CAPTURE" || type === "aeon:start-capture") {
-    const response = await startCapture((message as { mode?: CaptureMode }).mode ?? "learning");
+    const response = await startCapture();
     return {
       ...response,
       state: response.ok ? "capturing" : "idle"
@@ -1414,6 +1929,10 @@ async function handleMessage(message: unknown, sender: chrome.runtime.MessageSen
 
   if (type === "aeon:clear-session") {
     return clearSessionCapture(await resolveSessionTarget(message));
+  }
+
+  if (type === "aeon:focus-capture-tab") {
+    return focusCaptureTab();
   }
 
   if (type === "HANDOFF" || type === "aeon:open-classroom") {

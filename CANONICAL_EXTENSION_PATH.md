@@ -25,8 +25,8 @@ npm run build:extension
 - `apps/extension/dist/build-info.json`
 - Current verified marker after this pass:
   - `version`: `1.0.0`
-  - `builtAt`: `2026-04-17T08:24:40.799Z`
-  - `sourceHash`: `86681f705eeda2e233d74fd990a68548df4aaedf25e81da6542bb1245e9590bf`
+  - `builtAt`: `2026-04-18T08:47:26.683Z`
+  - `sourceHash`: `4f9bc9b35028f9e61fc2a619ae997ced1b5d05bc3a1ca5c58b9d0d2924ad2e1f`
   - `unpackedPath`: `apps/extension/dist`
   - `markerPath`: `build-info.json`
 
@@ -37,6 +37,13 @@ npm run build:extension
 3. If the card is missing or says `build-info.json` could not be read, Chrome is not using the current canonical `dist` output.
 4. If the `builtAt` timestamp does not change after `npm run build:extension` and a Chrome reload, Chrome is still loading a stale unpacked folder.
 5. If Chrome was pointed at `apps/extension` instead of `apps/extension/dist`, the manifest exists but the referenced built files do not, so that load target is wrong.
+6. If the popup `START DIAGNOSTICS` box shows `worker-sig missing` or says the expected worker signature is not `sw-recovery-trace-v5`, the popup is newer than the live service worker. Use `RESTART EXTENSION RUNTIME` in the popup before drawing any capture conclusions.
+
+## Current capture-start fallback truth
+
+- If `START DIAGNOSTICS` reports `detect live-content-script`, capture starts in the current Canvas tab.
+- If `START DIAGNOSTICS` reports `detect url-fallback`, the worker now falls back to the older known-good behavior and opens a fresh background `modules` tab, then waits for the declarative Canvas content script to attach on that navigation before capture starts.
+- The worker keeps the DOM-seeded auto-start path as a lower-level recovery seam only when a same-tab receiver is still missing after verified injection.
 
 ## Why `apps/extension` is not the load target
 

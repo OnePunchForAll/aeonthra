@@ -8,7 +8,7 @@ Build OMEGA FORGE as a deterministic study system:
 - `apps/extension` is the SENTINEL capture extension
 - `apps/web` is the ATLAS static learning app
 - `packages/schema` defines the FOUNDRY JSON contracts and bridge messages
-- `packages/content-engine` contains the deterministic generation pipeline
+- `packages/content-engine-v2` is the canonical production engine implementation consumed as `@learning/content-engine`
 
 ## Operating rules
 

@@ -70,6 +70,8 @@ export type ShellAssignment = {
   sub: string;          // subtitle / topic
   type: string;         // emoji type icon
   due: number;          // days until due (0 = today, negative = overdue)
+  dueLabel: string;
+  dueState: "unknown" | "upcoming" | "today" | "overdue";
   pts: number;          // point value
   con: string[];        // required concept IDs
   tip: string;
@@ -173,6 +175,7 @@ export type ShellFocusTheme = {
   score: number;
   summary: string;
   verbs: string[];
+  conceptIds?: string[];
   evidence: string[];
 };
 
@@ -302,6 +305,58 @@ function normalizeComparisonText(text: string | null | undefined): string {
     .trim();
 }
 
+function buildByIdMap<T extends { id: string }>(items: T[]): Map<string, T> {
+  return new Map(items.map((item) => [item.id, item] as const));
+}
+
+function buildRelatedConceptIdsByConceptId(relations: ConceptRelation[]): Map<string, string[]> {
+  const relatedIdsByConceptId = new Map<string, Set<string>>();
+  for (const relation of relations) {
+    const fromIds = relatedIdsByConceptId.get(relation.fromId) ?? new Set<string>();
+    fromIds.add(relation.toId);
+    relatedIdsByConceptId.set(relation.fromId, fromIds);
+
+    const toIds = relatedIdsByConceptId.get(relation.toId) ?? new Set<string>();
+    toIds.add(relation.fromId);
+    relatedIdsByConceptId.set(relation.toId, toIds);
+  }
+
+  return new Map(
+    [...relatedIdsByConceptId.entries()].map(([conceptId, ids]) => [conceptId, [...ids]] as const)
+  );
+}
+
+function buildContrastRelationByConceptId(relations: ConceptRelation[]): Map<string, ConceptRelation> {
+  const contrastByConceptId = new Map<string, ConceptRelation>();
+  for (const relation of relations) {
+    if (relation.type !== "contrasts") {
+      continue;
+    }
+    if (!contrastByConceptId.has(relation.fromId)) {
+      contrastByConceptId.set(relation.fromId, relation);
+    }
+    if (!contrastByConceptId.has(relation.toId)) {
+      contrastByConceptId.set(relation.toId, relation);
+    }
+  }
+  return contrastByConceptId;
+}
+
+function buildAssignmentIdsByConceptId(tasks: CourseTask[]): Map<string, string[]> {
+  const assignmentIdsByConceptId = new Map<string, Set<string>>();
+  for (const task of tasks) {
+    for (const conceptId of task.conceptIds) {
+      const assignmentIds = assignmentIdsByConceptId.get(conceptId) ?? new Set<string>();
+      assignmentIds.add(task.id);
+      assignmentIdsByConceptId.set(conceptId, assignmentIds);
+    }
+  }
+
+  return new Map(
+    [...assignmentIdsByConceptId.entries()].map(([conceptId, ids]) => [conceptId, [...ids]] as const)
+  );
+}
+
 function comparisonTokens(text: string | null | undefined): string[] {
   return Array.from(new Set(
     normalizeComparisonText(text)
@@ -357,13 +412,31 @@ function isDistinctFrom(reference: string, candidate: string | null | undefined)
 }
 
 function conceptCoreText(concept: LearningConcept): string {
-  return normalizeShellText(concept.definition || concept.summary || concept.excerpt || concept.label);
+  const definitionSupport = concept.fieldSupport?.definition;
+  const summarySupport = concept.fieldSupport?.summary;
+  if ((definitionSupport?.evidence.length ?? 0) > 0) {
+    return normalizeShellText(concept.definition);
+  }
+  if ((summarySupport?.evidence.length ?? 0) > 0) {
+    return normalizeShellText(concept.summary);
+  }
+  return "";
 }
 
 function conceptDepthText(concept: LearningConcept): string {
   const core = conceptCoreText(concept);
+  if (!core) {
+    return "";
+  }
   const candidates = [concept.primer, concept.summary, concept.excerpt, concept.transferHook];
   for (const candidate of candidates) {
+    const fieldId =
+      candidate === concept.primer ? "primer" :
+      candidate === concept.summary ? "summary" :
+      candidate === concept.transferHook ? "transferHook" :
+      "summary";
+    const support = concept.fieldSupport?.[fieldId];
+    if ((support?.evidence.length ?? 0) === 0) continue;
     if (!isRenderableConceptText(candidate)) continue;
     if (isNegationOnlyText(candidate)) continue;
     if (!isCompleteThought(candidate)) continue;
@@ -381,19 +454,20 @@ function isNegationOnlyText(text: string | null | undefined): boolean {
 
 function conceptDistinctionText(
   concept: LearningConcept,
-  allConcepts: LearningConcept[],
-  relations: ConceptRelation[]
+  allConceptsById: Map<string, LearningConcept>,
+  contrastByConceptId: Map<string, ConceptRelation>
 ): string {
   const core = conceptCoreText(concept);
+  if (!core) {
+    return "";
+  }
   const depth = conceptDepthText(concept);
-  const contrast = relations.find((relation) =>
-    relation.type === "contrasts" && (relation.fromId === concept.id || relation.toId === concept.id)
-  );
+  const contrast = contrastByConceptId.get(concept.id) ?? null;
   const otherConceptId = contrast
     ? (contrast.fromId === concept.id ? contrast.toId : contrast.fromId)
     : null;
   const otherConcept = otherConceptId
-    ? allConcepts.find((entry) => entry.id === otherConceptId)
+    ? allConceptsById.get(otherConceptId) ?? null
     : null;
   const relationDistinction = contrast && otherConcept
     ? `${concept.label} differs from ${otherConcept.label}: ${normalizeShellText(contrast.label)}.`
@@ -401,6 +475,11 @@ function conceptDistinctionText(
   // Prefer relation-based distinction over commonConfusion (which can be negation-only scaffolding)
   const candidates = [relationDistinction, concept.commonConfusion, concept.summary, concept.excerpt, concept.transferHook];
   for (const candidate of candidates) {
+    const support =
+      candidate === concept.commonConfusion ? concept.fieldSupport?.commonConfusion :
+      candidate === concept.transferHook ? concept.fieldSupport?.transferHook :
+      concept.fieldSupport?.summary;
+    if (candidate !== relationDistinction && (support?.evidence.length ?? 0) === 0) continue;
     if (!isRenderableConceptText(candidate)) continue;
     if (isNegationOnlyText(candidate)) continue;
     if (!isDistinctFrom(core, candidate)) continue;
@@ -412,6 +491,9 @@ function conceptDistinctionText(
 
 function conceptHookText(concept: LearningConcept): string {
   const core = conceptCoreText(concept);
+  if (!core || (concept.fieldSupport?.mnemonic?.evidence.length ?? 0) === 0) {
+    return "";
+  }
   const depth = conceptDepthText(concept);
   const candidates = [concept.mnemonic];
   for (const candidate of candidates) {
@@ -440,6 +522,9 @@ function dedupeMcOptions(options: string[]): string[] {
 
 function conceptTrapText(concept: LearningConcept): string {
   const core = conceptCoreText(concept);
+  if (!core || (concept.fieldSupport?.commonConfusion?.evidence.length ?? 0) === 0) {
+    return "";
+  }
   const depth = conceptDepthText(concept);
   if (
     isRenderableConceptText(concept.commonConfusion)
@@ -578,7 +663,8 @@ function conceptEvidenceTokens(concept: ShellConcept): string[] {
 export function resolveDominantShellConceptId(
   reading: Pick<ShellReading, "title" | "concepts">,
   section: ShellReadingSection | null | undefined,
-  concepts: ShellConcept[]
+  concepts: ShellConcept[],
+  conceptById?: Map<string, ShellConcept>
 ): string | null {
   if (!section || reading.concepts.length === 0 || concepts.length === 0) {
     return null;
@@ -591,7 +677,7 @@ export function resolveDominantShellConceptId(
 
   const haystackTokens = new Set(tokenizeConceptEvidence(haystack));
   const scores = reading.concepts
-    .map((conceptId) => concepts.find((concept) => concept.id === conceptId))
+    .map((conceptId) => conceptById?.get(conceptId) ?? concepts.find((concept) => concept.id === conceptId))
     .filter((concept): concept is ShellConcept => Boolean(concept))
     .map((concept) => {
       const labelPhraseHit = containsNormalizedPhrase(haystack, concept.name);
@@ -800,13 +886,12 @@ function mapCourse(bundle: CaptureBundle): ShellCourse {
 function mapConcept(
   c: LearningConcept,
   allConcepts: LearningConcept[],
-  relations: ConceptRelation[],
+  conceptById: Map<string, LearningConcept>,
+  relatedIdsByConceptId: Map<string, string[]>,
+  contrastByConceptId: Map<string, ConceptRelation>,
   practiceSupportContext: PracticeSupportContext
 ): ShellConcept {
-  const connectedIds = relations
-    .filter((r) => r.fromId === c.id || r.toId === c.id)
-    .map((r) => (r.fromId === c.id ? r.toId : r.fromId))
-    .filter((id) => id !== c.id);
+  const connectedIds = (relatedIdsByConceptId.get(c.id) ?? []).filter((id) => id !== c.id);
 
   const conceptName = normalizeShellText(c.label);
   const rawCat = c.category ?? "";
@@ -824,7 +909,7 @@ function mapConcept(
     cat: isUsefulCat ? rawCat : "Concept",
     core: conceptCoreText(c),
     depth: conceptDepthText(c),
-    dist: conceptDistinctionText(c, allConcepts, relations),
+    dist: conceptDistinctionText(c, conceptById, contrastByConceptId),
     hook: conceptHookText(c),
     trap: conceptTrapText(c),
     kw: c.keywords.filter((keyword) => !isScaffoldConceptLabel(keyword)),
@@ -855,43 +940,134 @@ function taskDemand(kind: CourseTask["kind"]): { demand: string; icon: string } 
 }
 
 function daysUntil(timestamp: number | null): number {
-  if (!timestamp) return 30;
+  if (!timestamp) return Number.POSITIVE_INFINITY;
   const ms = timestamp - Date.now();
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
-function mapAssignment(task: CourseTask, conceptNameById: Map<string, string>): ShellAssignment {
+function duePresentation(timestamp: number | null): {
+  due: number;
+  dueLabel: string;
+  dueState: ShellAssignment["dueState"];
+} {
+  if (!timestamp) {
+    return {
+      due: Number.POSITIVE_INFINITY,
+      dueLabel: "Date not captured",
+      dueState: "unknown"
+    };
+  }
+  const due = daysUntil(timestamp);
+  if (due < 0) {
+    return {
+      due,
+      dueLabel: `Overdue by ${Math.abs(due)} day${Math.abs(due) === 1 ? "" : "s"}`,
+      dueState: "overdue"
+    };
+  }
+  if (due === 0) {
+    return {
+      due,
+      dueLabel: "Due today",
+      dueState: "today"
+    };
+  }
+  return {
+    due,
+    dueLabel: `Due in ${due} day${due === 1 ? "" : "s"}`,
+    dueState: "upcoming"
+  };
+}
+
+function toShellAssignmentIntel(
+  mapping: LearningBundle["synthesis"]["assignmentMappings"][number],
+  validConceptIds?: Set<string>
+): ShellAssignmentIntel {
+  return {
+    id: mapping.id,
+    sourceItemId: mapping.sourceItemId,
+    title: mapping.title,
+    summary: mapping.summary,
+    likelySkills: mapping.likelySkills,
+    conceptIds: validConceptIds
+      ? mapping.conceptIds.filter((conceptId) => validConceptIds.has(conceptId))
+      : mapping.conceptIds,
+    focusThemeIds: mapping.focusThemeIds,
+    checklist: mapping.checklist,
+    likelyPitfalls: mapping.likelyPitfalls,
+    evidence: mapping.evidence
+  };
+}
+
+function toShellFocusTheme(
+  theme: LearningBundle["synthesis"]["focusThemes"][number],
+  validConceptIds?: Set<string>
+): ShellFocusTheme {
+  return {
+    id: theme.id,
+    label: theme.label,
+    score: theme.score,
+    summary: theme.summary,
+    verbs: theme.verbs,
+    conceptIds: validConceptIds
+      ? theme.conceptIds.filter((conceptId) => validConceptIds.has(conceptId))
+      : theme.conceptIds,
+    evidence: theme.evidence.map((fragment) => fragment.excerpt)
+  };
+}
+
+function mapAssignment(
+  task: CourseTask,
+  conceptNameById: Map<string, string>,
+  assignmentIntelBySourceItemId: Map<string, ShellAssignmentIntel>
+): ShellAssignment {
   const { demand, icon } = taskDemand(task.kind);
-  const reqLines = task.requirementLines.slice(0, 4);
-  const taskSummary = normalizeShellText(task.summary);
-  const focusConcepts = task.conceptIds
+  const intel = assignmentIntelBySourceItemId.get(task.sourceItemId) ?? assignmentIntelBySourceItemId.get(task.id);
+  const conceptIds = (intel?.conceptIds.length ? intel.conceptIds : task.conceptIds).slice(0, 6);
+  const reqLines = (intel?.checklist.length ? intel.checklist : task.requirementLines).slice(0, 4);
+  const taskSummary = normalizeShellText(intel?.summary || task.summary);
+  const focusConcepts = conceptIds
     .map((conceptId) => conceptNameById.get(conceptId))
     .filter((conceptName): conceptName is string => Boolean(conceptName))
     .slice(0, 2);
-  const failModes = reqLines.length > 0
-    ? reqLines.map((r) => `Missing: ${r.slice(0, 80)}`)
+  const hasGroundedPitfalls = Boolean(intel?.likelyPitfalls.length);
+  const failModes = intel?.likelyPitfalls.length
+    ? intel.likelyPitfalls.slice(0, 3).map((pitfall) => wordTruncate(pitfall, 120))
     : [];
 
-  const evidenceNeeded = reqLines.length > 0
-    ? reqLines.slice(0, 2).join("; ")
+  const evidenceNeeded = hasGroundedPitfalls && intel?.evidence[0]?.excerpt
+    ? wordTruncate(intel.evidence[0].excerpt, 140)
     : "";
+  const dueInfo = duePresentation(task.dueDate);
+  const trustworthySummary = taskSummary && taskSummary !== task.title && taskSummary.length >= 24
+    ? taskSummary
+    : "";
+  const title = intel?.title?.trim() || task.title;
+  const subtitle = trustworthySummary.slice(0, 60)
+    || (focusConcepts.length > 0 ? focusConcepts.join(" · ") : task.kind);
 
   return {
     id: task.id,
-    title: task.title,
-    sub: taskSummary.slice(0, 60) || task.title,
+    title,
+    sub: normalizeComparisonText(subtitle) === normalizeComparisonText(title) ? "" : subtitle,
     type: taskTypeIcon(task.kind),
-    due: daysUntil(task.dueDate),
+    due: dueInfo.due,
+    dueLabel: dueInfo.dueLabel,
+    dueState: dueInfo.dueState,
     pts: task.pts,
-    con: task.conceptIds,
-    tip: taskSummary.slice(0, 100) || "",
-    reallyAsking: taskSummary,
+    con: conceptIds,
+    tip: trustworthySummary.slice(0, 100) || wordTruncate(intel?.summary ?? "", 100),
+    reallyAsking: intel?.summary ? wordTruncate(intel.summary, 140) : (reqLines.length > 0 || focusConcepts.length > 0 ? trustworthySummary : ""),
     demand,
     demandIcon: icon,
     secretCare: reqLines[0] ? wordTruncate(reqLines[0], 140) : "",
     failModes,
     evidence: evidenceNeeded,
-    quickPrep: focusConcepts.length > 0 ? `Review ${focusConcepts.join(" and ")}.` : "",
+    quickPrep: focusConcepts.length > 0
+      ? `Review ${focusConcepts.join(" and ")}.`
+      : intel?.likelySkills.length
+        ? `Prepare to ${intel.likelySkills.slice(0, 2).join(" and ")}.`
+        : "",
     requirementLines: reqLines,
     skills: []
   };
@@ -909,72 +1085,6 @@ function attachAssignmentSkillRequirements(
     ...assignment,
     skills: requirementsByAssignmentId.get(assignment.id) ?? []
   }));
-}
-
-function moduleLabel(moduleKey: string, idx: number): string {
-  if (moduleKey.startsWith("week-")) return `Week ${moduleKey.slice(5)}`;
-  if (moduleKey.startsWith("module-")) return `Module ${moduleKey.slice(7)}`;
-  if (moduleKey.startsWith("sequence-")) return `Section ${moduleKey.slice(9)}`;
-  return `Unit ${idx}`;
-}
-
-function mapModulesFromTasks(tasks: CourseTask[]): ShellModule[] {
-  const groups = new Map<string, { tasks: CourseTask[]; idx: number }>();
-  for (const task of tasks) {
-    const existing = groups.get(task.moduleKey);
-    if (existing) {
-      existing.tasks.push(task);
-    } else {
-      groups.set(task.moduleKey, { tasks: [task], idx: groups.size + 1 });
-    }
-  }
-
-  return Array.from(groups.entries()).map(([moduleKey, { tasks: mTasks, idx }]) => {
-    const allConceptIds = [...new Set(mTasks.flatMap((t) => t.conceptIds))];
-    const label = moduleLabel(moduleKey, idx);
-    const textbook: ShellTextbookChapter[] = mTasks.slice(0, 5).map((t, i) => ({
-      title: t.title,
-      pages: `${idx}.${i + 1}`,
-      summary: t.summary
-    }));
-    return {
-      id: moduleKey,
-      title: label,
-      ch: `Unit ${idx}`,
-      pages: `${mTasks.length} item${mTasks.length !== 1 ? "s" : ""}`,
-      desc: "",
-      concepts: allConceptIds,
-      textbook
-    };
-  });
-}
-
-function mapReadingFromTasks(tasks: CourseTask[]): ShellReading[] {
-  const groups = new Map<string, CourseTask[]>();
-  for (const task of tasks) {
-    const grp = groups.get(task.moduleKey) ?? [];
-    grp.push(task);
-    groups.set(task.moduleKey, grp);
-  }
-
-  return Array.from(groups.entries()).slice(0, 8).map(([moduleKey, mTasks], i) => {
-    const allConceptIds = [...new Set(mTasks.flatMap((t) => t.conceptIds))];
-    const label = moduleLabel(moduleKey, i + 1);
-    const sections: ShellReadingSection[] = mTasks.slice(0, 4).map((t) => ({
-      heading: t.title,
-      body: t.summary || t.rawText.slice(0, 280)
-    }));
-    return {
-      id: moduleKey,
-      module: moduleKey,
-      title: label,
-      subtitle: `${mTasks.length} item${mTasks.length !== 1 ? "s" : ""}`,
-      type: "discussion" as const,
-      concepts: allConceptIds,
-      assignments: mTasks.map((t) => t.id).slice(0, 3),
-      sections: sections.length > 0 ? sections : [{ heading: label, body: mTasks[0]?.summary ?? "" }]
-    };
-  });
 }
 
 function sanitizeModuleDesc(raw: string): string {
@@ -1016,13 +1126,28 @@ function mapModulesFromChapters(chapters: ForgeChapter[]): ShellModule[] {
   });
 }
 
-function mapReadingFromChapters(chapters: ForgeChapter[], tasks: CourseTask[]): ShellReading[] {
+function mapReadingFromChapters(
+  chapters: ForgeChapter[],
+  assignmentIdsByConceptId: Map<string, string[]>
+): ShellReading[] {
   return chapters.map((ch, i) => {
-    // Find assignments that mention this chapter's concepts
-    const relatedAssignments = tasks
-      .filter((t) => t.conceptIds.some((id) => ch.conceptIds.includes(id)))
-      .map((t) => t.id)
-      .slice(0, 3);
+    const seen = new Set<string>();
+    const relatedAssignments: string[] = [];
+    for (const conceptId of ch.conceptIds) {
+      for (const assignmentId of assignmentIdsByConceptId.get(conceptId) ?? []) {
+        if (seen.has(assignmentId)) {
+          continue;
+        }
+        seen.add(assignmentId);
+        relatedAssignments.push(assignmentId);
+        if (relatedAssignments.length >= 3) {
+          break;
+        }
+      }
+      if (relatedAssignments.length >= 3) {
+        break;
+      }
+    }
 
     // Split summary into sections (by sentence breaks)
     const sentences = ch.summary
@@ -1051,7 +1176,11 @@ function mapReadingFromChapters(chapters: ForgeChapter[], tasks: CourseTask[]): 
   });
 }
 
-function generateMargins(reading: ShellReading[], concepts: ShellConcept[]): Record<string, ShellMarginAnnotation[]> {
+function generateMargins(
+  reading: ShellReading[],
+  concepts: ShellConcept[],
+  conceptById: Map<string, ShellConcept>
+): Record<string, ShellMarginAnnotation[]> {
   const margins: Record<string, ShellMarginAnnotation[]> = {};
 
   reading.forEach((r) => {
@@ -1059,9 +1188,9 @@ function generateMargins(reading: ShellReading[], concepts: ShellConcept[]): Rec
       const key = `${r.id}:${sIdx}`;
       const annotations: ShellMarginAnnotation[] = [];
 
-      const relatedConceptId = resolveDominantShellConceptId(r, section, concepts);
+      const relatedConceptId = resolveDominantShellConceptId(r, section, concepts, conceptById);
       const relatedConcept = relatedConceptId
-        ? concepts.find((concept) => concept.id === relatedConceptId)
+        ? conceptById.get(relatedConceptId) ?? null
         : null;
       if (relatedConcept && sIdx < 2) {
         const hookText = relatedConcept.hook;
@@ -1104,7 +1233,10 @@ function mapTranscriptsFromBundle(_bundle: CaptureBundle): ShellTranscript[] {
   return [];
 }
 
-function mapDistinctions(relations: ConceptRelation[], concepts: LearningConcept[]): ShellDistinction[] {
+function mapDistinctions(
+  relations: ConceptRelation[],
+  conceptById: Map<string, LearningConcept>
+): ShellDistinction[] {
   const contrasts = relations.filter((r) => r.type === "contrasts");
   const seen = new Set<string>();
   const result: ShellDistinction[] = [];
@@ -1114,8 +1246,8 @@ function mapDistinctions(relations: ConceptRelation[], concepts: LearningConcept
     if (seen.has(pairKey)) continue;
     seen.add(pairKey);
 
-    const a = concepts.find((c) => c.id === rel.fromId);
-    const b = concepts.find((c) => c.id === rel.toId);
+    const a = conceptById.get(rel.fromId);
+    const b = conceptById.get(rel.toId);
     if (!a || !b) continue;
     const relationLabel = normalizeShellText(rel.label);
     const borderText = normalizeShellText(
@@ -1298,26 +1430,8 @@ function mapSynthesis(_bundle: CaptureBundle, learning: LearningBundle): ShellSy
     },
     stableConceptCount: learning.synthesis.stableConceptIds.length,
     likelyAssessedSkills: learning.synthesis.likelyAssessedSkills,
-    focusThemes: learning.synthesis.focusThemes.slice(0, 4).map((theme) => ({
-      id: theme.id,
-      label: theme.label,
-      score: theme.score,
-      summary: theme.summary,
-      verbs: theme.verbs,
-      evidence: theme.evidence.map((fragment) => fragment.excerpt)
-    })),
-    assignmentIntel: learning.synthesis.assignmentMappings.slice(0, 6).map((mapping) => ({
-      id: mapping.id,
-      sourceItemId: mapping.sourceItemId,
-      title: mapping.title,
-      summary: mapping.summary,
-      likelySkills: mapping.likelySkills,
-      conceptIds: mapping.conceptIds,
-      focusThemeIds: mapping.focusThemeIds,
-      checklist: mapping.checklist,
-      likelyPitfalls: mapping.likelyPitfalls,
-      evidence: mapping.evidence
-    })),
+    focusThemes: learning.synthesis.focusThemes.slice(0, 4).map((theme) => toShellFocusTheme(theme)),
+    assignmentIntel: learning.synthesis.assignmentMappings.slice(0, 6).map((mapping) => toShellAssignmentIntel(mapping)),
     retentionModules: learning.synthesis.retentionModules.slice(0, 6).map((module) => ({
       id: module.id,
       kind: module.kind,
@@ -1345,6 +1459,7 @@ export function mapToShellData(
   // Also remove concepts whose labels are Canvas boilerplate (instructions, rubric text,
   // or assignment/task titles repeated across items).
   const MIN_SCORE = 15;
+  const stableConceptIds = new Set(learning.synthesis.stableConceptIds);
   const taskTitleSet = new Set(tasks.map((t) => t.title.toLowerCase()));
   const INSTRUCTION_LABEL_RE = /^(?:always|remember|never|make sure|be sure|note that|please |ensure |don't forget|topic[:\s]|point rubric|week\s+\d+\s*[-–])/i;
 
@@ -1353,13 +1468,27 @@ export function mapToShellData(
     .sort((a, b) => b.score - a.score);
   const isValidConcept = (c: (typeof scoredConcepts)[number]) =>
     c.score >= MIN_SCORE &&
+    stableConceptIds.has(c.id) &&
+    (c.fieldSupport?.definition?.evidence.length ?? 0) > 0 &&
     !INSTRUCTION_LABEL_RE.test(c.label) &&
     !taskTitleSet.has(c.label.toLowerCase()) &&
     !isScaffoldConceptLabel(c.label);
   const filteredConcepts = scoredConcepts.filter(isValidConcept);
   const practiceSupportContext = buildPracticeSupportContext(bundle, learning);
+  const learningConceptById = buildByIdMap(learning.concepts);
+  const relatedIdsByConceptId = buildRelatedConceptIdsByConceptId(learning.relations);
+  const evidenceRelations = learning.relations.filter((relation) => (relation.evidence?.length ?? 0) > 0);
+  const contrastByConceptId = buildContrastRelationByConceptId(evidenceRelations);
+  const assignmentIdsByConceptId = buildAssignmentIdsByConceptId(tasks);
   const concepts = filteredConcepts.map((c) =>
-    mapConcept(c, learning.concepts, learning.relations, practiceSupportContext)
+    mapConcept(
+      c,
+      learning.concepts,
+      learningConceptById,
+      relatedIdsByConceptId,
+      contrastByConceptId,
+      practiceSupportContext
+    )
   );
 
   // Only link task concept IDs that survived the quality filter.
@@ -1376,14 +1505,18 @@ export function mapToShellData(
   }));
 
   const conceptNameById = new Map(concepts.map((concept) => [concept.id, concept.name]));
-  const assignments = cleanedTasks.map((task) => mapAssignment(task, conceptNameById));
-  // Fall back to task-based grouping when there aren't enough page-type chapters
-  // (e.g. skills courses where most items are discussions/quizzes, not pages)
-  const modules = cleanedChapters.length >= 2 ? mapModulesFromChapters(cleanedChapters) : mapModulesFromTasks(cleanedTasks);
-  const reading = cleanedChapters.length >= 2 ? mapReadingFromChapters(cleanedChapters, cleanedTasks) : mapReadingFromTasks(cleanedTasks);
-  const margins = generateMargins(reading, concepts);
+  const assignmentIntelBySourceItemId = new Map(
+    learning.synthesis.assignmentMappings
+      .map((mapping) => toShellAssignmentIntel(mapping, validConceptIds))
+      .map((mapping) => [mapping.sourceItemId, mapping] as const)
+  );
+  const assignments = cleanedTasks.map((task) => mapAssignment(task, conceptNameById, assignmentIntelBySourceItemId));
+  const modules = cleanedChapters.length > 0 ? mapModulesFromChapters(cleanedChapters) : [];
+  const reading = cleanedChapters.length > 0 ? mapReadingFromChapters(cleanedChapters, assignmentIdsByConceptId) : [];
+  const shellConceptById = buildByIdMap(concepts);
+  const margins = generateMargins(reading, concepts, shellConceptById);
   const transcripts = mapTranscriptsFromBundle(bundle);
-  const dists = mapDistinctions(learning.relations, learning.concepts);
+  const dists = mapDistinctions(evidenceRelations, learningConceptById);
   const philosophers = mapKeyFigures(bundle, learning);
   const course = mapCourse(bundle);
   const synthesis = mapSynthesis(bundle, learning);
@@ -1392,7 +1525,11 @@ export function mapToShellData(
     assignments,
     modules,
     distinctions: dists,
-    synthesis
+    synthesis: {
+      focusThemes: learning.synthesis.focusThemes.map((theme) => toShellFocusTheme(theme, validConceptIds)),
+      assignmentIntel: learning.synthesis.assignmentMappings.map((mapping) => toShellAssignmentIntel(mapping, validConceptIds)),
+      likelyAssessedSkills: learning.synthesis.likelyAssessedSkills
+    }
   });
   const enrichedAssignments = attachAssignmentSkillRequirements(assignments, skillTree);
 

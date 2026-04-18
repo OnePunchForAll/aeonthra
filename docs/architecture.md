@@ -7,7 +7,7 @@ This repository ships a truthful local-first vertical slice of OMEGA FORGE under
 - `apps/extension`: SENTINEL capture extension
 - `apps/web`: ATLAS static learning app
 - `packages/schema`: FOUNDRY JSON transport and bridge contracts
-- `packages/content-engine`: deterministic extraction and synthesis
+- `packages/content-engine-v2`: canonical production implementation of `@learning/content-engine`
 
 ## End-to-end flow
 
@@ -17,7 +17,7 @@ This repository ships a truthful local-first vertical slice of OMEGA FORGE under
 4. The page bridge and worker coordinate around `NF_IMPORT_REQUEST`, `NF_PACK_READY`, `NF_PACK_ACK`, and `NF_IMPORT_RESULT`, with additive `requestId`, `handoffId`, and `packId` correlation.
 5. AEONTHRA reuses the same importability classifier before it accepts a queued extension capture.
 6. The app persists source state in `learning-freedom:source-workspace`, scopes notes and progress by `learningBundle.synthesis.deterministicHash`, and can also restore deterministic offline replay bundles.
-7. The deterministic engine derives concepts, relations, provenance, assignment signals, and the Atlas skill tree from the imported sources.
+7. The deterministic engine in `packages/content-engine-v2/src` derives concepts, relations, provenance, assignment signals, and the Atlas skill tree from the imported sources.
 8. The shell materializes learner progress into locked, available, in-progress, earned, mastered, readiness, and recovery states without any backend.
 
 ## Extension persistence
@@ -56,7 +56,7 @@ Queue rules for `aeonthra:pending-handoffs`:
 - Unpacked extension artifact: `apps/extension/dist`
 - Web app source: `apps/web/src`
 - Shared contracts: `packages/schema/src`
-- Deterministic content engine: `packages/content-engine/src`
+- Deterministic content engine: `packages/content-engine-v2/src`
 - Atlas seams: `apps/web/src/lib/atlas-skill-tree.ts` and `apps/web/src/lib/atlas-shell.ts`
 
 ## Verified limits

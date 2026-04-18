@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createManualCaptureBundle, type CaptureBundle } from "@learning/schema";
 import {
+  describeCanvasLoadState,
+  describeTextbookLoadState,
   determineAppStage,
   isCanvasCaptureBundle,
   isSameCourse,
@@ -172,5 +174,61 @@ describe("source workspace helpers", () => {
       learningReady: true,
       synthesisRequested: false
     })).toBe("complete");
+  });
+
+  it("describes canvas-loaded state explicitly", () => {
+    expect(describeCanvasLoadState(makeCanvasBundle())).toEqual({
+      headline: "Loaded",
+      detail: "Canvas course data is loaded from Deterministic Ethics with 1 captured item."
+    });
+  });
+
+  it("distinguishes textbook required, failed, loading, and ready states after Canvas loads", () => {
+    const canvasBundle = makeCanvasBundle();
+    const textbookBundle = makeTextbookBundle();
+
+    expect(describeTextbookLoadState({
+      canvasBundle,
+      textbookBundle: null,
+      importError: null,
+      uploadLabel: null
+    })).toEqual({
+      state: "required",
+      headline: "Required",
+      detail: "Canvas course data is already loaded. Add a PDF, DOCX, or text source to continue."
+    });
+
+    expect(describeTextbookLoadState({
+      canvasBundle,
+      textbookBundle: null,
+      importError: "PDF intake module failed to load. Restart the web dev server and retry the upload.",
+      uploadLabel: null
+    })).toEqual({
+      state: "failed",
+      headline: "Import Failed",
+      detail: "Canvas course data is already loaded. PDF intake module failed to load. Restart the web dev server and retry the upload."
+    });
+
+    expect(describeTextbookLoadState({
+      canvasBundle,
+      textbookBundle: null,
+      importError: null,
+      uploadLabel: "Extracting page 2 of 5"
+    })).toEqual({
+      state: "loading",
+      headline: "Loading",
+      detail: "Canvas course data is already loaded. Extracting page 2 of 5."
+    });
+
+    expect(describeTextbookLoadState({
+      canvasBundle,
+      textbookBundle,
+      importError: null,
+      uploadLabel: null
+    })).toEqual({
+      state: "ready",
+      headline: "Ready",
+      detail: "Deterministic Ethics Reader is loaded. Canvas course data remains loaded, and synthesis can begin."
+    });
   });
 });

@@ -18,7 +18,7 @@
     "baseUrl": ".",
     "paths": {
       "@learning/schema": ["packages/schema/src/index.ts"],
-      "@learning/content-engine": ["packages/content-engine/src/index.ts"],
+      "@learning/content-engine": ["packages/content-engine-v2/src/index.ts"],
       "@learning/interactions-engine": ["packages/interactions-engine/src/index.ts"]
     }
   }

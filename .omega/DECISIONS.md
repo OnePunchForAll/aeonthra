@@ -1,6 +1,68 @@
 # DECISIONS
 
+## 2026-04-18
+
+### Page content may support chapter/source surfaces, but it must not become an assignment target
+
+- Decision: keep `page` items out of `deriveWorkspace()` task promotion so they can still feed chapters and source matching without entering assignment/readiness lanes.
+- Why: page content was polluting assignment surfaces and creating fake submission targets from study pages.
+
+### Grounded requirements without a full skill chain should present as `Concept Prep`, not `Unmapped`
+
+- Decision: if Atlas has concept grounding or captured requirements but cannot assemble a complete checklist-backed skill chain, the shell should label the state as `concept-prep`.
+- Why: `Unmapped` now means the system has no trustworthy grounding at all. Anything with real grounding but incomplete chain should fail closed into the more honest prep state instead.
+
+### Same-tab capture is allowed only when the active Canvas tab proves a live receiver
+
+- Decision: treat `detect live-content-script` as the only condition that permits same-tab capture start. If the active tab only proves `detect url-fallback`, the worker should open a fresh background `course.modulesUrl` tab and start there.
+- Why: comparing against the previous working build showed that a fresh Canvas navigation was the only reliable way to guarantee manifest-declared content-script attachment after extension reloads.
+
+### Material worker recovery changes must bump the live signature immediately
+
+- Decision: bump the worker signature to `sw-recovery-trace-v5` and the popup signature to `popup-worker-check-v3` for this hybrid launch-path and buffered auto-start change.
+- Why: the earlier `v3` to `v4` debugging loop proved that live diagnostics lose value if materially different worker behavior can still present the same signature.
+
 ## 2026-04-17
+
+### Keep the public package id stable as `@learning/content-engine` while the canonical implementation lives in `packages/content-engine-v2`
+
+- Decision: cut over all live consumers by redirecting the existing `@learning/content-engine` seam to `packages/content-engine-v2/src/index.ts` instead of renaming the public package id across the repo.
+- Why: this minimizes blast radius at consumer call sites while still leaving one clear production engine source of truth.
+
+### After retirement, the old engine survives only as a frozen benchmark baseline
+
+- Decision: retain `packages/content-engine-v2/src/benchmarks/legacy-v1-surfaces.json` as migration evidence, but remove the executable old engine package and any live runtime dependency on it.
+- Why: the repo still needs old-vs-new proof after cutover, but it must not keep two production engines alive or silently compare new-vs-new.
+
+### Plain-text structural nodes must preserve full evidence text; truncation belongs only at visible excerpt boundaries
+
+- Decision: do not truncate plain-text structural nodes before evidence-unit extraction in the canonical engine. Sentence-level splitting and visible snippets may shorten text later, but the structural stage preserves the full paragraph.
+- Why: early truncation can erase later grounded concepts and relations from otherwise clean source material, which is a truth regression at the engine boundary.
+
+### Keep the replacement engine isolated until adapter-backed superiority is proven
+
+- Decision: `packages/content-engine-v2` remains a parallel package with its own tests, fixtures, benchmark harness, and compatibility projection. No live imports change in this pass.
+- Why: the user asked for a full replacement candidate, not another risky patch on the current engine seam.
+
+### Mixed-content blocks must degrade to sentence-level salvage, not whole-block rejection
+
+- Decision: structural extraction in v2 may reject a whole node only when noise appears without surviving academic signal; mixed blocks must continue to sentence filtering.
+- Why: real captures often contain one valid academic lane beside browser or LMS junk, and rejecting the entire block recreates the exact failure pattern this pass exists to eliminate.
+
+### Untrusted discussion titles may not survive as assignment surfaces in v2
+
+- Decision: discussions with untrusted wrapper titles are suppressed from the assignment surface even when the text contains academic verbs or concept mentions.
+- Why: forum scaffolds and week wrappers can carry coursework language while still being dishonest task titles. The engine should salvage the academic evidence without promoting the wrapper as a visible assignment.
+
+### The deterministic engine is a fail-closed study compiler, not a semantic fallback generator
+
+- Decision: visible concepts, skills, readiness states, and Atlas nodes must only survive when they can point to explicit source-backed evidence, provenance metadata, and a truth-gate pass reason.
+- Why: the live failures showed that deterministic-looking semantic output becomes misleading when noise, fragments, or weak dates are allowed to cross the user-facing boundary.
+
+### Structured capture fields outrank prose inference for task truth
+
+- Decision: assignment titles, due dates, module identity, and related task metadata should come from preserved structured Canvas fields first; prose parsing is only a fallback and must be aggressively sanity-checked.
+- Why: prose-level heuristics were turning chrome text, generic week wrappers, and stray dates into misleading tasks and countdowns even though stronger structured truth already existed upstream.
 
 ### The worker persistence boundary must accept `aeon:item-captured`, not just `aeon:job-*`
 
@@ -145,3 +207,84 @@
 
 - Decision: visited-page accumulation should be a bounded, learning-mode-only session keyed by `origin + courseId`, with explicit save/clear controls and no automatic unseen-page crawling.
 - Why: this adds the missing route-aware capture path without blurring the truth boundary between "pages the learner actually visited" and "the whole course that AEONTHRA actively crawled."
+
+### Canonical full-course capture is now complete-snapshot only
+
+- Decision: full-course capture no longer exposes `Learning Content Only` vs `Complete Snapshot` as user choices. The production capture entrypoint always runs `Complete Snapshot`, and persisted settings normalize legacy mode choices back to `complete`.
+- Why: reliable import, recovery, and debugging depend on preserving the full supported Canvas surface. The split mode UI created unnecessary ambiguity and let users choose a weaker capture path while trying to solve extension reliability problems.
+- Scope: this applies to full-course capture only. Passive visited-session accumulation remains a separate bounded learning-mode session until that subsystem gets its own redesign pass.
+
+### Popup must expose live capture progress for hidden-tab runs
+
+- Decision: when full-course capture is launched from the popup, the popup should reflect active runtime progress itself and best-effort open the side panel automatically.
+- Why: the canonical full-course run happens in a hidden background tab, so a static popup leaves users without truthful visible feedback even when the capture is healthy.
+
+### Full-course capture should prefer a visible capture tab over a hidden crawl
+
+- Decision: the production full-course capture run now opens its modules capture tab as the active tab so the Canvas overlay is guaranteed to be visible during capture.
+- Why: the existing overlay is the most truthful live progress surface, and hiding the capture tab made healthy runs look broken.
+
+### Popup polling must not re-enter a full loading state on every refresh
+
+- Decision: popup polling may refresh state in the background, but it must not blank the live UI every cycle.
+- Why: a status surface that visibly flashes under steady-state polling destroys trust and makes active capture look broken.
+
+### Full-course capture should run in the active Canvas tab once that tab is verified
+
+- Decision: when capture is launched from a verified Canvas course tab, the canonical full-course run should reuse that tab as the capture runtime surface instead of opening a second copy of the course.
+- Why: reopening the same course in a duplicate tab looked like a broken reload and detached the truthful loader from the page the user actually launched from.
+
+### Missing Canvas receivers on verified course tabs should be healed automatically instead of requiring a manual refresh
+
+- Decision: when the worker is sending a capture-start or course-context message to a verified Canvas tab and receives a missing-receiver error, it may inject `content-canvas.js` into that tab and retry once through the normal retry loop.
+- Why: URL fallback can truthfully identify the course even when the content script has not reattached after an extension reload. The product should recover that seam automatically instead of failing capture and telling the user to refresh by hand.
+
+### Popup should get out of the way after capture starts in the current tab
+
+- Decision: once full-course capture starts successfully from the popup, the popup should close instead of trying to remain the primary live status surface.
+- Why: the truthful loader for same-tab capture lives on the Canvas page itself, and the popup can physically hide that surface while making a healthy run still look broken.
+
+### Verified Canvas tabs may bypass the message channel when receiver recovery is still unavailable
+
+- Decision: after a verified Canvas tab hits a missing-receiver error, the worker may call a bootstrap API exposed by `content-canvas.js` through `chrome.scripting.executeScript({ func })` for course-context detection, same-tab capture start/control, and overlay rendering.
+- Why: reinjecting the content script repairs many stale tabs, but the latest live evidence showed the `tabs.sendMessage(...)` channel itself can remain unavailable even after injection. The product cannot keep that port as the only way to start or surface capture on a verified page.
+
+### Popup capture controls must show stable blocker evidence next to the start action
+
+- Decision: the popup should render a persistent diagnostics box below the capture button that summarizes the last known popup/runtime/finalized-capture error plus whether course detection came from a live Canvas receiver or URL fallback.
+- Why: transient banner text was not enough to support live debugging of repeated capture-start failures, especially when the course could still appear detected through URL fallback.
+
+### Unrecovered missing-receiver failures must preserve recovery-stage evidence in the runtime error itself
+
+- Decision: when a verified Canvas tab still fails after bootstrap lookup and script injection recovery attempts, the worker should throw an error message that records those attempted stages instead of rethrowing only the original Chrome missing-receiver text.
+- Why: without the recovery trace, the popup can prove only that the worker is alive while still hiding whether the true blocker is failed injection, missing bootstrap after injection, or another surviving seam.
+
+### Popup must fail closed when it can prove the worker bundle is stale
+
+- Decision: if the popup can reach a worker that either omits the expected `workerCodeSignature` or reports `course-detected` with `detect none`, capture should be blocked and the popup should offer a direct runtime restart instead of letting the user re-trigger the same broken start path.
+- Why: fresh popup assets and fresh `build-info.json` do not prove the Manifest V3 service worker itself has reloaded. Once the popup can prove that contradiction, allowing capture to proceed only generates misleading missing-receiver noise.
+
+### Worker bootstrap probes must declare the isolated execution world explicitly
+
+- Decision: any service-worker `chrome.scripting.executeScript({ func })` call that expects to see `content-canvas.js` runtime state must set `world: "ISOLATED"` explicitly.
+- Why: once the fresh worker could still not see the injected bootstrap after successful script injection, the execution-world boundary itself became part of the contract. Leaving that implicit makes the recovery path too easy to misread and too hard to regress safely.
+
+### Worker signatures must bump when live-debugging behavior changes materially
+
+- Decision: when a worker-side live-recovery patch changes the meaning of diagnostics or runtime error traces, `workerCodeSignature` must change as part of the same patch.
+- Why: a fresh popup and fresh build marker can still talk to an older Manifest V3 service worker. Without a signature bump, materially different worker behaviors can masquerade as the same runtime version and block truthful diagnosis.
+### Shipped MV3 content scripts must be validated as classic scripts, not just as existing files
+
+- Decision: extension build validation must reject any manifest-referenced content script whose built output still contains top-level `import` or `export` syntax.
+- Why: Chrome loads manifest content scripts as classic scripts. File-existence checks alone were insufficient; a built `content-canvas.js` with a trailing ESM `export { ... }` looked present and current while never registering a live receiver on Canvas tabs.
+
+### PDF intake progress must reflect document-open stages, not just page extraction
+
+- Decision: the web app should show PDF import progress before the first page callback and treat worker-backed `getDocument()` as a recoverable seam with a compatibility retry.
+- Why: the real live stall happened before `document.numPages` resolved, so a page-only progress model made the UI look frozen at `0%` while hiding the exact phase that was blocked.
+
+### Explicit definition lanes may satisfy support when they are the only grounded evidence that survives
+
+- Decision: an explicit definition sentence is strong enough to keep a concept alive even if no second support lane survives, provided wrapper titles and generic container prose still fail the title gate.
+- Why: the wrapper-title cleanup correctly removed fake semantic containers, but the concept builder was over-pruning plain-text textbook bundles that only exposed one grounded definitional sentence.
+- Scope: this only applies to definition-led concept admission. Wrapper titles, chapter/week front matter, and generic textbook container prose remain untrusted for display labels.

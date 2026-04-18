@@ -15,6 +15,22 @@ export type AppStage =
   | "synthesizing"
   | "complete";
 
+export type SourceStatusCardState = {
+  headline: string;
+  detail: string;
+};
+
+export type TextbookStatusKind =
+  | "blocked"
+  | "required"
+  | "loading"
+  | "failed"
+  | "ready";
+
+export type TextbookStatusState = SourceStatusCardState & {
+  state: TextbookStatusKind;
+};
+
 export type SourceWorkspaceState = {
   canvasBundle: CaptureBundle | null;
   textbookBundle: CaptureBundle | null;
@@ -199,4 +215,64 @@ export function determineAppStage(input: {
     return "synthesizing";
   }
   return "synthesis-ready";
+}
+
+export function describeCanvasLoadState(bundle: CaptureBundle | null): SourceStatusCardState {
+  if (!bundle) {
+    return {
+      headline: "Required",
+      detail: "No Canvas course data has been loaded yet."
+    };
+  }
+
+  const itemCount = bundle.items.length;
+  return {
+    headline: "Loaded",
+    detail: `Canvas course data is loaded from ${bundle.title} with ${itemCount} captured item${itemCount === 1 ? "" : "s"}.`
+  };
+}
+
+export function describeTextbookLoadState(input: {
+  canvasBundle: CaptureBundle | null;
+  textbookBundle: CaptureBundle | null;
+  uploadLabel?: string | null;
+  importError?: string | null;
+}): TextbookStatusState {
+  if (!input.canvasBundle) {
+    return {
+      state: "blocked",
+      headline: "Waiting on Canvas",
+      detail: "Canvas course content must load before textbook intake can begin."
+    };
+  }
+
+  if (input.uploadLabel) {
+    return {
+      state: "loading",
+      headline: "Loading",
+      detail: `Canvas course data is already loaded. ${input.uploadLabel}.`
+    };
+  }
+
+  if (input.textbookBundle) {
+    return {
+      state: "ready",
+      headline: "Ready",
+      detail: `${input.textbookBundle.title} is loaded. Canvas course data remains loaded, and synthesis can begin.`
+    };
+  }
+
+  if (input.importError) {
+    return {
+      state: "failed",
+      headline: "Import Failed",
+      detail: `Canvas course data is already loaded. ${input.importError}`
+    };
+  }
+
+  return {
+    state: "required",
+    headline: "Required",
+    detail: "Canvas course data is already loaded. Add a PDF, DOCX, or text source to continue."
+  };
 }

@@ -147,6 +147,7 @@ describe("extension storage", () => {
   it("normalizes settings and strips obsolete keys from persisted storage", async () => {
     const legacy = {
       ...DEFAULT_SETTINGS,
+      defaultMode: "learning",
       autoExpand: true,
       includeFileMetadata: true,
       concurrentTabs: 4,

@@ -1,6 +1,102 @@
 # IMPLEMENTATION LEDGER
 
+## 2026-04-18
+
+### Readiness pollution fix: page tasks no longer enter assignment/readiness lanes, and grounded requirements fall back to concept-prep instead of unmapped
+
+**Files changed**: `apps/web/src/lib/workspace.ts`, `apps/web/src/lib/atlas-shell.ts`, `apps/web/src/lib/workspace.test.ts`, `apps/web/src/lib/atlas-shell.test.ts`, `apps/web/src/lib/shell-mapper.test.ts`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/ERROR_LEDGER.md`, `.omega/DECISIONS.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Removed `page` tasks from the assignment lane in `deriveWorkspace()` so study pages remain available for chapters/source matches but no longer become assignment or readiness targets.
+- Relaxed `buildAssignmentReadinessState()` so grounded captured requirements without a complete skill chain now surface as `concept-prep` instead of collapsing to `unmapped`.
+- Added regressions proving that page content no longer pollutes the assignment lane and that captured requirements with grounding but no full chain stay in concept-prep.
+- Updated the due-label regression expectation to the current calmer unknown-date wording so the full web suite stays truthful.
+
+**Why**
+- Page content was still leaking into readiness surfaces, and Atlas was throwing away real captured grounding whenever it could not assemble a full checklist-backed skill chain.
+
+**Downstream effects**
+- Page-derived content still contributes to chapters and source matching, but it no longer crowds the assignment/readiness UI.
+- Grounded assignments now fail closed into `Concept Prep` rather than the more misleading `Unmapped` label.
+
+### Hybrid Canvas capture start: restore the previous working load path as the URL-fallback launch seam
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/content-canvas.ts`, `apps/extension/src/capture-autostart.ts`, `apps/extension/src/popup-diagnostics.ts`, `apps/extension/src/core/service-worker.test.ts`, `apps/extension/src/popup-diagnostics.test.ts`, `CANONICAL_EXTENSION_PATH.md`, `LIVE_CAPTURE_FORENSICS.md`, `LIVE_PROOF_CHECKLIST.md`, `REGRESSION_GAP_REPORT.md`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/ERROR_LEDGER.md`, `.omega/DECISIONS.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Compared the current same-tab launch path against the last committed extension build and confirmed the prior working path opened a fresh background `course.modulesUrl` tab before capture start.
+- Changed the worker to use a hybrid policy: capture stays in the current tab only when the active page proves a live Canvas receiver; otherwise the worker opens a fresh background modules tab so the manifest-declared content script loads on navigation.
+- Tightened the fresh background-tab path again so it waits for the normal declarative Canvas receiver instead of escalating into manual `content-canvas.js` injection and DOM-seeded auto-start recovery on that newly opened tab.
+- Added a DOM-seeded auto-start recovery seam plus buffered start-signal waiting so same-tab start can still recover when receiver and bootstrap never materialize after verified injection.
+- Let `content-canvas.ts` consume seeded auto-start payloads on load and render its own overlay during progress/completion/error so the launch page remains informative even when overlay round-trips are weak.
+- Bumped the live code signatures to `popup-worker-check-v3` and `sw-recovery-trace-v5` so the popup cannot mistake materially different worker behavior for the same build.
+
+**Why**
+- The live diagnostics proved the current worker was loaded, so the remaining failure had to be launch-path behavior. Comparing against the previous working build showed that the same-tab cutover removed the one guaranteed content-script attach point: a fresh Canvas page load.
+
+**Downstream effects**
+- Already-open Canvas tabs that only prove `detect url-fallback` no longer have to support same-tab receiver resurrection in order to start a capture.
+- Fresh background capture tabs now stay closer to the older known-good build path by waiting for the manifest content script to attach instead of forcing a second recovery layer on top of a brand-new navigation.
+- The popup signal line, canonical-path docs, and live-proof checklist now expect the new worker signature and the background-tab fallback behavior.
+
 ## 2026-04-17
+
+### Engine cutover: make v2 the canonical live production engine and retire the old package
+
+**Files changed**: `.agents/skills/deterministic-engine-cutover-forge/SKILL.md`, `ENGINE_CUTOVER_EXECUTION_PLAN.md`, `ENGINE_CONSUMER_CONTRACT_AUDIT.md`, `ENGINE_SHADOW_DIFF_MATRIX.md`, `OLD_ENGINE_RETIREMENT_PLAN.md`, `ENGINE_V2_INTEGRATION_CLOSEOUT.md`, `ENGINE_BOUNDARY_MAP.md`, `ENGINE_MIGRATION_PLAN_DRAFT.md`, `AGENTS.md`, `README.md`, `docs/architecture.md`, `tsconfig.base.json`, `apps/web/vite.config.ts`, `apps/web/package.json`, `packages/interactions-engine/package.json`, `package-lock.json`, `packages/content-engine-v2/package.json`, `packages/content-engine-v2/src/index.ts`, `packages/content-engine-v2/src/source-quality.ts`, `packages/content-engine-v2/src/outputs/result.ts`, `packages/content-engine-v2/src/compatibility/learning-bundle.ts`, `packages/content-engine-v2/src/compatibility/legacy-projection.ts`, `packages/content-engine-v2/src/compatibility/benchmark-surface.ts`, `packages/content-engine-v2/src/structure/extract.ts`, `packages/content-engine-v2/src/utils/text.ts`, `packages/content-engine-v2/src/tests/consumer-compat.test.ts`, `packages/content-engine-v2/src/benchmarks/legacy-v1-surfaces.json`, `packages/content-engine/**` (removed), `.agents/skills/assignment-intent-cleanroom/SKILL.md`, `.agents/skills/category-and-module-normalization/SKILL.md`, `.agents/skills/deterministic-concept-firewall/SKILL.md`, `.agents/skills/distinct-evidence-scoring/SKILL.md`, `.agents/skills/golden-regression-fixtures/SKILL.md`, `.agents/skills/offline-export-determinism/SKILL.md`, `.agents/skills/source-quality-gate/SKILL.md`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/ERROR_LEDGER.md`, `.omega/DECISIONS.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Created the repo-local cutover skill and the required cutover planning/audit/retirement docs, then used them to drive the migration.
+- Redirected the canonical `@learning/content-engine` seam to `packages/content-engine-v2/src/index.ts` without changing downstream import ids.
+- Added the v2 public `LearningBundle` compatibility surface, progress wrapper, source-quality export, and a frozen legacy-v1 benchmark snapshot so the old-vs-new benchmark remains executable after retirement.
+- Hardened the new engine for live consumer attachment by preserving full plain-text paragraph evidence, splitting sentences correctly after closing quotes, and keeping clean multi-concept bundles from collapsing into a single concept.
+- Declared the canonical engine dependency in `packages/interactions-engine/package.json` and repaired the stale workspace link state so every consumer resolves the live engine through the workspace package id rather than web-only aliases.
+- Declared the existing DOCX ingest dependency in `apps/web/package.json` so full repo test/build verification is truthful and green.
+- Removed the old `packages/content-engine` package from the repo and runtime path once the redirected seam, consumer tests, and benchmark proof were in place.
+- Added cutover notes to repo-local skills that still contain historical old-engine path references so contributor instructions identify `packages/content-engine-v2/src/**` as the canonical engine runtime.
+
+**Why**
+- The prior pass proved v2 materially better in isolation; this pass had to make it the one real production engine without leaving hidden fallbacks, stale workspace links, or consumer breakage behind.
+
+**Downstream effects**
+- The live product now has one production engine: `@learning/content-engine` backed by `packages/content-engine-v2`.
+- The benchmark delta remains `82.67 -> 98.00` (`+15.33`) against the frozen legacy baseline after cutover.
+- Full repo `typecheck`, `test`, and `build` now pass with the new engine live and the old engine retired.
+
+### Isolated deterministic semantic engine replacement candidate (`packages/content-engine-v2`)
+
+**Files changed**: `.agents/skills/deterministic-engine-replacement-forge/SKILL.md`, `ENGINE_REPLACEMENT_CHARTER.md`, `ENGINE_BOUNDARY_MAP.md`, `ENGINE_ACCEPTANCE_MATRIX.md`, `ENGINE_FAILURE_CORPUS_PLAN.md`, `ENGINE_MIGRATION_PLAN_DRAFT.md`, `ENGINE_V2_ARCHITECTURE.md`, `ENGINE_V2_BENCHMARK_PLAN.md`, `ENGINE_V2_CLOSEOUT_REPORT.md`, `packages/content-engine-v2/package.json`, `packages/content-engine-v2/tsconfig.json`, `packages/content-engine-v2/src/contracts/types.ts`, `packages/content-engine-v2/src/utils/stable.ts`, `packages/content-engine-v2/src/utils/text.ts`, `packages/content-engine-v2/src/noise/rules.ts`, `packages/content-engine-v2/src/truth-gates/labels.ts`, `packages/content-engine-v2/src/ingestion/classify.ts`, `packages/content-engine-v2/src/structure/html-tree.ts`, `packages/content-engine-v2/src/structure/extract.ts`, `packages/content-engine-v2/src/evidence/build.ts`, `packages/content-engine-v2/src/fields/compile.ts`, `packages/content-engine-v2/src/candidates/concepts.ts`, `packages/content-engine-v2/src/relations/build.ts`, `packages/content-engine-v2/src/outputs/result.ts`, `packages/content-engine-v2/src/compatibility/legacy-projection.ts`, `packages/content-engine-v2/src/compatibility/benchmark-surface.ts`, `packages/content-engine-v2/src/fixtures/corpus.ts`, `packages/content-engine-v2/src/benchmarks/score.ts`, `packages/content-engine-v2/src/benchmarks/run.ts`, `packages/content-engine-v2/src/index.ts`, `packages/content-engine-v2/src/tests/engine.test.ts`, `packages/content-engine-v2/src/tests/adapter.test.ts`, `packages/content-engine-v2/src/tests/benchmark.test.ts`, `.omega/IMPLEMENTATION_LEDGER.md`, `.omega/ERROR_LEDGER.md`, `.omega/DECISIONS.md`, `.omega/TODO_NOW.md`
+
+**What changed**
+- Added a brand-new isolated `@learning/content-engine-v2` package instead of patching the current live engine.
+- Implemented deterministic stages for ingestion classification, HTML/plain-text structural extraction, evidence-unit admission, concept generation, relation building, assignment/readiness truth gates, compatibility projection, and old-vs-new benchmark comparison.
+- Built a benchmark corpus that includes real old-engine failure families: mixed junk salvage, thin discussion salvage, admin-heavy orientation clone bundles, academic wrapper dedupe, suspicious dates, fragmentary titles, and semantic article/header preservation.
+- Hardened the new engine to recover valid evidence from mixed-content paragraphs, reject fused fragment labels, suppress weak discussion surfaces, treat suspicious dates as unknown, and preserve source-backed contrast relations.
+- Added isolated tests for engine behavior, legacy projection, and repeated benchmark comparison.
+
+**Why**
+- The existing engine still needed downstream cleanup and could blank or poison whole bundles under wrapper-heavy, junk-heavy, or mixed-evidence conditions.
+- This pass required a production-ready replacement candidate that could be benchmarked in isolation before any migration.
+
+**Downstream effects**
+- No live product wiring changed in this pass.
+- The repo now has an isolated replacement engine, an explicit compatibility seam, and a checked-in benchmark corpus that proves material quality improvement before migration planning.
+
+### Deterministic truth-gate pass: fail closed on junk concepts, suspicious dates, and provenance-free readiness
+
+**Files changed**: `.agents/skills/deterministic-study-truth-gate/SKILL.md`, `FINAL_TRUTH_GATE_ROOT_CAUSE.md`, `DETERMINISTIC_BOUNDARY_REDESIGN.md`, `ACCEPTANCE_MATRIX_FINAL.md`, `NOISE_BLOCKLIST_AND_REJECTION_RULES.md`, `PROVENANCE_REQUIREMENTS_FINAL.md`, `packages/schema/src/index.ts`, `apps/extension/src/content-canvas.ts`, `packages/content-engine/src/pipeline.ts`, `packages/content-engine/src/artifact-support.ts`, `packages/content-engine/src/synthesis.ts`, `packages/content-engine/src/protocol.ts`, `packages/content-engine/src/neural-forge.ts`, `packages/content-engine/src/index.ts`, `packages/content-engine/src/source-quality.ts`, `packages/content-engine/src/dictionaries/canvas-chrome.json`, `packages/content-engine/src/index.test.ts`, `packages/content-engine/src/artifact-support.test.ts`, `packages/content-engine/src/golden-fixtures.test.ts`, `apps/web/src/lib/workspace.ts`, `apps/web/src/lib/workspace.test.ts`, `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/lib/shell-mapper.test.ts`, `apps/web/src/lib/atlas-skill-tree.ts`, `apps/web/src/lib/atlas-skill-tree.test.ts`, `apps/web/src/lib/atlas-shell.ts`, `apps/web/src/lib/atlas-shell.test.ts`, `apps/web/src/lib/demo.ts`, `apps/web/src/lib/textbook-import.ts`, `apps/web/src/AeonthraShell.tsx`, `apps/web/src/components/AtlasJourneyPanel.tsx`, `packages/interactions-engine/src/index.test.ts`
+
+**What changed**
+- Added the repo-local `deterministic-study-truth-gate` skill and wrote the final forensic/audit docs for the exact live failures.
+- Hardened extension capture, workspace derivation, and content-engine extraction so JS-disabled shell text, LMS chrome, generic week wrappers, and truncated fragments fail closed before they can become tasks, concepts, readiness targets, or Atlas nodes.
+- Moved assignment truth toward structured fields by preserving Canvas `dueAt`, `unlockAt`, `lockAt`, title origin, submission types, points, and module metadata instead of flattening those facts into prose.
+- Required provenance-rich evidence for visible concept-facing fields, assignment mappings, readiness, and Atlas progression inputs; weak or provenance-free concepts now collapse to omission instead of semantic-looking filler.
+- Removed semantic rescue paths such as fallback concept injection, weak practice/readiness amplification, and raw negative due-countdown rendering. Unknown or suspicious due dates now stay unknown.
+- Added regression coverage for the live junk outputs and updated dependent interaction tests so the stricter concept thresholds are reflected honestly across the monorepo.
+
+**Why**: the live app was still letting noise, parser mistakes, and low-confidence fragments cross the truth boundary into user-facing semantic output. The deterministic engine needed to behave like a study compiler that rejects weak evidence instead of polishing it.
+
+**Downstream effects**: the product now surfaces fewer but materially cleaner assignments and concepts, Atlas/readiness are grounded in explicit evidence, and weak sources produce gated or omitted study output rather than persuasive garbage.
 
 ### Live capture zero-failure repair: route retained items, expose forensics, scrub poisoned queue state, and stamp the real unpacked build
 
@@ -551,3 +647,140 @@
 - Import queued pack automatically when the bridge is available.
 - Fall back to JSON export/import when the bridge is unavailable.
 - Generate the full deterministic study protocol entirely in-browser.
+
+## 2026-04-17
+
+### Extension capture retry hardening and complete-snapshot simplification
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/core/storage.ts`, `apps/extension/src/popup.tsx`, `apps/extension/src/options.tsx`, `apps/extension/src/side-panel.tsx`, `apps/extension/src/ui/shared.tsx`, `apps/extension/src/styles/global.css`, `apps/extension/src/core/service-worker.test.ts`, `apps/extension/src/core/storage.test.ts`, `README.md`, `LIVE_CAPTURE_FORENSICS.md`
+**What it does**: Adds retry logic for the worker-to-content-script handshake when a freshly opened hidden Canvas tab is loaded but not yet message-ready, forces full-course capture to always run in `Complete Snapshot` mode, and removes the mode-selection UI and dead styling from popup/options/side-panel surfaces.
+**Why**: The live extension could fail before capture started because `status === "complete"` was not a guarantee that the content script had attached. The split between `Learning Content Only` and `Complete Snapshot` also left the main capture entrypoint weaker and more failure-prone than the product needed.
+**Downstream effects**: `START_CAPTURE` now ignores legacy mode requests and always launches a complete snapshot. Persisted settings normalize legacy `learning` defaults back to `complete`. Extension UI now exposes one capture path instead of two.
+**Skill refs**: `canvas-live-zero-failure`, `universal-web-capture-extension`
+
+### Popup progress visibility for hidden-tab capture runs
+
+**Files changed**: `apps/extension/src/popup.tsx`
+**What it does**: Polls extension state while the popup is open, renders a live capture progress card directly in the popup, disables duplicate starts while capture is active, and best-effort opens the side panel immediately after a successful capture start.
+**Why**: Full-course capture runs in a hidden background tab. Without a live popup progress surface or automatic side-panel open, the product could still feel dead even when capture had actually started.
+**Downstream effects**: Starting capture from the popup now exposes progress immediately instead of requiring the user to manually hunt for the side panel or infer that the hidden tab is working.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Full-course capture now opens a visible capture tab
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/side-panel.tsx`, `apps/extension/src/core/service-worker.test.ts`
+**What it does**: Opens the modules capture tab as the active tab instead of a hidden background tab, so the existing Canvas overlay is visible during the crawl. Side-panel copy now describes the visible live-progress behavior, and the worker regression asserts `chrome.tabs.create(... active: true)`.
+**Why**: The hidden-tab model still made capture look broken to the user even after popup polling improvements, because the most trustworthy live loader already existed on the Canvas page overlay but was never guaranteed to be visible.
+**Downstream effects**: Starting full-course capture now moves the user into a visible Canvas capture tab where the overlay can show progress immediately.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Popup poll no longer flashes the whole extension UI
+
+**Files changed**: `apps/extension/src/popup.tsx`, `apps/extension/src/service-worker.ts`, `apps/extension/src/core/service-worker.test.ts`
+**What it does**: Converts popup polling to a background refresh that does not reset the entire popup into loading state every 1.2 seconds, and adds an explicit `OPEN CAPTURE TAB` path backed by a worker message that focuses the active capture tab.
+**Why**: The popup was visibly flashing because each poll called `setLoading(true)` before every state refresh, which made the live progress surface look broken even during healthy runs.
+**Downstream effects**: Keeping the popup open during capture no longer blanks the UI repeatedly, and users can jump directly to the visible capture tab if focus did not land where expected.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Full-course capture now runs in the current Canvas tab instead of cloning the course into a duplicate tab
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/core/service-worker.test.ts`, `apps/extension/src/side-panel.tsx`
+**What it does**: Reuses the active verified Canvas tab as the full-course capture runtime surface, makes `captureTabId` and `sourceTabId` the same tab when capture starts there, and dedupes overlay broadcasts so the loader is sent once to the real launch page.
+**Why**: The previous visible-tab behavior still looked broken in practice because clicking Capture often just reopened the same Canvas page in a second tab instead of attaching the loader to the page the user actually launched from.
+**Downstream effects**: Full-course capture should now stay on the current Canvas page and show the live overlay there instead of spawning a duplicate course tab.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Full-course capture now self-heals missing Canvas receivers by injecting the content script and retrying
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/core/service-worker.test.ts`
+**What it does**: When the worker hits `Receiving end does not exist` or `Could not establish connection` on the active verified Canvas tab, it injects `content-canvas.js` with `chrome.scripting.executeScript(...)` and retries the message instead of failing immediately.
+**Why**: After an extension reload, the popup could still detect the current course by URL fallback while the open Canvas tab had no live content-script receiver, which made Capture fail even though the worker itself was healthy.
+**Downstream effects**: Full-course capture should no longer depend on a manual page refresh just to restore the content-script receiver on an already-open Canvas tab.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Popup now closes itself after a successful capture start so the page-level loader is visible
+
+**Files changed**: `apps/extension/src/popup.tsx`
+**What it does**: After `START_CAPTURE` succeeds, the popup refreshes state once and then closes instead of trying to keep the user inside the popup or auto-opening another surface.
+**Why**: Once full-course capture moved into the current Canvas tab, the popup itself became the thing covering the loader. The screenshot confirmed capture was already in `Starting Capture` while the user still could not see the page-level progress surface.
+**Downstream effects**: Starting capture from the popup should now drop the user back onto the Canvas page immediately so the overlay can be seen.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Verified Canvas tabs now have a direct bootstrap fallback when the message receiver still does not exist
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/content-canvas.ts`, `apps/extension/src/core/service-worker.test.ts`
+**What it does**: Exposes a direct bootstrap API from `content-canvas.ts` for course-context detection, same-tab capture start/control, and overlay rendering. The worker now invokes that bootstrap with `chrome.scripting.executeScript({ func })` whenever a verified Canvas tab still returns a missing-receiver error, and overlay broadcasts use the same recovery path.
+**Why**: Live evidence showed the same already-open Canvas tab could still surface `Could not establish connection. Receiving end does not exist.` even after the earlier inject-and-retry repair, which meant the message channel itself was still a brittle single point of failure.
+**Downstream effects**: Same-tab full-course capture can now start and show the page overlay from a stale open Canvas tab without depending on `tabs.sendMessage(...)` recovering first.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Popup now shows start diagnostics under the capture button with live-vs-fallback detection evidence
+
+**Files changed**: `apps/extension/src/popup.tsx`, `apps/extension/src/service-worker.ts`, `apps/extension/src/core/types.ts`
+**What it does**: Adds a `START DIAGNOSTICS` box below the capture button that surfaces the last popup/runtime/finalized capture error, whether the popup reached the worker, whether course detection came from a live Canvas receiver or URL fallback, and the current build/tab signals.
+**Why**: The popup previously showed only a generic top-level error banner, which was not enough to distinguish real worker failure from URL-only course detection or stale-tab receiver issues during the live repair loop.
+**Downstream effects**: Manual retests can now capture concrete blocker evidence directly from the popup instead of relying on memory or screenshots of transient banner text.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Missing-receiver failures now preserve the receiver-recovery trace instead of collapsing back to one generic message
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/popup.tsx`, `apps/extension/src/core/service-worker.test.ts`
+**What it does**: When start/control/context messaging still dies with `Receiving end does not exist`, the worker now records whether bootstrap execution was unavailable before injection, whether `content-canvas.js` injection succeeded or failed, and whether bootstrap was still unavailable after injection. The popup also now maps the worker's `activeCourseSource` correctly instead of showing `detect unknown`.
+**Why**: The first diagnostics box proved the worker was alive but still hid the actual failed recovery stage behind the same generic missing-receiver string.
+**Downstream effects**: The next popup error should tell us whether the current live blocker is failed script injection, missing page bootstrap after injection, or some other surviving recovery seam.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Popup can now restart the extension runtime when it proves the worker bundle is stale
+
+**Files changed**: `apps/extension/src/popup.tsx`, `apps/extension/src/popup-diagnostics.ts`, `apps/extension/src/popup-diagnostics.test.ts`, `LIVE_CAPTURE_FORENSICS.md`, `CANONICAL_EXTENSION_PATH.md`, `LIVE_PROOF_CHECKLIST.md`, `REGRESSION_GAP_REPORT.md`
+**What it does**: Adds a dedicated stale-worker detector and `RESTART EXTENSION RUNTIME` CTA in the popup. When the popup sees `COURSE DETECTED` plus `detect none`, or the worker signature is missing/mismatched, capture is blocked, the popup explains that the live worker bundle is stale, and the user can restart the MV3 runtime directly from the popup. A new regression test locks the stale-worker detector against that exact contradiction.
+**Why**: Live evidence showed a fresh popup and fresh `build-info.json` can coexist with an old service-worker instance still answering `GET_STATE`, which kept producing misleading missing-receiver errors even after earlier diagnostics landed.
+**Downstream effects**: Manual retests no longer need `chrome://extensions` as the only recovery path for stale-worker sessions, and the popup now fails closed instead of pretending capture can start from a proven stale worker.
+**Skill refs**: `canvas-live-zero-failure`, `extension-canonicality-checker`
+
+### Bootstrap probing now runs in the isolated extension world
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/core/service-worker.test.ts`, `LIVE_CAPTURE_FORENSICS.md`
+**What it does**: Forces the worker’s bootstrap probe to run with `chrome.scripting.executeScript(... world: "ISOLATED")` and updates the recovery trace text to say `isolated extension context` instead of `page context`. Regression coverage now fails if the bootstrap probe drops that world parameter.
+**Why**: The newest live diagnostics proved the worker bundle itself was fresh, but the bootstrap probe still could not see `content-canvas.js` after successful injection. That is exactly the failure you would expect if the probe were evaluating in the wrong execution world.
+**Downstream effects**: The next live trace will either recover cleanly because the probe now sees the injected bootstrap, or it will give a more truthful isolated-world failure instead of implying a generic page-context issue.
+**Skill refs**: `canvas-live-zero-failure`
+
+### Worker and popup signatures now version the isolated-world patch explicitly
+
+**Files changed**: `apps/extension/src/service-worker.ts`, `apps/extension/src/popup-diagnostics.ts`, `apps/extension/src/core/service-worker.test.ts`, `CANONICAL_EXTENSION_PATH.md`, `LIVE_PROOF_CHECKLIST.md`, `.omega/TODO_NOW.md`
+**What it does**: Bumps the worker signature to `sw-recovery-trace-v4` and the popup signature to `popup-worker-check-v2` so a worker from before the isolated-world patch can no longer look current just because it shares the old `v3` signature.
+**Why**: Live evidence showed the old `page context` trace could still appear alongside the latest build marker because the worker behavior changed without a signature bump.
+**Downstream effects**: The next popup can distinguish the real isolated-world worker from the earlier `v3` worker immediately, and stale-runtime diagnosis is no longer ambiguous across this patch boundary.
+**Skill refs**: `canvas-live-zero-failure`, `extension-canonicality-checker`
+### Content-script build output now fails closed if Chrome would reject it as a classic MV3 script
+
+**Files changed**: `apps/extension/src/content-canvas.ts`, `apps/extension/scripts/build.mjs`, `apps/extension/scripts/build.test.mjs`
+**What it does**: Removes the accidental `export` boundary from the `content-canvas` entry and teaches the extension build validator to reject any shipped content script that still contains top-level `import` or `export` syntax.
+**Why**: Live capture forensics proved every Canvas page was falling back to URL-only detection, and inspection of `apps/extension/dist/content-canvas.js` showed it ended with `export { ... }`, which prevents Chrome from loading it as a manifest content script at all.
+**Downstream effects**: Fresh Canvas tabs can expose a real content-script receiver again, and future regressions of this exact build-shape bug now fail during `npm run build` and `scripts/build.test.mjs` instead of silently shipping.
+**Skill refs**: `canvas-live-zero-failure`, `extension-canonicality-checker`
+
+### Web PDF intake now reports pre-page stages and falls back to compatibility mode before hanging at 0%
+
+**Files changed**: `apps/web/src/App.tsx`, `apps/web/src/lib/pdf-ingest.ts`, `apps/web/src/lib/pdf-ingest.test.ts`
+**What it does**: Changes PDF upload progress to show real pre-page stages (`Loading PDF intake module`, `Loading PDF runtime`, `Opening PDF document`) and adds a `getDocument()` compatibility fallback that retries with `disableWorker: true` if the worker-backed open stalls or fails.
+**Why**: Live user evidence showed PDF uploads could sit at `0%` indefinitely because the UI only updated after the first page callback, while the real stall was earlier in document open where `pdfjs` worker setup can hang silently.
+**Downstream effects**: PDF uploads no longer look inert during runtime/document-open work, and the ingest path now fails with a precise textbook error only after both worker and compatibility opens fail.
+**Skill refs**: `pdf`
+
+### PDF compatibility retry now preserves an independent binary payload instead of reusing detached worker data
+
+**Files changed**: `apps/web/src/lib/pdf-ingest.ts`, `apps/web/src/lib/pdf-ingest.test.ts`
+**What it does**: Clones a fallback `Uint8Array` before the worker-backed `getDocument()` call and uses that independent payload for the `disableWorker: true` retry.
+**Why**: Live failure evidence showed the first worker attempt could detach the original `ArrayBuffer`, making the compatibility retry fail immediately with `Cannot perform Construct on a detached ArrayBuffer`.
+**Downstream effects**: A timed-out worker open can now meaningfully retry on the main thread instead of failing on a poisoned binary buffer.
+**Skill refs**: `pdf`
+
+### [ENGINE TRUTH-GATE] Explicit definition lanes can now satisfy support when no other grounded support survives
+
+**Files changed**: `packages/content-engine-v2/src/candidates/concepts.ts`, `packages/content-engine-v2/src/outputs/result.ts`, `packages/content-engine-v2/src/tests/engine.test.ts`
+**What it does**: Lets the first explicit-definition evidence unit count as support when a cluster has no other grounded support lane, while still refusing wrapper titles, front matter, and generic container prose as trusted labels. Theme and assignment display labels now prefer grounded concept labels when the title is untrusted.
+**Why**: The wrapper-title cleanup was correct, but it accidentally made real textbook concepts disappear when the only surviving evidence was a grounded definitional sentence. That over-pruned plain-text textbook bundles and hid the real concept behind a false-negative support gate.
+**Downstream effects**: Real definitional concepts can survive again without reintroducing generic chapter/week/introduction wrappers into concepts, themes, or readiness labels.
+**Skill refs**: `deterministic-study-truth-gate`, `semantic-distinctness-forge`

@@ -1,6 +1,72 @@
 # ERROR LEDGER
 
+## 2026-04-18
+
+### [WEB] Page items were still promoted into assignment lanes, and grounded captured requirements collapsed to `unmapped`
+
+**Status**: FIXED
+**Root cause**: `deriveWorkspace()` kept `page` tasks when they had concept IDs, so page content could enter the assignment/readiness pipeline. In parallel, `buildAssignmentReadinessState()` treated any requirement without a full checklist-backed skill chain as `unmapped`, even when the requirement still had concept grounding and captured evidence.
+**Symptom**: generic course pages could appear as submission targets, and grounded assignments with partial skill chains could be mislabeled as `Unmapped` instead of `Concept Prep`.
+**Fix**: page tasks are no longer promoted into the assignment lane, and grounded requirements without a complete skill chain now surface as `concept-prep`. Added regressions for both paths.
+**Guard**: `apps/web/src/lib/workspace.test.ts`, `apps/web/src/lib/atlas-shell.test.ts`, `npm run test --workspace @learning/web`, `npm run build --workspace @learning/web`, and `npm run typecheck`.
+
+### [EXTENSION] Same-tab capture start regressed the last committed working load path for already-open Canvas tabs
+
+**Status**: CODE FIX VERIFIED; LIVE RETEST PENDING
+**Root cause**: the worker changed from opening a fresh hidden `course.modulesUrl` tab to forcing same-tab start in the already-open active Canvas tab. When that tab had been opened before the extension reload, the manifest content script was not attached there, so the popup could still detect the course by URL while capture start had no live receiver.
+**Symptom**: the popup showed a detected course plus `detect url-fallback`, then `START_CAPTURE` failed with `Could not establish connection. Receiving end does not exist.` on the same launch tab.
+**Fix**: the worker now keeps same-tab start only for `live-content-script` detection. If detection falls back to URL only, it restores the older reliable behavior and opens a fresh background modules tab before capture start, then waits for the normal declarative Canvas receiver instead of trying to inject recovery logic into that new tab. The worker also buffers DOM-seeded auto-start handshake signals so same-tab recovery cannot lose the first progress message to a race.
+**Guard**: `apps/extension/src/core/service-worker.test.ts`, `apps/extension/src/popup-diagnostics.test.ts`, `npm run test --workspace @learning/extension`, `npm run build --workspace @learning/extension`, and `npm run typecheck`.
+
 ## 2026-04-17
+
+### [CUTOVER] Workspace still resolved `@learning/content-engine` through a stale junction after package retirement
+
+**Status**: FIXED
+**Root cause**: `package-lock.json` already pointed `node_modules/@learning/content-engine` at `packages/content-engine-v2`, but the local workspace junction still targeted the deleted `packages/content-engine` directory until the install state was refreshed.
+**Symptom**: `packages/interactions-engine` tests could not resolve `@learning/content-engine` even after the live seam and lockfiles were updated.
+**Fix**: declared `@learning/content-engine` explicitly in `packages/interactions-engine/package.json` and reran `npm install`, which rebuilt the junction to `packages/content-engine-v2`.
+**Guard**: `npm test`, `npm run test --workspace @learning/interactions-engine -- src/index.test.ts`, and the post-cutover package-lock verification.
+
+### [ENGINE V2] Long plain-text paragraphs and quoted sentence boundaries could collapse clean multi-concept source into one visible concept
+
+**Status**: FIXED
+**Root cause**: `packages/content-engine-v2/src/structure/extract.ts` truncated plain-text paragraph nodes before evidence splitting, and `packages/content-engine-v2/src/utils/text.ts::splitSentences()` did not split after punctuation followed by a closing quote.
+**Symptom**: a clean ethics reader used by `packages/interactions-engine` emitted `Utilitarianism` but lost `Deontology` and `Virtue Ethics`, breaking relation/collision consumers under the live cutover seam.
+**Fix**: preserved full plain-text paragraph text for evidence extraction and made the sentence splitter recognize `."`, `!'`, `?)`, and similar closing-quote boundaries.
+**Guard**: `packages/interactions-engine/src/index.test.ts`, `npm run test --workspace @learning/interactions-engine -- src/index.test.ts`, and the repeated benchmark run that still scores `98.00`.
+
+### [WEB] DOCX ingest imported `mammoth/mammoth.browser` without declaring the dependency
+
+**Status**: FIXED
+**Root cause**: `apps/web/src/lib/docx-ingest.ts` imported Mammoth, but `apps/web/package.json` did not declare `mammoth`.
+**Symptom**: `npm test` and `npm run build` failed in the web workspace even though the engine cutover itself was working.
+**Fix**: added `mammoth` to `apps/web/package.json` and refreshed the workspace install.
+**Guard**: `apps/web/src/lib/docx-ingest.test.ts`, `npm test`, and `npm run build`.
+
+### [ENGINE V2] Mixed-content paragraph trust could reject an entire salvageable block before sentence-level filtering
+
+**Status**: FIXED
+**Root cause**: early structural trust in `packages/content-engine-v2/src/structure/extract.ts` treated any plain-text block containing hard-noise or chrome signals as fully rejected, even when the same block also contained strong academic sentences.
+**Symptom**: mixed single-page captures could lose the real concept lane because the block was rejected before sentence-level salvage ran.
+**Fix**: switched block trust to a mixed-content model that only rejects the whole block when noise exists without academic signal. Sentence-level filtering now handles mixed blocks deterministically.
+**Guard**: `packages/content-engine-v2/src/tests/benchmark.test.ts` through `single-page-mixed-live-junk`, plus the repeated benchmark loop.
+
+### [ENGINE V2] Explicit label extraction could fuse a broken fragment into the front of a real concept label
+
+**Status**: FIXED
+**Root cause**: explicit-definition extraction in `packages/content-engine-v2/src/candidates/concepts.ts` originally trusted the full subject phrase before `is/increases/...`, which allowed a fragment like `Creating Produce New Or` to prepend itself to a real concept label.
+**Symptom**: the engine could derive garbage candidates such as `Creating Produce New Or Positive Reinforcement` from a mixed page.
+**Fix**: strengthened fragment rejection, rejected connector-led label fragments, and recovered the accepted suffix label when the leading tokens were junk.
+**Guard**: `single-page-mixed-live-junk` in the v2 benchmark corpus and repeated benchmark verification.
+
+### [TRUTH GATE] Weak evidence could still become semantic-looking assignments, concepts, readiness, and Atlas nodes
+
+**Status**: CODE FIX VERIFIED; LIVE RETEST PENDING
+**Root cause**: multiple boundaries were too permissive at once. `content-canvas.ts` and `workspace.ts` still admitted LMS chrome and generic wrappers, `pipeline.ts` could promote truncated fragments into concepts, due-date parsing accepted weak prose hints, and shell/Atlas layers still amplified provenance-free concepts through semantic-looking fallback copy.
+**Symptom**: live output could show `You need to have JavaScript enabled in order to access this site.` as a task, `Creating Produce New Or` as a concept, `Due in -101 days`, generic `Week N` readiness rows, and Atlas trees built from weak substrate.
+**Fix**: added a deterministic truth gate across capture, extraction, synthesis, workspace derivation, and shell rendering. Structured Canvas fields now outrank prose guesses, suspicious dates are suppressed, concepts require grounded definition evidence plus provenance/pass reasons, shell fallbacks fail closed, and readiness/Atlas only build from sufficiently supported inputs.
+**Guard**: `packages/content-engine/src/index.test.ts`, `packages/content-engine/src/artifact-support.test.ts`, `packages/content-engine/src/golden-fixtures.test.ts`, `apps/web/src/lib/workspace.test.ts`, `apps/web/src/lib/shell-mapper.test.ts`, `apps/web/src/lib/atlas-shell.test.ts`, `apps/web/src/lib/atlas-skill-tree.test.ts`, `packages/interactions-engine/src/index.test.ts`.
 
 ### [EXTENSION] Live full-course capture emitted retained pages that the worker never persisted
 
@@ -358,3 +424,132 @@
 - Symptom: local storage reads in the web app trusted raw JSON without schema validation.
 - Root cause: storage helpers cast parsed JSON directly to `CaptureBundle`.
 - Fix: switched storage reads to `CaptureBundleSchema.safeParse(...)` so bad payloads degrade to a clean empty state instead of poisoning the workspace.
+
+## 2026-04-17
+
+### [EXTENSION CAPTURE] Fresh hidden capture tabs could reject the first start message
+
+**Status**: FIXED
+**Root cause**: `apps/extension/src/service-worker.ts` opened a hidden modules tab, waited for the tab to report `complete`, and then sent exactly one `aeon:start-course-capture` message. In live Chrome/Canvas runs, `complete` could arrive before the content script had attached, which produced transient `Receiving end does not exist` / `Could not establish connection` errors and aborted the run before any items persisted.
+**Symptom**: The extension could look like it no longer captured content because the background run never actually started, even though existing finalize/importability tests still passed.
+**Fix**: Added retryable worker-to-Canvas messaging with a short post-load backoff, used it for course-context detection plus capture start/control commands, forced full-course capture to `complete`, and removed the UI/settings mode split that kept routing users through weaker capture paths.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the first hidden-tab handshake can fail once and still recover into a started complete snapshot. `apps/extension/src/core/storage.test.ts` now proves persisted legacy `learning` defaults normalize back to `complete`.
+
+### [EXTENSION UX] Hidden-tab capture could still look invisible from the popup
+
+**Status**: FIXED
+**Root cause**: The popup only showed a static course-detected view plus a start button. It did not poll live runtime state, did not render active capture progress, and did not automatically open the side panel after launch.
+**Symptom**: Even when capture started successfully, users could still report that they did not see the loader/progress surface while the course was being captured.
+**Fix**: `apps/extension/src/popup.tsx` now polls extension state, renders a live progress card when runtime is `starting|discovering|capturing|paused`, disables duplicate starts, and best-effort opens the side panel after a successful launch.
+**Guard**: Verified by extension build, extension test suite, and root typecheck; manual authenticated Chrome retest remains the final live-proof step.
+
+### [EXTENSION UX] Full-course capture remained invisible because the real loader lived in a hidden tab
+
+**Status**: FIXED
+**Root cause**: Even after popup polling was added, the canonical full-course run still created `tabs.create({ active: false })`. The strongest live loader already existed as the Canvas-page overlay, but it was attached to a hidden capture tab and therefore could still be invisible in the real user flow.
+**Symptom**: Users could still report “it’s not working” because no visible live loader appeared while the extension was actually crawling.
+**Fix**: `apps/extension/src/service-worker.ts` now opens the capture tab as `active: true`, and `apps/extension/src/core/service-worker.test.ts` locks that behavior in.
+**Guard**: Verified by targeted service-worker test, extension build, and root typecheck.
+
+### [EXTENSION UX] Popup polling itself caused a 1-second flash loop
+
+**Status**: FIXED
+**Root cause**: `apps/extension/src/popup.tsx` polled extension state on an interval but called `setLoading(true)` at the start of every poll. That re-rendered the loader card over the popup every cycle and made the extension appear to blink.
+**Symptom**: “The extension flashes every 1 second when it’s open,” and the live capture card looked unstable even when runtime state was available.
+**Fix**: Popup polling now runs as a background refresh that preserves the current rendered state, and the popup gained an explicit `OPEN CAPTURE TAB` action backed by `aeon:focus-capture-tab`.
+**Guard**: Verified by extension build, root typecheck, and service-worker regression coverage for the focus action.
+
+### [EXTENSION CAPTURE] Full-course start reopened the same Canvas page in a duplicate tab instead of attaching capture to the launch tab
+
+**Status**: FIXED
+**Root cause**: `apps/extension/src/service-worker.ts` still created a new active `course.modulesUrl` tab for every full-course run, even when the user had already launched capture from a verified Canvas course page.
+**Symptom**: Clicking Capture appeared to just reopen the same Canvas page in another tab while the expected loader never attached to the page the user actually clicked from.
+**Fix**: Full-course capture now starts inside the current Canvas tab itself, reuses that tab as the capture runtime surface, and dedupes overlay broadcasts when `sourceTabId === captureTabId`.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the full-course path no longer calls `chrome.tabs.create(...)` and still retries the start handshake successfully.
+
+### [EXTENSION CAPTURE] Active Canvas tab could be detected by URL while still lacking a live content-script receiver
+
+**Status**: FIXED
+**Root cause**: `detectCourseContext()` could fall back to URL-based course detection on a verified Canvas tab even when `content-canvas.js` was not actually attached there yet, especially after an extension reload. Starting capture then failed with `Could not establish connection. Receiving end does not exist.`
+**Symptom**: The popup showed `COURSE DETECTED`, but clicking Capture immediately returned the missing-receiver error on the same page.
+**Fix**: `sendCanvasMessageWithRetry()` now treats missing-receiver errors as a content-script recovery seam: it injects `content-canvas.js` into the verified Canvas tab with `chrome.scripting.executeScript(...)` and retries the message.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the worker injects `content-canvas.js` into the active Canvas tab before the retry succeeds.
+
+### [EXTENSION UX] Popup could hide the loader even after capture successfully started
+
+**Status**: FIXED
+**Root cause**: Once full-course capture began running in the current Canvas tab, the popup stayed open and physically obscured the page area where the overlay loader was rendered.
+**Symptom**: The popup showed `LIVE CAPTURE` and `Starting Capture`, but the user still could not see the page-level loader and it still felt like nothing was happening.
+**Fix**: `apps/extension/src/popup.tsx` now closes the popup immediately after a successful capture start.
+**Guard**: Verified by extension test suite, extension build, and root typecheck.
+
+### [EXTENSION CAPTURE] Injecting the Canvas script was not enough when the message port itself stayed unavailable
+
+**Status**: FIXED
+**Root cause**: The earlier recovery patch still assumed `chrome.tabs.sendMessage(...)` would succeed once `content-canvas.js` had been reinjected. Live evidence showed a verified Canvas tab could still keep returning a missing-receiver error afterward, leaving capture start and overlay updates blocked on the same dead port.
+**Symptom**: The popup still showed `Could not establish connection. Receiving end does not exist.` on a detected course page even after the inject-and-retry repair.
+**Fix**: `apps/extension/src/content-canvas.ts` now exposes a direct bootstrap API on `window`, and `apps/extension/src/service-worker.ts` falls back to invoking that bootstrap with `chrome.scripting.executeScript({ func })` for course-context, capture start/control, and overlay-state operations when the message receiver path stays unavailable.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the worker can still start full-course capture through the injected bootstrap when the start message never regains a receiver. Verified by extension test suite, extension build, and root typecheck.
+
+### [EXTENSION UX] Popup did not preserve actionable blocker evidence near the capture action
+
+**Status**: FIXED
+**Root cause**: The popup only showed a transient top-level error string and did not expose whether the worker was reachable, whether course detection was live or URL-only fallback, or whether a stored runtime/finalized capture error already existed.
+**Symptom**: Repeated live failures were hard to diagnose because the user could click Capture again without a stable local summary of what the popup could actually prove about the current tab.
+**Fix**: `apps/extension/src/popup.tsx` now renders a `START DIAGNOSTICS` box directly under the capture button, and the worker exposes the course-detection source so the popup can distinguish live receiver detection from URL fallback.
+**Guard**: Verified by extension test suite, extension build, and root typecheck.
+
+### [EXTENSION CAPTURE] Receiver-recovery failures were still flattened into the same generic missing-receiver error
+
+**Status**: FIXED
+**Root cause**: Even after adding popup diagnostics, the worker still threw the original `Could not establish connection. Receiving end does not exist.` error after all retries, without preserving whether bootstrap lookup failed before injection, whether `content-canvas.js` injection itself failed, or whether bootstrap lookup still failed after injection.
+**Symptom**: The popup could prove `worker live`, but the only stored runtime error was still the same generic missing-receiver string, leaving the actual surviving recovery seam ambiguous.
+**Fix**: `sendCanvasMessageWithRetry()` now emits a structured recovery-trace error string for unrecovered missing-receiver failures, and the popup now maps `activeCourseSource` so the course-detection path is no longer shown as `unknown`.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the final error message contains the recovery trace when the receiver never recovers. Verified by extension test suite, extension build, and root typecheck.
+
+### [EXTENSION CANONICALITY] Fresh popup/build markers could still coexist with a stale live service worker
+
+**Status**: FIXED
+**Root cause**: A Manifest V3 service worker can remain alive across rebuilds while popup pages and `build-info.json` are reloaded from disk. That allowed the popup to show the latest `builtAt/sourceHash` while the worker still answered without `workerCodeSignature` or a valid detection source.
+**Symptom**: Live diagnostics showed `COURSE DETECTED`, `worker live`, `worker-sig missing`, and `detect none` at the same time, followed by the same `Receiving end does not exist` capture failure.
+**Fix**: The popup now treats missing/mismatched worker signatures and the `course-detected + detect none` contradiction as a stale-worker state, blocks capture from that state, and exposes a `RESTART EXTENSION RUNTIME` action that reloads the extension runtime directly.
+**Guard**: `apps/extension/src/popup-diagnostics.test.ts` now proves the stale-worker contradiction triggers the runtime-reload recommendation while a matching worker signature does not. Verified by targeted popup test, full extension suite, extension build, and root typecheck.
+
+### [EXTENSION CAPTURE] Bootstrap probing could still miss the injected Canvas runtime by executing in the wrong world
+
+**Status**: FIXED
+**Root cause**: The live diagnostics moved past stale-worker theory and proved the fresh worker still could not see `window.__aeonthraCaptureBootstrap` after successful `content-canvas.js` injection. The worker’s bootstrap probe was not explicitly pinned to the isolated extension world where the content script lives.
+**Symptom**: Recovery traces read `content-canvas.js injection: succeeded` but still reported `bootstrap API unavailable`, while the popup showed a fresh `worker-sig sw-recovery-trace-v3`.
+**Fix**: `apps/extension/src/service-worker.ts` now executes bootstrap probes with `world: "ISOLATED"` and labels the failure path as `isolated extension context` so the trace matches the actual runtime boundary.
+**Guard**: `apps/extension/src/core/service-worker.test.ts` now proves the bootstrap probe calls `chrome.scripting.executeScript` in the isolated world. Verified by targeted service-worker tests, full extension suite, extension build, and root typecheck.
+### [EXTENSION BUILD] Shipped Canvas content script contained ESM export syntax and never loaded in Chrome
+
+**Status**: FIXED
+**Root cause**: `apps/extension/src/content-canvas.ts` exported test helper functions, and the extension build emitted `apps/extension/dist/content-canvas.js` with a real trailing `export { cleanHtmlFragment, learningBlocks }`. Manifest MV3 content scripts load as classic scripts, so Chrome rejected the file before `chrome.runtime.onMessage.addListener(...)` could register.
+**Symptom**: Every Canvas page reported `detect url-fallback`, and live runs failed with `Fresh background capture tab never exposed a live Canvas receiver after page load.` even though the worker and manifest were current.
+**Fix**: Removed the source-level exports from the content-script entry and added build validation that rejects any dist content script containing top-level `import` or `export` syntax.
+**Guard**: `apps/extension/scripts/build.test.mjs` now proves `validateBuiltExtensionDist()` fails if a shipped content script still contains ESM syntax. Verified by targeted extension tests, full extension suite, extension build, and root typecheck.
+
+### [WEB PDF INTAKE] PDF uploads could stall at 0% before the first page callback ever fired
+
+**Status**: FIXED
+**Root cause**: The PDF upload UI only moved progress after `extractTextFromPdf()` started yielding page callbacks, but the actual failure seam was earlier in `pdfjsLib.getDocument(...).promise`, where worker-backed document open could stall or fail without surfacing any intermediate stage to the intake card.
+**Symptom**: Uploading a PDF left the textbook card on `Extracting PDF` at `0%`, making it look like nothing happened even though the importer was blocked before page extraction began.
+**Fix**: Added explicit pre-page PDF status stages in `apps/web/src/App.tsx` / `apps/web/src/lib/pdf-ingest.ts` and taught `openPdfDocumentWithFallback()` to retry with `disableWorker: true` before surfacing a precise final textbook error.
+**Guard**: `apps/web/src/lib/pdf-ingest.test.ts` now proves a stalled worker-backed open falls back to compatibility mode and that dual open failures return the new precise error. Verified by targeted web tests, full web suite, web build, root typecheck, and a direct sample-PDF smoke extraction.
+
+### [WEB PDF INTAKE] Compatibility retry reused a detached PDF buffer after the worker path timed out
+
+**Status**: FIXED
+**Root cause**: The first `pdfjs` worker-backed `getDocument()` call could transfer/detach the original `ArrayBuffer`. The compatibility retry reused that same binary payload, so it failed immediately with `Cannot perform Construct on a detached ArrayBuffer`.
+**Symptom**: After the pre-page fallback landed, the intake card still failed on some PDFs with `Primary open error: PDF document open timed out... Compatibility open error: Cannot perform Construct on a detached ArrayBuffer`.
+**Fix**: `apps/web/src/lib/pdf-ingest.ts` now prepares an independent `Uint8Array` clone before the worker attempt and reserves that clone exclusively for the fallback `disableWorker: true` open.
+**Guard**: `apps/web/src/lib/pdf-ingest.test.ts` now proves the fallback receives a different binary object than the primary worker attempt. Verified by targeted web tests, full web suite, web build, and root typecheck.
+
+### [ENGINE TRUTH-GATE] Real textbook concepts disappeared when explicit-definition clusters were forced to find extra support
+
+**Status**: FIXED
+**Root cause**: The semantic leak cleanup successfully rejected wrapper titles and generic container prose, but the concept builder still required a second support lane even when a real definition sentence was the only grounded evidence that survived. That over-pruned otherwise valid textbook concepts.
+**Symptom**: A plain-text bundle titled `Overview of Classical Conditioning` with a grounded definition sentence produced zero concepts, even though the title was already rejected and the body clearly contained the real concept.
+**Fix**: `packages/content-engine-v2/src/candidates/concepts.ts` now allows the first explicit-definition evidence unit to satisfy the support lane when no other grounded support survives, and `packages/content-engine-v2/src/outputs/result.ts` keeps untrusted titles out of theme and assignment display labels unless no grounded concept label exists.
+**Guard**: `packages/content-engine-v2/src/tests/engine.test.ts` now proves wrapper titles stay rejected while the real body concept still survives. Verified by engine tests and repo typecheck.

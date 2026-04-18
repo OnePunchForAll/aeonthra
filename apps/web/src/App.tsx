@@ -39,6 +39,8 @@ import {
   restoreOfflineSiteBundle
 } from "./lib/offline-site";
 import {
+  describeCanvasLoadState,
+  describeTextbookLoadState,
   determineAppStage,
   isSameCourse,
   mergeSourceBundles,
@@ -115,6 +117,8 @@ type UploadState = {
   progress: number;
   label: string;
 };
+
+type PdfIngestModule = typeof import("./lib/pdf-ingest");
 
 const EMPTY_PROGRESS: AppProgress = createEmptyProgress();
 
@@ -475,6 +479,24 @@ function acceptedJsonFile(file: File): boolean {
   return file.name.toLowerCase().endsWith(".json") || file.type.includes("json");
 }
 
+export function describePdfIngestLoadFailure(error: unknown): string {
+  const detail = error instanceof Error ? error.message : "Unknown PDF intake loader failure.";
+  if (detail.includes("Failed to fetch dynamically imported module")) {
+    return `PDF intake module failed to load. Restart the web dev server and retry the upload. Original loader error: ${detail}`;
+  }
+  return `PDF intake module failed to load. ${detail}`;
+}
+
+export async function loadPdfIngestModule(
+  importer: () => Promise<PdfIngestModule> = () => import("./lib/pdf-ingest")
+): Promise<PdfIngestModule> {
+  try {
+    return await importer();
+  } catch (error) {
+    throw new Error(describePdfIngestLoadFailure(error));
+  }
+}
+
 function makeDemoTextbookBundle(): CaptureBundle {
   return createTextbookCaptureBundle({
     title: "AEONTHRA Demo Textbook",
@@ -587,6 +609,7 @@ export default function App() {
   const [textbookBundle, setTextbookBundle] = useState<CaptureBundle | null>(initialSourceState.sourceState.textbookBundle);
   const [learning, setLearning] = useState<LearningBundle | null>(null);
   const [status, setStatus] = useState("Waiting for Canvas course import.");
+  const [textbookImportError, setTextbookImportError] = useState<string | null>(null);
   const [pasteTitle, setPasteTitle] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
@@ -615,6 +638,16 @@ export default function App() {
 
   const canvasSummary = useMemo(() => summarizeBundle(canvasBundle), [canvasBundle]);
   const textbookSummary = useMemo(() => summarizeBundle(textbookBundle), [textbookBundle]);
+  const canvasLoadState = useMemo(() => describeCanvasLoadState(canvasBundle), [canvasBundle]);
+  const textbookLoadState = useMemo(
+    () => describeTextbookLoadState({
+      canvasBundle,
+      textbookBundle,
+      uploadLabel: uploadState?.label ?? null,
+      importError: textbookImportError
+    }),
+    [canvasBundle, textbookBundle, uploadState, textbookImportError]
+  );
 
   const appStage = determineAppStage({
     canvasBundle,
@@ -815,6 +848,7 @@ export default function App() {
     setTextbookBundle(keepTextbook);
     setLearning(null);
     setProcessing(null);
+    setTextbookImportError(null);
     setSynthesisRequested(false);
     setDemoBannerDismissed(false);
     hydratedProgressScopeRef.current = null;
@@ -839,6 +873,7 @@ export default function App() {
     setTextbookBundle(makeDemoTextbookBundle());
     setLearning(null);
     setProcessing(null);
+    setTextbookImportError(null);
     setProgress(EMPTY_PROGRESS);
     setSynthesisRequested(true);
     setDemoBannerDismissed(false);
@@ -861,6 +896,7 @@ export default function App() {
       setLearning(restored.learningBundle);
       setProgress(restored.progress);
       setProcessing(null);
+      setTextbookImportError(null);
       setSynthesisRequested(false);
       setDemoBannerDismissed(false);
       hydratedProgressScopeRef.current = resolution.noteScope;
@@ -890,12 +926,15 @@ export default function App() {
       setTextbookBundle(bundle);
       setLearning(null);
       setProcessing(null);
+      setTextbookImportError(null);
       setSynthesisRequested(false);
       setStatus(successMessage);
       setPasteTitle("");
       setPasteText("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Textbook import failed.");
+      const message = error instanceof Error ? error.message : "Textbook import failed.";
+      setTextbookImportError(message);
+      setStatus(message);
     }
   };
 
@@ -907,19 +946,33 @@ export default function App() {
 
     const importToken = ++textbookImportTokenRef.current;
     const lower = file.name.toLowerCase();
+    setTextbookImportError(null);
     if (file.type === "application/pdf" || lower.endsWith(".pdf")) {
-      setUploadState({ kind: "pdf", progress: 0, label: "Extracting PDF" });
-      const { extractTextFromPdf } = await import("./lib/pdf-ingest");
-      const extracted = await extractTextFromPdf(file, (page, total) => {
-        if (importToken !== textbookImportTokenRef.current) {
-          return;
+      setUploadState({ kind: "pdf", progress: 2, label: "Loading PDF intake module" });
+      const { extractTextFromPdf } = await loadPdfIngestModule();
+      const extracted = await extractTextFromPdf(
+        file,
+        (page, total) => {
+          if (importToken !== textbookImportTokenRef.current) {
+            return;
+          }
+          setUploadState({
+            kind: "pdf",
+            progress: total > 0 ? 24 + (page / total) * 76 : 24,
+            label: `Extracting page ${page} of ${total}`
+          });
+        },
+        (status) => {
+          if (importToken !== textbookImportTokenRef.current) {
+            return;
+          }
+          setUploadState({
+            kind: "pdf",
+            progress: status.progress,
+            label: status.label
+          });
         }
-        setUploadState({
-          kind: "pdf",
-          progress: total > 0 ? (page / total) * 100 : 0,
-          label: `Extracting page ${page} of ${total}`
-        });
-      });
+      );
       if (importToken !== textbookImportTokenRef.current) {
         setUploadState(null);
         return;
@@ -990,6 +1043,7 @@ export default function App() {
     }
 
     setStatus("Choose a PDF, DOCX, TXT, TEXT, MD, or saved JSON bundle.");
+    setTextbookImportError("Choose a PDF, DOCX, TXT, TEXT, MD, or saved JSON bundle.");
   };
 
   const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1012,7 +1066,9 @@ export default function App() {
     try {
       await handleTextbookFile(file);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Textbook import failed.");
+      const message = error instanceof Error ? error.message : "Textbook import failed.";
+      setTextbookImportError(message);
+      setStatus(message);
       setUploadState(null);
     } finally {
       event.target.value = "";
@@ -1026,14 +1082,19 @@ export default function App() {
       return;
     }
 
+    const isJsonImport = acceptedJsonFile(file);
     try {
-      if (acceptedJsonFile(file)) {
+      if (isJsonImport) {
         await importBundleFromFile(file);
       } else {
         await handleTextbookFile(file);
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Import failed.");
+      const message = error instanceof Error ? error.message : "Import failed.";
+      if (!isJsonImport) {
+        setTextbookImportError(message);
+      }
+      setStatus(message);
       setUploadState(null);
     }
   };
@@ -1081,6 +1142,7 @@ export default function App() {
     setTextbookBundle(null);
     setLearning(null);
     setProcessing(null);
+    setTextbookImportError(null);
     setSynthesisRequested(false);
     setProgress(EMPTY_PROGRESS);
     setUploadState(null);
@@ -1124,6 +1186,16 @@ export default function App() {
   };
 
   const renderIntake = () => {
+    const textbookStepTitle = textbookLoadState.state === "failed"
+      ? "Textbook intake failed"
+      : uploadState
+        ? "Preparing the textbook"
+        : "Provide the textbook";
+    const textbookStepCopy = textbookLoadState.state === "failed"
+      ? "Canvas course data remains loaded. Fix the textbook import issue and retry."
+      : uploadState
+        ? "Canvas course data is already loaded. AEONTHRA is preparing the textbook source."
+        : "Canvas course data is already loaded. Add the textbook source to continue.";
     const frameStyle = {
       minHeight: "100dvh",
       background:
@@ -1218,7 +1290,8 @@ export default function App() {
                 <div style={{ color: "#11d9b5", fontSize: ".74rem", fontWeight: 700, letterSpacing: ".14em", fontFamily: "'Orbitron', 'Space Grotesk', sans-serif" }}>
                   STEP 2 OF 3
                 </div>
-                <div style={{ fontSize: "1.55rem", fontWeight: 800, marginTop: 10 }}>Provide the textbook</div>
+                <div style={{ fontSize: "1.55rem", fontWeight: 800, marginTop: 10 }}>{textbookStepTitle}</div>
+                <div style={{ color: "#8b97be", lineHeight: 1.7, marginTop: 12 }}>{textbookStepCopy}</div>
                 {uploadState ? (
                   <div style={{ marginTop: 18, padding: "16px 18px", borderRadius: 18, background: "rgba(7,10,18,0.78)", border: "1px solid rgba(120,143,199,0.18)" }}>
                     <div style={{ color: "#8b97be" }}>{uploadState.label}</div>
@@ -1272,8 +1345,9 @@ export default function App() {
                 </div>
               </div>
               <div style={{ display: "grid", gap: 18 }}>
+                {statusCard("Canvas Status", "#00f0ff", canvasLoadState.headline, canvasLoadState.detail)}
                 {summaryCard("Canvas Course Summary", canvasSummary, "#00f0ff", "No Canvas course data has been loaded yet.")}
-                {statusCard("Textbook Status", "#11d9b5", "Required", status)}
+                {statusCard("Textbook Status", "#11d9b5", textbookLoadState.headline, textbookLoadState.detail)}
               </div>
               {renderInputs}
             </div>
@@ -1297,6 +1371,8 @@ export default function App() {
                 </div>
               </div>
               <div style={{ display: "grid", gap: 18 }}>
+                {statusCard("Canvas Status", "#00f0ff", canvasLoadState.headline, canvasLoadState.detail)}
+                {statusCard("Textbook Status", "#11d9b5", textbookLoadState.headline, textbookLoadState.detail)}
                 {summaryCard("Canvas Course Summary", canvasSummary, "#00f0ff", "No Canvas course data has been loaded yet.")}
                 {summaryCard("Textbook Summary", textbookSummary, "#11d9b5", "Textbook intake unlocks after Canvas import and is required before synthesis.")}
               </div>

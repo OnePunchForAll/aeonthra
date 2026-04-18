@@ -9,12 +9,25 @@ import {
 } from "./atlas-shell";
 import type { ShellAssignment } from "./shell-mapper";
 
-const shellAssignment = (id: string, title: string, conceptIds: string[]): ShellAssignment => ({
+type ProjectedShellAssignment = ShellAssignment & {
+  assignmentReadiness?: {
+    status?: "unmapped" | "concept-prep" | "building" | "ready";
+    label?: string;
+    readiness?: number | null;
+    progressPercent?: number | null;
+    requiredSkillIds?: string[];
+    missingSkillIds?: string[];
+  } | null;
+};
+
+const shellAssignment = (id: string, title: string, conceptIds: string[]): ProjectedShellAssignment => ({
   id,
   title,
   sub: title,
   type: "📝",
   due: 3,
+  dueLabel: "Due in 3 days",
+  dueState: "upcoming",
   pts: 10,
   con: conceptIds,
   tip: "",
@@ -102,7 +115,12 @@ const baseTree = buildAtlasSkillTree({
           {
             label: "Assignment prompt",
             excerpt: "Compare virtue ethics and deontology with a concrete case.",
-            sourceItemId: "assignment-1"
+            sourceItemId: "assignment-1",
+            sourceKind: "assignment",
+            sourceOrigin: "source-block",
+            sourceType: "prompt",
+            evidenceScore: 4,
+            passReason: "This assignment prompt stayed visible because it survived the truth gate."
           }
         ],
         summary: "Stay ready to compare the frameworks without collapsing one into the other."
@@ -150,7 +168,7 @@ describe("atlas shell projection", () => {
     expect(building.assignmentReadinessById.get("assignment-1")?.missingSkills.length).toBeGreaterThan(0);
     expect(ready.assignmentReadinessById.get("assignment-1")).toMatchObject({
       status: "ready",
-      label: expect.stringMatching(/^\d+%$/),
+      label: "Ready",
       readiness: expect.any(Number)
     });
     expect(ready.assignmentReadinessById.get("assignment-1")?.missingSkills).toEqual([]);
@@ -172,7 +190,18 @@ describe("atlas shell projection", () => {
           focusThemeIds: [],
           checklist: [],
           pitfalls: [],
-          evidence: []
+          evidence: [
+            {
+              label: "Concept anchor",
+              excerpt: "Virtue ethics asks what kind of character a choice cultivates.",
+              sourceItemId: "assignment-1",
+              sourceKind: "assignment",
+              sourceOrigin: "source-block",
+              sourceType: "prompt",
+              evidenceScore: 3,
+              passReason: "This concept-prep state is supported by a captured assignment signal."
+            }
+          ]
         }
       ]
     };
@@ -198,6 +227,89 @@ describe("atlas shell projection", () => {
       status: "unmapped",
       label: "Unmapped",
       progressPercent: 0
+    });
+  });
+
+  it("keeps grounded captured requirements in concept-prep when the skill chain is missing", () => {
+    const groundedTree: AtlasSkillTree = {
+      nodes: [],
+      groups: [],
+      chapterRewards: [],
+      assignmentRequirements: [
+        {
+          assignmentId: "grounded",
+          title: "Grounded requirement",
+          summary: "Captured requirements exist, but no skill chain can be built yet.",
+          skillIds: [],
+          basis: "captured-requirements",
+          conceptIds: ["virtue"],
+          focusThemeIds: [],
+          checklist: ["Compare virtue ethics and deontology with a concrete case from the reading."],
+          pitfalls: [],
+          evidence: [
+            {
+              label: "Captured requirement",
+              excerpt: "Compare virtue ethics and deontology with a concrete case from the reading.",
+              sourceItemId: "assignment-1",
+              sourceKind: "assignment",
+              sourceOrigin: "source-block",
+              sourceType: "prompt",
+              evidenceScore: 4,
+              passReason: "This captured requirement still provides grounding without a full chain."
+            }
+          ]
+        }
+      ]
+    };
+    const projection = buildAtlasShellProjection({
+      skillTree: groundedTree,
+      assignments: [
+        shellAssignment("grounded", "Grounded requirement", ["virtue"])
+      ],
+      progress: {
+        conceptMastery: {},
+        chapterCompletion: {},
+        skillHistory: {}
+      }
+    });
+
+    expect(projection.assignmentReadinessById.get("grounded")).toMatchObject({
+      status: "concept-prep",
+      label: "Concept Prep",
+      progressPercent: 0,
+      readiness: null
+    });
+  });
+
+  it("prefers canonical assignment readiness over unmapped fallback before skill-chain inference", () => {
+    const canonicalAssignment: ProjectedShellAssignment = {
+      ...shellAssignment("canonical", "Canonical readiness", ["virtue"]),
+      assignmentReadiness: {
+        status: "building",
+        label: "46%",
+        readiness: 46,
+        progressPercent: 46,
+        requiredSkillIds: [],
+        missingSkillIds: []
+      }
+    };
+    const projection = buildAtlasShellProjection({
+      skillTree: null,
+      assignments: [canonicalAssignment],
+      progress: {
+        conceptMastery: {},
+        chapterCompletion: {},
+        skillHistory: {}
+      }
+    });
+
+    expect(projection.assignmentReadinessById.get("canonical")).toMatchObject({
+      status: "building",
+      label: "46%",
+      readiness: 46,
+      progressPercent: 46,
+      missingSkills: [],
+      requiredSkills: []
     });
   });
 

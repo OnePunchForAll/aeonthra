@@ -87,7 +87,7 @@ function storageRemove(area: chrome.storage.StorageArea, keys: string | string[]
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-  defaultMode: "learning",
+  defaultMode: "complete",
   requestDelay: 650,
   autoHandoff: false,
   autoDeleteAfterImport: false,
@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 export const EMPTY_RUNTIME_STATE: RuntimeState = {
   status: "idle",
   jobId: null,
-  mode: "learning",
+  mode: "complete",
   progressPct: 0,
   course: null,
   phaseLabel: "Ready",
@@ -291,7 +291,7 @@ async function sanitizePendingHandoffQueue(): Promise<PendingHandoffQueueSnapsho
 function normalizeSettings(value: unknown): ExtensionSettings {
   const next = value && typeof value === "object" ? value as Partial<ExtensionSettings> : {};
   return {
-    defaultMode: next.defaultMode === "complete" ? "complete" : DEFAULT_SETTINGS.defaultMode,
+    defaultMode: "complete",
     requestDelay: typeof next.requestDelay === "number" ? next.requestDelay : DEFAULT_SETTINGS.requestDelay,
     autoHandoff: typeof next.autoHandoff === "boolean" ? next.autoHandoff : DEFAULT_SETTINGS.autoHandoff,
     autoDeleteAfterImport:

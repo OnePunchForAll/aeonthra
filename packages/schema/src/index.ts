@@ -71,6 +71,37 @@ export const sourceFamilies = [
   "other"
 ] as const;
 
+export const captureTitleSources = [
+  "structured",
+  "dom",
+  "inferred"
+] as const;
+
+export const evidenceOrigins = [
+  "source-block",
+  "item-excerpt",
+  "structured-field"
+] as const;
+
+export const evidenceTypes = [
+  "heading",
+  "paragraph",
+  "list-item",
+  "definition",
+  "summary",
+  "prompt",
+  "structured-title",
+  "structured-due-date",
+  "structured-module",
+  "textbook-segment"
+] as const;
+
+export const trustLaneStates = [
+  "accepted",
+  "degraded",
+  "rejected"
+] as const;
+
 export const retentionModuleKinds = [
   "concept-ladder",
   "distinction-drill",
@@ -101,12 +132,21 @@ export const CaptureItemSchema = z.object({
   id: z.string(),
   kind: z.enum(captureItemKinds),
   title: z.string(),
+  titleSource: z.enum(captureTitleSources).default("inferred"),
   canonicalUrl: z.string().url(),
   plainText: z.string(),
   excerpt: z.string(),
   html: z.string().optional(),
   headingTrail: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
+  dueAt: z.string().datetime().optional(),
+  unlockAt: z.string().datetime().optional(),
+  lockAt: z.string().datetime().optional(),
+  pointsPossible: z.number().nonnegative().optional(),
+  questionCount: z.number().int().nonnegative().optional(),
+  submissionTypes: z.array(z.string()).default([]),
+  moduleName: z.string().optional(),
+  moduleKey: z.string().optional(),
   capturedAt: z.string(),
   contentHash: z.string()
 });
@@ -409,12 +449,25 @@ export function isCanvasCourseKnowledgePack(
 export const EvidenceFragmentSchema = z.object({
   label: z.string(),
   excerpt: z.string(),
-  sourceItemId: z.string()
+  sourceItemId: z.string(),
+  sourceKind: z.enum(captureItemKinds),
+  sourceOrigin: z.enum(evidenceOrigins),
+  sourceType: z.enum(evidenceTypes),
+  sourceField: z.string().optional(),
+  evidenceScore: z.number().nonnegative(),
+  passReason: z.string()
+});
+
+export const TrustLaneStateSchema = z.object({
+  state: z.enum(trustLaneStates),
+  score: z.number(),
+  reasons: z.array(z.string()).default([])
 });
 
 const ConceptFieldSupportSchema = z.object({
   quality: z.enum(["strong", "supported", "weak"]),
   supportScore: z.number().nonnegative(),
+  passReason: z.string(),
   evidence: z.array(EvidenceFragmentSchema).default([])
 });
 
@@ -466,15 +519,15 @@ export const PhaseSubmodeSchema = z.object({
   id: z.string(),
   title: z.string(),
   engineIds: z.array(z.enum(engineIds)).min(1),
-  durationMinutes: z.number().int().positive(),
+  durationMinutes: z.number().int().nonnegative(),
   challengeLevel: z.enum(challengeLevels),
   objective: z.string(),
   setup: z.string(),
   prompt: z.string(),
   tasks: z.array(z.string()).min(2),
   reflection: z.string(),
-  conceptIds: z.array(z.string()).min(1),
-  evidence: z.array(EvidenceFragmentSchema).min(1)
+  conceptIds: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceFragmentSchema).default([])
 });
 
 export const MegaPhaseSchema = z.object({
@@ -482,14 +535,14 @@ export const MegaPhaseSchema = z.object({
   title: z.string(),
   tagline: z.string(),
   summary: z.string(),
-  totalMinutes: z.number().int().positive(),
+  totalMinutes: z.number().int().nonnegative(),
   winCondition: z.string(),
-  conceptIds: z.array(z.string()).min(1),
+  conceptIds: z.array(z.string()).default([]),
   submodes: z.array(PhaseSubmodeSchema).length(4)
 });
 
 export const LearningProtocolSchema = z.object({
-  totalMinutes: z.number().int().positive(),
+  totalMinutes: z.number().int().nonnegative(),
   phases: z.array(MegaPhaseSchema).length(5)
 });
 
@@ -501,8 +554,8 @@ export const NeuralForgeCardSchema = z.object({
   prompt: z.string(),
   supportLine: z.string(),
   actions: z.array(z.string()).min(1),
-  conceptIds: z.array(z.string()).min(1),
-  evidence: z.array(EvidenceFragmentSchema).min(1)
+  conceptIds: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceFragmentSchema).default([])
 });
 
 export const NeuralForgePhaseSchema = z.object({
@@ -510,15 +563,15 @@ export const NeuralForgePhaseSchema = z.object({
   title: z.string(),
   tagline: z.string(),
   purpose: z.string(),
-  durationMinutes: z.number().int().positive(),
-  ambientLines: z.array(z.string()).min(1),
-  cards: z.array(NeuralForgeCardSchema).min(1)
+  durationMinutes: z.number().int().nonnegative(),
+  ambientLines: z.array(z.string()).default([]),
+  cards: z.array(NeuralForgeCardSchema).default([])
 });
 
 export const NeuralForgeSchema = z.object({
-  totalMinutes: z.number().int().positive(),
+  totalMinutes: z.number().int().nonnegative(),
   atmosphere: z.string(),
-  ambientPrimers: z.array(z.string()).min(1),
+  ambientPrimers: z.array(z.string()).default([]),
   phases: z.array(NeuralForgePhaseSchema).length(5)
 });
 
@@ -553,12 +606,33 @@ export const AssignmentIntelligenceSchema = z.object({
   kind: z.enum(captureItemKinds),
   url: z.string().url(),
   summary: z.string(),
+  dueAt: z.string().datetime().nullable().default(null),
+  dueTrust: TrustLaneStateSchema.default({
+    state: "rejected",
+    score: 0,
+    reasons: []
+  }),
   likelySkills: z.array(z.string()).default([]),
   conceptIds: z.array(z.string()).default([]),
   focusThemeIds: z.array(z.string()).default([]),
+  readinessEligible: z.boolean().default(false),
+  readinessAcceptanceReasons: z.array(z.string()).default([]),
+  readinessRejectionReasons: z.array(z.string()).default([]),
   likelyPitfalls: z.array(z.string()).default([]),
   checklist: z.array(z.string()).default([]),
   evidence: z.array(EvidenceFragmentSchema).min(1)
+});
+
+export const AssignmentReadinessSchema = z.object({
+  id: z.string(),
+  sourceItemId: z.string(),
+  title: z.string(),
+  conceptIds: z.array(z.string()).default([]),
+  checklist: z.array(z.string()).default([]),
+  evidence: z.array(EvidenceFragmentSchema).default([]),
+  ready: z.boolean(),
+  acceptanceReasons: z.array(z.string()).default([]),
+  rejectionReasons: z.array(z.string()).default([])
 });
 
 export const RetentionModuleSchema = z.object({
@@ -574,10 +648,11 @@ export const RetentionModuleSchema = z.object({
 export const LearningSynthesisSchema = z.object({
   pipelineStages: z.array(z.string()).min(1),
   sourceCoverage: SourceCoverageSchema,
-  stableConceptIds: z.array(z.string()).min(1),
+  stableConceptIds: z.array(z.string()).default([]),
   likelyAssessedSkills: z.array(z.string()).default([]),
   focusThemes: z.array(FocusThemeSchema).default([]),
   assignmentMappings: z.array(AssignmentIntelligenceSchema).default([]),
+  assignmentReadiness: z.array(AssignmentReadinessSchema).default([]),
   retentionModules: z.array(RetentionModuleSchema).default([]),
   deterministicHash: z.string(),
   qualityBanner: z.string().default(""),
@@ -717,6 +792,7 @@ export type LearningConcept = z.infer<typeof LearningConceptSchema>;
 export type ConceptRelation = z.infer<typeof ConceptRelationSchema>;
 export type EngineProfile = z.infer<typeof EngineProfileSchema>;
 export type EvidenceFragment = z.infer<typeof EvidenceFragmentSchema>;
+export type TrustLaneState = z.infer<typeof TrustLaneStateSchema>;
 export type MegaPhase = z.infer<typeof MegaPhaseSchema>;
 export type PhaseSubmode = z.infer<typeof PhaseSubmodeSchema>;
 export type NeuralForge = z.infer<typeof NeuralForgeSchema>;
@@ -725,6 +801,7 @@ export type NeuralForgeCard = z.infer<typeof NeuralForgeCardSchema>;
 export type SourceCoverage = z.infer<typeof SourceCoverageSchema>;
 export type FocusTheme = z.infer<typeof FocusThemeSchema>;
 export type AssignmentIntelligence = z.infer<typeof AssignmentIntelligenceSchema>;
+export type AssignmentReadiness = z.infer<typeof AssignmentReadinessSchema>;
 export type RetentionModule = z.infer<typeof RetentionModuleSchema>;
 export type LearningSynthesis = z.infer<typeof LearningSynthesisSchema>;
 export type AppProgress = z.infer<typeof AppProgressSchema>;
@@ -817,11 +894,13 @@ export function createManualCaptureBundle(input: {
     id: itemId,
     kind: input.kind ?? "document",
     title: input.title,
+    titleSource: "inferred",
     canonicalUrl,
     plainText: trimmedText,
     excerpt: trimmedText.slice(0, 240),
     headingTrail: [input.title],
     tags: [],
+    submissionTypes: [],
     capturedAt,
     contentHash: stableHash(trimmedText)
   };

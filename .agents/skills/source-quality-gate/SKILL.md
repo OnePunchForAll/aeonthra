@@ -1,5 +1,7 @@
 # source-quality-gate
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Classifies a CaptureBundle before synthesis to prevent admin/orientation/thin
 content from silently producing high-confidence learning artifacts.
 

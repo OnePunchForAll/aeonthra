@@ -41,9 +41,15 @@ function makeCorpus(): InteractionCorpus {
   const bundle = createManualCaptureBundle({
     title: "Ethics Reader",
     text: [
-      "Bentham argued, \"The right act is the one that maximizes pleasure and minimizes pain.\"",
-      "According to Kant, moral rules hold even when breaking them would seem useful.",
-      "Aristotle's view is that virtue is a mean between extremes and must be cultivated through practice.",
+      "Utilitarianism is the view that actions should maximize overall well-being.",
+      "Utilitarianism compares pleasure, pain, and consequences for everyone affected.",
+      "Bentham argued, \"The right act is the one that maximizes pleasure and minimizes pain for everyone involved.\"",
+      "Deontology is the view that duties constrain action even when outcomes tempt us otherwise.",
+      "Deontology asks whether a choice respects moral rules and obligations.",
+      "According to Kant, moral rules still hold even when breaking them would seem useful.",
+      "Virtue ethics is the approach that asks what kind of person a choice helps someone become.",
+      "Virtue ethics evaluates character, habit, and practical wisdom in action.",
+      "Aristotle argues that virtue is a mean between extremes and must be cultivated through practice.",
       "Nozick argues that the experience machine shows pleasure alone cannot explain the good life.",
       "Assignment prompt: Discuss the strengths and weaknesses of utilitarianism using examples from your own life."
     ].join(" ")

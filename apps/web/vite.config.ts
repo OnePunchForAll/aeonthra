@@ -22,7 +22,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
     alias: {
       "@learning/schema": resolve(__dirname, "../../packages/schema/src/index.ts"),
-      "@learning/content-engine": resolve(__dirname, "../../packages/content-engine/src/index.ts"),
+      "@learning/content-engine": resolve(__dirname, "../../packages/content-engine-v2/src/index.ts"),
       "@learning/interactions-engine": resolve(__dirname, "../../packages/interactions-engine/src/index.ts")
     }
   },
@@ -40,7 +40,7 @@ export default defineConfig({
           if (id.includes("pdfjs-dist")) {
             return "pdf";
           }
-          if (id.includes("packages/content-engine")) {
+          if (id.includes("packages/content-engine-v2")) {
             return "content-engine";
           }
           if (id.includes("packages/interactions-engine")) {

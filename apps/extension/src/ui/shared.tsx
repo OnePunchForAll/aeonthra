@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ButtonHTMLAttributes, type PropsWithChildren, type ReactNode } from "react";
-import type { CaptureMode, ExtensionSettings, ExtensionStatusPayload, RuntimeState } from "../core/types";
+import type { ExtensionSettings, ExtensionStatusPayload, RuntimeState } from "../core/types";
 
 export function normalizeExtensionError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -123,39 +123,6 @@ export function Stat({ label, value }: { label: string; value: string | number }
       <div className="ae-stat__label">{label}</div>
       <div className="ae-stat__value">{value}</div>
     </div>
-  );
-}
-
-export function ModeCard({
-  mode,
-  selected,
-  onSelect
-}: {
-  mode: CaptureMode;
-  selected: boolean;
-  onSelect: (mode: CaptureMode) => void;
-}) {
-  const descriptor = mode === "complete"
-    ? {
-        icon: "FULL",
-        title: "Complete Snapshot",
-        body: "Capture the broadest supported course surfaces with raw HTML, metadata, files, discussions, and the best recovery path.",
-        meta: "Large output - slower capture - backup-grade"
-      }
-    : {
-        icon: "FAST",
-        title: "Learning Content Only",
-        body: "Strip Canvas chrome, keep meaningful teaching text, and build the cleanest forge-ready AEONTHRA bundle.",
-        meta: "Smaller output - faster capture - recommended"
-      };
-
-  return (
-    <button type="button" className="mode-card" data-selected={selected} onClick={() => onSelect(mode)}>
-      <div className="mode-card__icon">{descriptor.icon}</div>
-      <div className="mode-card__title">{descriptor.title}</div>
-      <div className="mode-card__desc">{descriptor.body}</div>
-      <div className="mode-card__meta">{descriptor.meta}</div>
-    </button>
   );
 }
 

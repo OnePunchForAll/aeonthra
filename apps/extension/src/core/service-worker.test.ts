@@ -177,6 +177,22 @@ describe("extension service-worker session flow", () => {
       downloads: {
         download: vi.fn((_options: chrome.downloads.DownloadOptions, callback?: (downloadId?: number) => void) => callback?.(1))
       },
+      scripting: {
+        executeScript: vi.fn((
+          injection: chrome.scripting.ScriptInjection<unknown[], unknown>,
+          callback?: (results?: chrome.scripting.InjectionResult<unknown>[]) => void
+        ) => {
+          const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+            files?: string[];
+            func?: (...args: unknown[]) => unknown;
+          };
+          if (typeof typedInjection.func === "function") {
+            callback?.([{ frameId: 0, result: undefined } as chrome.scripting.InjectionResult<unknown>]);
+            return;
+          }
+          callback?.();
+        })
+      },
       sidePanel: {
         open: vi.fn((_target: chrome.sidePanel.OpenOptions, callback?: () => void) => callback?.())
       }
@@ -465,6 +481,378 @@ describe("extension service-worker session flow", () => {
     });
   });
 
+  it("runs complete snapshot capture in the active Canvas tab without opening a duplicate page", async () => {
+    const course = makeCourse("42");
+    let captureStartAttempts = 0;
+
+    chrome.tabs.query = vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => {
+      callback([
+        {
+          id: 77,
+          url: course.modulesUrl,
+          title: `${course.courseName} - Canvas`,
+          status: "complete"
+        } as chrome.tabs.Tab
+      ]);
+    }) as unknown as typeof chrome.tabs.query;
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.sendMessage = vi.fn((tabId: number, message: unknown, callback: (response?: unknown) => void) => {
+      const typed = message as { type?: string; payload?: { mode?: string } };
+      chrome.runtime.lastError = undefined;
+
+      if (typed.type === "aeon:get-course-context" && tabId === 77) {
+        callback({ ok: true, course });
+        return;
+      }
+
+      if (typed.type === "aeon:start-course-capture" && tabId === 77) {
+        captureStartAttempts += 1;
+        if (captureStartAttempts === 1) {
+          chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+          callback(undefined);
+          chrome.runtime.lastError = undefined;
+          return;
+        }
+        callback({ ok: true });
+        return;
+      }
+
+      callback({ ok: true });
+    }) as unknown as typeof chrome.tabs.sendMessage;
+
+    const response = await dispatchMessage({
+      type: "START_CAPTURE",
+      mode: "learning"
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: "capturing"
+    });
+    expect(captureStartAttempts).toBe(2);
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      {
+        target: { tabId: 77 },
+        files: ["content-canvas.js"]
+      },
+      expect.any(Function)
+    );
+
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "starting",
+      mode: "complete",
+      course,
+      captureTabId: 77,
+      sourceTabId: 77
+    });
+
+    expect(await readCaptureForensics()).toMatchObject({
+      jobId: runtime.jobId,
+      mode: "complete",
+      course
+    });
+
+    const startCalls = vi.mocked(chrome.tabs.sendMessage).mock.calls
+      .filter(([, message]) => (message as { type?: string }).type === "aeon:start-course-capture");
+    expect(startCalls).toHaveLength(2);
+    expect(startCalls.every(([tabId]) => tabId === 77)).toBe(true);
+    expect((startCalls[0]?.[1] as { payload?: { mode?: string } }).payload?.mode).toBe("complete");
+  });
+
+  it("falls back to a fresh background capture tab when the active tab only has URL-based course detection", async () => {
+    const course = makeCourse("42");
+    let freshTabStartAttempts = 0;
+
+    chrome.tabs.query = vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => {
+      callback([
+        {
+          id: 55,
+          url: course.modulesUrl,
+          title: `${course.courseName} - Canvas`,
+          status: "complete"
+        } as chrome.tabs.Tab
+      ]);
+    }) as unknown as typeof chrome.tabs.query;
+
+    chrome.tabs.create = vi.fn((createProperties: chrome.tabs.CreateProperties, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: 88, url: createProperties.url, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.create;
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.sendMessage = vi.fn((tabId: number, message: unknown, callback: (response?: unknown) => void) => {
+      const typed = message as { type?: string };
+      chrome.runtime.lastError = undefined;
+
+      if (typed.type === "aeon:get-course-context" && tabId === 55) {
+        chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+        callback(undefined);
+        chrome.runtime.lastError = undefined;
+        return;
+      }
+
+      if (typed.type === "aeon:start-course-capture" && tabId === 88) {
+        freshTabStartAttempts += 1;
+        if (freshTabStartAttempts < 3) {
+          chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+          callback(undefined);
+          chrome.runtime.lastError = undefined;
+          return;
+        }
+        callback({ ok: true });
+        return;
+      }
+
+      callback({ ok: true });
+    }) as unknown as typeof chrome.tabs.sendMessage;
+
+    const response = await dispatchMessage({
+      type: "START_CAPTURE",
+      mode: "learning"
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: "capturing"
+    });
+    expect(chrome.tabs.create).toHaveBeenCalledWith(
+      { url: course.modulesUrl, active: false },
+      expect.any(Function)
+    );
+
+    const startCalls = vi.mocked(chrome.tabs.sendMessage).mock.calls
+      .filter(([, message]) => (message as { type?: string }).type === "aeon:start-course-capture");
+    expect(startCalls).toHaveLength(3);
+    expect(startCalls.every(([tabId]) => tabId === 88)).toBe(true);
+    expect(
+      vi.mocked(chrome.scripting.executeScript).mock.calls.some(([injection]) => {
+        const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+          files?: string[];
+          target: { tabId?: number };
+        };
+        return typedInjection.target?.tabId === 88 && Array.isArray(typedInjection.files);
+      })
+    ).toBe(false);
+
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "starting",
+      mode: "complete",
+      captureTabId: 88,
+      sourceTabId: 55
+    });
+    expect(runtime.course?.courseId).toBe(course.courseId);
+    expect(runtime.course?.origin).toBe(course.origin);
+  });
+
+  it("starts capture through the injected bootstrap when the Canvas message receiver never appears", async () => {
+    const course = makeCourse("42");
+    let contentCanvasInjected = false;
+
+    chrome.tabs.query = vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => {
+      callback([
+        {
+          id: 77,
+          url: course.modulesUrl,
+          title: `${course.courseName} - Canvas`,
+          status: "complete"
+        } as chrome.tabs.Tab
+      ]);
+    }) as unknown as typeof chrome.tabs.query;
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.sendMessage = vi.fn((tabId: number, message: unknown, callback: (response?: unknown) => void) => {
+      const typed = message as { type?: string };
+      chrome.runtime.lastError = undefined;
+
+      if (typed.type === "aeon:get-course-context" && tabId === 77) {
+        callback({ ok: true, course });
+        return;
+      }
+
+      if (typed.type === "aeon:start-course-capture" && tabId === 77) {
+        chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+        callback(undefined);
+        chrome.runtime.lastError = undefined;
+        return;
+      }
+
+      callback({ ok: true });
+    }) as unknown as typeof chrome.tabs.sendMessage;
+
+    chrome.scripting.executeScript = vi.fn((
+      injection: chrome.scripting.ScriptInjection<unknown[], unknown>,
+      callback?: (results?: chrome.scripting.InjectionResult<unknown>[]) => void
+    ) => {
+      const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+        files?: string[];
+        func?: (...args: unknown[]) => unknown;
+      };
+
+      if (typedInjection.files?.includes("content-canvas.js")) {
+        contentCanvasInjected = true;
+        callback?.();
+        return;
+      }
+
+      if (typeof typedInjection.func === "function") {
+        callback?.([
+          {
+            frameId: 0,
+            result: contentCanvasInjected && typedInjection.world === "ISOLATED" ? { ok: true } : null
+          } as chrome.scripting.InjectionResult<unknown>
+        ]);
+        return;
+      }
+
+      callback?.();
+    }) as unknown as typeof chrome.scripting.executeScript;
+
+    const response = await dispatchMessage({
+      type: "START_CAPTURE",
+      mode: "learning"
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: "capturing"
+    });
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      {
+        target: { tabId: 77 },
+        files: ["content-canvas.js"]
+      },
+      expect.any(Function)
+    );
+
+    const startCalls = vi.mocked(chrome.tabs.sendMessage).mock.calls
+      .filter(([, message]) => (message as { type?: string }).type === "aeon:start-course-capture");
+    expect(startCalls).toHaveLength(1);
+
+    const bootstrapCalls = vi.mocked(chrome.scripting.executeScript).mock.calls
+      .filter(([injection]) => {
+        const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+          func?: (...args: unknown[]) => unknown;
+        };
+        return typeof typedInjection.func === "function"
+          && (typedInjection.world === undefined || typedInjection.world === "ISOLATED");
+      });
+    expect(bootstrapCalls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      bootstrapCalls.every(([injection]) =>
+        (injection as chrome.scripting.ScriptInjection<unknown[], unknown>).world === "ISOLATED"
+      )
+    ).toBe(true);
+
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "starting",
+      mode: "complete",
+      course,
+      captureTabId: 77,
+      sourceTabId: 77
+    });
+  });
+
+  it("records recovery-trace details when the receiver never recovers", async () => {
+    const course = makeCourse("42");
+
+    chrome.tabs.query = vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => {
+      callback([
+        {
+          id: 77,
+          url: course.modulesUrl,
+          title: `${course.courseName} - Canvas`,
+          status: "complete"
+        } as chrome.tabs.Tab
+      ]);
+    }) as unknown as typeof chrome.tabs.query;
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.sendMessage = vi.fn((tabId: number, message: unknown, callback: (response?: unknown) => void) => {
+      const typed = message as { type?: string };
+      chrome.runtime.lastError = undefined;
+
+      if (typed.type === "aeon:get-course-context" && tabId === 77) {
+        callback({ ok: true, course });
+        return;
+      }
+
+      if (typed.type === "aeon:start-course-capture" && tabId === 77) {
+        chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+        callback(undefined);
+        chrome.runtime.lastError = undefined;
+        return;
+      }
+
+      callback({ ok: true });
+    }) as unknown as typeof chrome.tabs.sendMessage;
+
+    chrome.scripting.executeScript = vi.fn((
+      injection: chrome.scripting.ScriptInjection<unknown[], unknown>,
+      callback?: (results?: chrome.scripting.InjectionResult<unknown>[]) => void
+    ) => {
+      const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+        files?: string[];
+        func?: (...args: unknown[]) => unknown;
+      };
+
+      if (typedInjection.files?.includes("content-canvas.js")) {
+        chrome.runtime.lastError = {
+          message: "Cannot access contents of url \"https://canvas.example.test/courses/42/modules\"."
+        } as chrome.runtime.LastError;
+        callback?.();
+        chrome.runtime.lastError = undefined;
+        return;
+      }
+
+      if (typeof typedInjection.func === "function") {
+        callback?.([
+          {
+            frameId: 0,
+            result: null
+          } as chrome.scripting.InjectionResult<unknown>
+        ]);
+        return;
+      }
+
+      callback?.();
+    }) as unknown as typeof chrome.scripting.executeScript;
+
+    const response = await dispatchMessage({
+      type: "START_CAPTURE",
+      mode: "learning"
+    });
+
+    expect(response).toMatchObject({
+      ok: false,
+      state: "idle"
+    });
+    expect((response as { message?: string }).message).toContain("Recovery trace:");
+    expect((response as { message?: string }).message).toContain("bootstrap before injection: bootstrap API unavailable in isolated extension context");
+    expect((response as { message?: string }).message).toContain("content-canvas.js injection: failed");
+    expect((response as { message?: string }).message).toContain("bootstrap after injection: bootstrap API unavailable in isolated extension context");
+
+    const runtime = await readRuntimeState();
+    expect(runtime.status).toBe("error");
+    expect(runtime.errorMessage).toContain("Recovery trace:");
+  });
+
   it("returns build identity and capture forensics in extension state", async () => {
     const course = makeCourse("42");
     await writeRuntimeState({
@@ -486,6 +874,8 @@ describe("extension service-worker session flow", () => {
 
     expect(response).toMatchObject({
       ok: true,
+      activeCourseSource: "none",
+      workerCodeSignature: "sw-recovery-trace-v5",
       build: {
         version: "1.2.3",
         sourceHash: "source-hash",
@@ -499,6 +889,145 @@ describe("extension service-worker session flow", () => {
         partialBundleSourceUrlCount: 12
       }
     });
+  });
+
+  it("starts capture through DOM-seeded auto-start when the receiver and bootstrap both stay unavailable", async () => {
+    const course = makeCourse("42");
+    let seededPayload: { jobId: string } | null = null;
+
+    chrome.tabs.query = vi.fn((_queryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) => {
+      callback([
+        {
+          id: 77,
+          url: course.modulesUrl,
+          title: `${course.courseName} - Canvas`,
+          status: "complete"
+        } as chrome.tabs.Tab
+      ]);
+    }) as unknown as typeof chrome.tabs.query;
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.sendMessage = vi.fn((tabId: number, message: unknown, callback: (response?: unknown) => void) => {
+      const typed = message as { type?: string };
+      chrome.runtime.lastError = undefined;
+
+      if (typed.type === "aeon:get-course-context" && tabId === 77) {
+        callback({ ok: true, course });
+        return;
+      }
+
+      if (typed.type === "aeon:start-course-capture" && tabId === 77) {
+        chrome.runtime.lastError = { message: "Could not establish connection. Receiving end does not exist." } as chrome.runtime.LastError;
+        callback(undefined);
+        chrome.runtime.lastError = undefined;
+        return;
+      }
+
+      callback({ ok: true });
+    }) as unknown as typeof chrome.tabs.sendMessage;
+
+    chrome.scripting.executeScript = vi.fn((
+      injection: chrome.scripting.ScriptInjection<unknown[], unknown>,
+      callback?: (results?: chrome.scripting.InjectionResult<unknown>[]) => void
+    ) => {
+      const typedInjection = injection as chrome.scripting.ScriptInjection<unknown[], unknown> & {
+        args?: unknown[];
+        files?: string[];
+        func?: (...args: unknown[]) => unknown;
+      };
+
+      if (typedInjection.world === "MAIN" && Array.isArray(typedInjection.args) && typeof typedInjection.args[1] === "string") {
+        seededPayload = JSON.parse(typedInjection.args[1] as string) as { jobId: string };
+        callback?.([{ frameId: 0, result: true } as chrome.scripting.InjectionResult<unknown>]);
+        return;
+      }
+
+      if (typedInjection.files?.includes("content-canvas.js")) {
+        const pendingJobId = seededPayload?.jobId;
+        if (pendingJobId) {
+          void Promise.resolve().then(async () => {
+            await dispatchMessage({
+              type: "aeon:job-progress",
+              jobId: pendingJobId,
+              phaseLabel: "Discovering Course",
+              currentTitle: course.courseName,
+              currentUrl: course.courseUrl,
+              completedCount: 0,
+              skippedCount: 0,
+              failedCount: 0,
+              totalQueued: 0,
+              progressPct: 3
+            });
+          });
+        }
+        callback?.();
+        return;
+      }
+
+      if (typeof typedInjection.func === "function") {
+        callback?.([{ frameId: 0, result: null } as chrome.scripting.InjectionResult<unknown>]);
+        return;
+      }
+
+      callback?.();
+    }) as unknown as typeof chrome.scripting.executeScript;
+
+    const response = await dispatchMessage({
+      type: "START_CAPTURE",
+      mode: "learning"
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: "capturing"
+    });
+    expect(seededPayload).not.toBeNull();
+
+    const executeCalls = vi.mocked(chrome.scripting.executeScript).mock.calls;
+    expect(
+      executeCalls.some(([injection]) =>
+        (injection as chrome.scripting.ScriptInjection<unknown[], unknown>).world === "MAIN"
+      )
+    ).toBe(true);
+
+    const runtime = await readRuntimeState();
+    expect(runtime).toMatchObject({
+      status: "capturing",
+      phaseLabel: "Discovering Course",
+      course,
+      captureTabId: 77,
+      sourceTabId: 77
+    });
+  });
+
+  it("focuses the active capture tab on demand", async () => {
+    const course = makeCourse("42");
+    await writeRuntimeState({
+      ...EMPTY_RUNTIME_STATE,
+      status: "capturing",
+      jobId: "job-focus",
+      course,
+      captureTabId: 55
+    });
+
+    chrome.tabs.get = vi.fn((tabId: number, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, windowId: 9, status: "complete" } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.get;
+
+    chrome.tabs.update = vi.fn((tabId: number, updateProperties: chrome.tabs.UpdateProperties, callback: (tab?: chrome.tabs.Tab) => void) => {
+      callback({ id: tabId, windowId: 9, ...updateProperties } as chrome.tabs.Tab);
+    }) as unknown as typeof chrome.tabs.update;
+
+    chrome.windows.update = vi.fn((_windowId: number, _updateInfo: chrome.windows.UpdateInfo, callback?: () => void) => callback?.()) as unknown as typeof chrome.windows.update;
+
+    const response = await dispatchMessage({ type: "aeon:focus-capture-tab" });
+
+    expect(response).toEqual({ ok: true });
+    expect(chrome.windows.update).toHaveBeenCalledWith(9, { focused: true }, expect.any(Function));
+    expect(chrome.tabs.update).toHaveBeenCalledWith(55, { active: true }, expect.any(Function));
   });
 
   it("records top rejection reasons when a capture still finalizes as empty", async () => {

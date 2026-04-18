@@ -76,6 +76,13 @@ export type AppProgress = {
   practiceMode: boolean;
 };
 
+type AssignmentIntel = LearningBundle["synthesis"]["assignmentMappings"][number];
+
+type ProjectedAssignmentIntel = AssignmentIntel & {
+  dueAt?: string | null;
+  dueTrust?: number | null;
+};
+
 const DAY = 24 * 60 * 60 * 1000;
 const CHROME_PATTERNS = [
   /\byou need to have javascript enabled in order to access this site\b/i,
@@ -153,6 +160,7 @@ const TASK_TEXT_SKIP_PATTERNS = [
   /^prepare\b/i,
   /^start\b/i
 ] as const;
+const TRAILING_FRAGMENT_CONNECTOR = /\b(?:and|or|to|for|of|in|on|at|by|with|from|the|a|an)$/i;
 
 function eventStatus(timestamp: number): TimelineEvent["status"] {
   if (timestamp < Date.now()) {
@@ -217,6 +225,21 @@ function cleanTaskTitle(title: string): string {
     : remainder;
 }
 
+function isFragmentaryTaskTitle(title: string): boolean {
+  const cleaned = cleanTaskTitle(title);
+  if (!cleaned) {
+    return true;
+  }
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (TRAILING_FRAGMENT_CONNECTOR.test(cleaned)) {
+    return true;
+  }
+  if (words.length >= 3 && words.filter((word) => word.length <= 2).length >= 2) {
+    return true;
+  }
+  return false;
+}
+
 function isGenericTaskTitle(title: string): boolean {
   const normalized = normalize(title);
   return GENERIC_TASK_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
@@ -232,8 +255,9 @@ function titleCandidateFromText(item: CaptureItem): string | null {
     .map((entry) => entry.split(/\s+\|\s+/)[0]!.trim())
     .map((entry) => entry.split(/(?<=[.!?])\s+/)[0]!.trim())
     .map((entry) => cleanTaskTitle(entry))
-    .filter((entry) => entry.length >= 6 && entry.length <= 90)
+    .filter((entry) => entry.length >= 10 && entry.length <= 90)
     .filter((entry) => !TASK_TEXT_SKIP_PATTERNS.some((pattern) => pattern.test(entry)))
+    .filter((entry) => !isFragmentaryTaskTitle(entry))
     .filter((entry) => normalize(entry) !== normalize(baseTitle));
 
   return lines[0] ?? null;
@@ -245,22 +269,22 @@ function deriveTaskTitle(item: CaptureItem): string {
     return baseTitle;
   }
 
-  const textCandidate = titleCandidateFromText(item);
-  if (textCandidate) {
-    return textCandidate;
-  }
-
   const trailCandidate = item.headingTrail
     .map((entry) => cleanTaskTitle(entry))
-    .find((entry) => entry && !isGenericTaskTitle(entry) && !hasChrome(entry));
+    .find((entry) => entry && !isGenericTaskTitle(entry) && !hasChrome(entry) && !isFragmentaryTaskTitle(entry));
 
   if (trailCandidate) {
     return trailCandidate;
   }
 
-  const moduleCandidate = firstTagValue(item, "module:");
-  if (moduleCandidate && !isGenericTaskTitle(moduleCandidate) && !hasChrome(moduleCandidate)) {
+  const moduleCandidate = item.moduleName ?? firstTagValue(item, "module:");
+  if (moduleCandidate && !isGenericTaskTitle(moduleCandidate) && !hasChrome(moduleCandidate) && !isFragmentaryTaskTitle(moduleCandidate)) {
     return cleanTaskTitle(moduleCandidate);
+  }
+
+  const textCandidate = titleCandidateFromText(item);
+  if (textCandidate) {
+    return textCandidate;
   }
 
   return baseTitle;
@@ -286,7 +310,15 @@ function hasChrome(text: string): boolean {
 }
 
 function shouldSkipWorkspaceItem(item: CaptureItem): boolean {
-  return WORKSPACE_SKIP_PATTERNS.some((pattern) => pattern.test(item.title) || pattern.test(item.canonicalUrl) || pattern.test(item.plainText.slice(0, 500)));
+  if (WORKSPACE_SKIP_PATTERNS.some((pattern) => pattern.test(item.title) || pattern.test(item.canonicalUrl) || pattern.test(item.plainText.slice(0, 500)))) {
+    return true;
+  }
+  const preview = `${item.title} ${item.excerpt} ${item.plainText.slice(0, 320)}`;
+  const chromeHits = CHROME_PATTERNS.filter((pattern) => pattern.test(preview)).length;
+  if (chromeHits >= 2) {
+    return true;
+  }
+  return hasChrome(item.title) && chromeHits >= 1;
 }
 
 function isAuthoredConceptPage(item: CaptureItem): boolean {
@@ -341,48 +373,69 @@ function taskKindFor(item: CaptureItem): TaskKind {
   return "page";
 }
 
-function dueDateFromText(item: CaptureItem, offsetIndex: number, capturedAt: number): number | null {
+function projectedDueDateFromIntel(intel: ProjectedAssignmentIntel | undefined): number | null {
+  if (!intel?.dueAt) {
+    return null;
+  }
+  if (typeof intel.dueTrust === "number" && Number.isFinite(intel.dueTrust) && intel.dueTrust <= 0) {
+    return null;
+  }
+
+  const parsed = Date.parse(intel.dueAt);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function dueDateFromText(
+  item: CaptureItem,
+  assignmentIntel: ProjectedAssignmentIntel | undefined,
+  capturedAt: number
+): number | null {
+  const projectedDueDate = projectedDueDateFromIntel(assignmentIntel);
+  if (projectedDueDate !== null) {
+    return projectedDueDate;
+  }
+
+  const isSaneDueDate = (timestamp: number, structured = false): boolean => {
+    const deltaDays = (timestamp - capturedAt) / DAY;
+    if (structured) {
+      return deltaDays >= -365 && deltaDays <= 730;
+    }
+    return deltaDays >= -45 && deltaDays <= 365;
+  };
+
+  if (item.dueAt) {
+    const parsed = Date.parse(item.dueAt);
+    if (!Number.isNaN(parsed) && isSaneDueDate(parsed, true)) {
+      return parsed;
+    }
+  }
+
   for (const tagDate of [
-    firstTagValue(item, "due:"),
-    firstTagValue(item, "unlock:"),
-    firstTagValue(item, "lock:")
+    firstTagValue(item, "due:")
   ]) {
     if (!tagDate) {
       continue;
     }
     const parsed = Date.parse(tagDate);
-    if (!Number.isNaN(parsed)) {
+    if (!Number.isNaN(parsed) && isSaneDueDate(parsed, true)) {
       return parsed;
     }
   }
 
   const text = `${item.title} ${item.plainText}`;
-  const match = text.match(/\b(?:due|available|lock)\s+(?:on\s+)?([A-Z][a-z]{2,8}\s+\d{1,2},?\s+\d{4}(?:,\s*\d{1,2}:\d{2}\s*[AP]M)?)\b/);
+  const match = text.match(/\bdue\s+(?:on\s+)?([A-Z][a-z]{2,8}\s+\d{1,2},?\s+\d{4}(?:,\s*\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)?)\b/i);
   if (match?.[1]) {
     const parsed = Date.parse(match[1]);
-    if (!Number.isNaN(parsed)) {
+    if (!Number.isNaN(parsed) && isSaneDueDate(parsed)) {
       return parsed;
     }
   }
-  // Handle numeric date format: "Due 1/6/2026" or "Due 1/6/2026, 11:59:00 PM"
-  const numericDueMatch = text.match(/\b(?:due|available|lock)\s+(?:on\s+)?(\d{1,2}\/\d{1,2}\/\d{4})\b/i);
+  const numericDueMatch = text.match(/\bdue\s+(?:on\s+)?(\d{1,2}\/\d{1,2}\/\d{4}(?:,\s*\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)?)\b/i);
   if (numericDueMatch?.[1]) {
     const parsed = Date.parse(numericDueMatch[1]);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  // Fallback: any standalone numeric date in the text
-  const standaloneMatch = text.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
-  if (standaloneMatch?.[1]) {
-    const parsed = Date.parse(standaloneMatch[1]);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  const weekdayMatch = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
-  if (weekdayMatch) {
-    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const target = weekdays.findIndex((day) => day.toLowerCase() === weekdayMatch[1]!.toLowerCase());
-    const current = new Date(capturedAt).getDay();
-    const delta = ((target - current + 7) % 7) || 7;
-    return capturedAt + delta * DAY + offsetIndex * 2 * 60 * 60 * 1000;
+    if (!Number.isNaN(parsed) && isSaneDueDate(parsed)) {
+      return parsed;
+    }
   }
   return null;
 }
@@ -406,12 +459,15 @@ function extractPointsFromItem(item: CaptureItem): number {
 }
 
 function extractModuleKey(item: CaptureItem, index: number): string {
+  if (item.moduleKey) {
+    return item.moduleKey;
+  }
   const moduleKeyTag = firstTagValue(item, "module-key:");
   if (moduleKeyTag) {
     return moduleKeyTag;
   }
 
-  const moduleTag = firstTagValue(item, "module:");
+  const moduleTag = item.moduleName ?? firstTagValue(item, "module:");
   if (moduleTag) {
     const moduleInTag = moduleTag.match(/\bmodule\s+(\d+)\b/i);
     if (moduleInTag) return `module-${moduleInTag[1]}`;
@@ -455,10 +511,14 @@ function estimateMinutes(item: CaptureItem, kind: TaskKind): number {
 }
 
 function requirementLines(item: CaptureItem): string[] {
+  const sourceText = stripCanvasMetadata(item.plainText);
+  if (sourceText.length < 40 || CHROME_PATTERNS.filter((pattern) => pattern.test(sourceText)).length >= 2) {
+    return [];
+  }
   const requirements: string[] = [];
   const seen = new Set<string>();
   for (const pattern of REQUIREMENT_PATTERNS) {
-    const matches = item.plainText.matchAll(pattern);
+    const matches = sourceText.matchAll(pattern);
     for (const match of matches) {
       const raw = (match[1] ?? match[0] ?? "").trim().replace(/\s+/g, " ");
       if (!raw || raw.length < 10 || raw.length > 260) continue;
@@ -495,7 +555,7 @@ function relatedConceptIds(item: CaptureItem, learning: LearningBundle): string[
       const score = titleHits * 1.7 + textHits * 0.7 + sourceHits + exactLabelBonus;
       return { id: concept.id, score };
     })
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score >= 3.5)
     .sort((left, right) => right.score - left.score);
 
   return ranked.slice(0, 4).map((entry) => entry.id);
@@ -509,24 +569,39 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
   weeks: WeekGroup[];
 } {
   const capturedAt = Date.parse(bundle.capturedAt) || Date.now();
+  const assignmentIntelBySourceItemId = new Map(
+    learning.synthesis.assignmentMappings.map((mapping) => [
+      mapping.sourceItemId,
+      mapping as ProjectedAssignmentIntel
+    ] as const)
+  );
   const entries = bundle.items
     .map((item, index) => {
+      const assignmentIntel = assignmentIntelBySourceItemId.get(item.id);
       const kind = taskKindFor(item);
-      const dueDate = dueDateFromText(item, index, capturedAt);
-      const conceptIds = relatedConceptIds(item, learning);
+      const dueDate = dueDateFromText(item, assignmentIntel, capturedAt);
+      const conceptIds = Array.from(new Set([
+        ...relatedConceptIds(item, learning),
+        ...(assignmentIntel?.conceptIds ?? [])
+      ]));
       const plannedDate = dueDate ?? capturedAt + index * DAY;
+      const title = assignmentIntel?.title?.trim() || deriveTaskTitle(item);
+      const summary = assignmentIntel?.summary?.trim() || cleanSummary(item);
+      const requirements = assignmentIntel?.checklist?.length
+        ? assignmentIntel.checklist.slice(0, 6)
+        : requirementLines(item);
       return {
         id: item.id,
         sourceItemId: item.id,
-        title: deriveTaskTitle(item),
+        title,
         kind,
-        summary: cleanSummary(item),
+        summary,
         rawText: cleanRawText(item),
         dueDate,
         plannedDate,
         estimatedMinutes: estimateMinutes(item, kind),
         conceptIds,
-        requirementLines: requirementLines(item),
+        requirementLines: requirements,
         pts: extractPointsFromItem(item),
         moduleKey: extractModuleKey(item, index),
         url: item.canonicalUrl
@@ -539,7 +614,9 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
       const item = bundle.items.find((entry) => entry.id === task.id);
       if (!item || shouldSkipWorkspaceItem(item)) return false;
       if (isAuthoredConceptPage(item)) return false;
-      if (task.kind === "page") return task.conceptIds.length > 0;
+      if (isGenericTaskTitle(task.title) && task.requirementLines.length === 0 && task.conceptIds.length === 0) return false;
+      if (isFragmentaryTaskTitle(task.title)) return false;
+      if (task.kind === "page") return false;
       return true;
     })
     .sort((left, right) => (left.dueDate ?? left.plannedDate) - (right.dueDate ?? right.plannedDate))
@@ -579,7 +656,10 @@ export function deriveWorkspace(bundle: CaptureBundle, learning: LearningBundle,
     .filter((chapter, index, array) => array.findIndex((entry) => entry.moduleKey === chapter.moduleKey) === index);
 
   const goals: Goal[] = tasks.flatMap((task) => {
-    const dueDate = task.dueDate ?? task.plannedDate;
+    if (!task.dueDate) {
+      return [];
+    }
+    const dueDate = task.dueDate;
     const conceptGap = task.conceptIds.filter((id) => (progress.conceptMastery[id] ?? 0) < 0.6);
     const nextGoals: Goal[] = [];
     if (conceptGap.length > 0) {

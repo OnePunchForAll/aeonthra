@@ -1,5 +1,7 @@
 # category-and-module-normalization
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Normalizes item categories, module keys, and task groupings across the pipeline
 so that items from the same thematic unit cohere regardless of how Canvas labeled them.
 

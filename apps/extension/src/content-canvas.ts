@@ -1,6 +1,7 @@
 import { stableHash, type CaptureItem, type CaptureResource } from "@learning/schema";
+import { CAPTURE_AUTO_START_NODE_ID } from "./capture-autostart";
 import { isKnownCanvasHost, normalizeCourseUrlToDetectedOrigin, parseCourseContextFromUrl } from "./core/platform";
-import type { CaptureMode, CaptureWarning, CourseContext, ExtensionSettings, QueueItem } from "./core/types";
+import type { CaptureMode, CaptureWarning, CourseContext, ExtensionSettings, QueueItem, RuntimeState } from "./core/types";
 
 type CaptureJobPayload = {
   jobId: string;
@@ -26,6 +27,18 @@ type CourseDiscovery = {
   };
 };
 
+type CanvasBootstrapResponse =
+  | { ok: true; course: CourseContext }
+  | { ok: true; message?: string }
+  | { ok: false; message: string };
+
+type CanvasCaptureBootstrap = {
+  getCourseContext: () => CanvasBootstrapResponse;
+  startCapture: (payload: CaptureJobPayload) => CanvasBootstrapResponse;
+  setCaptureControl: (control: "pause" | "resume" | "cancel") => CanvasBootstrapResponse;
+  renderOverlay: (runtime: RuntimeState) => { ok: true };
+};
+
 declare global {
   interface Window {
     __aeonthraCaptureState?: {
@@ -33,6 +46,7 @@ declare global {
       paused: boolean;
       cancelled: boolean;
     };
+    __aeonthraCaptureBootstrap?: CanvasCaptureBootstrap;
     __aeonthraSessionObserverInstalled?: boolean;
   }
 }
@@ -44,12 +58,18 @@ const CANVAS_CHROME_SELECTORS = [
   "iframe",
   "form",
   "nav",
+  "aside",
   "header",
   "footer",
+  "[role='navigation']",
+  "[hidden]",
+  "[aria-hidden='true']",
   "#breadcrumbs",
   "#left-side",
   "#right-side",
   ".ic-app-nav-toggle-and-crumbs",
+  ".ic-app-course-menu",
+  ".ic-app-crumbs",
   ".header-bar",
   ".module-sequence-footer",
   ".ig-header-admin",
@@ -58,10 +78,16 @@ const CANVAS_CHROME_SELECTORS = [
   ".submit_assignment_link",
   ".discussion-reply-box",
   ".discussion-reply-form",
+  ".discussion-sidebar",
+  ".discussion-toolbar",
   ".add_a_comment",
   ".context_module_sub_header",
   ".button-container",
-  ".ic-Layout-watermark"
+  ".ic-Layout-watermark",
+  ".screenreader-only",
+  ".sr-only",
+  ".visually-hidden",
+  ".ui-helper-hidden-accessible"
 ] as const;
 
 const BLOCKLIST_PATTERNS = [
@@ -76,8 +102,19 @@ const BLOCKLIST_PATTERNS = [
   /\bview rubric\b/i,
   /\bsubmit assignment\b/i,
   /\bthis tool needs to be loaded in a new browser window\b/i,
-  /\breload the page to access the tool again\b/i
+  /\breload the page to access the tool again\b/i,
+  /\b(?:you need to have )?javascript enabled(?: in order)? to (?:access|use|view) (?:this (?:site|page|content|tool)|the site)\b/i,
+  /\b(?:please )?enable javascript(?: to (?:continue|view|access|use).*)?\b/i,
+  /\bthis site requires javascript\b/i,
+  /\bjavascript (?:is )?required\b/i,
+  /\bcourse navigation\b/i,
+  /\bbreadcrumbs?\b/i,
+  /\b(?:expand|collapse) menu\b/i,
+  /\bskip to content\b/i
 ] as const;
+
+const GENERIC_CAPTURE_TITLE_PATTERN = /^(assignment|discussion|quiz|page|topic|module|unit)$/i;
+const TRAILING_FRAGMENT_CONNECTOR_PATTERN = /\b(?:and|or|to|for|of|in|on|at|by|with|from|the|a|an)$/i;
 
 const LEARNING_MIN_SCORE = 10;
 const state = (window.__aeonthraCaptureState ??= {
@@ -92,6 +129,94 @@ let lastSessionObservationSignature = "";
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function removeCanvasChrome(doc: ParentNode): void {
+  for (const selector of CANVAS_CHROME_SELECTORS) {
+    doc.querySelectorAll(selector).forEach((node) => node.remove());
+  }
+}
+
+function sanitizeHtmlNode(root: ParentNode): void {
+  removeCanvasChrome(root);
+  root.querySelectorAll("*").forEach((node) => {
+    for (const attribute of Array.from(node.attributes)) {
+      if (/^on/i.test(attribute.name)) {
+        node.removeAttribute(attribute.name);
+      }
+    }
+  });
+}
+
+function sanitizeHtmlText(html: string): string {
+  const doc = parseHtml(html);
+  sanitizeHtmlNode(doc);
+  return normalizeWhitespace(doc.body.textContent ?? "");
+}
+
+function normalizeIsoDate(rawValue: unknown): string | undefined {
+  if (typeof rawValue !== "string" || !rawValue.trim()) {
+    return undefined;
+  }
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+  return parsed.toISOString();
+}
+
+function normalizeModuleKey(value: string): string {
+  const trimmed = normalizeWhitespace(value);
+  const moduleMatch = trimmed.match(/\bmodule\s+(\d+)\b/i);
+  if (moduleMatch?.[1]) {
+    return `module-${moduleMatch[1]}`;
+  }
+  const weekMatch = trimmed.match(/\bweek\s+(\d+)\b/i);
+  if (weekMatch?.[1]) {
+    return `week-${weekMatch[1]}`;
+  }
+  return trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "module";
+}
+
+function isFragmentaryText(value: string): boolean {
+  const trimmed = normalizeWhitespace(value);
+  if (!trimmed) {
+    return true;
+  }
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (TRAILING_FRAGMENT_CONNECTOR_PATTERN.test(trimmed)) {
+    return true;
+  }
+  if (words.length >= 3 && words.filter((word) => word.length <= 2).length >= 2) {
+    return true;
+  }
+  return false;
+}
+
+function isTrustworthyCaptureTitle(value: string): boolean {
+  const trimmed = normalizeWhitespace(value);
+  return Boolean(trimmed)
+    && !GENERIC_CAPTURE_TITLE_PATTERN.test(trimmed)
+    && !BLOCKLIST_PATTERNS.some((pattern) => pattern.test(trimmed))
+    && !isFragmentaryText(trimmed);
+}
+
+function chooseCaptureTitle(queueTitle: string, domTitle: string): { title: string; source: CaptureItem["titleSource"] } {
+  const structuredTitle = normalizeWhitespace(queueTitle);
+  const cleanedDomTitle = normalizeWhitespace(domTitle);
+  if (isTrustworthyCaptureTitle(structuredTitle)) {
+    return { title: structuredTitle, source: "structured" };
+  }
+  if (isTrustworthyCaptureTitle(cleanedDomTitle)) {
+    return { title: cleanedDomTitle, source: "dom" };
+  }
+  if (structuredTitle) {
+    return { title: structuredTitle, source: "structured" };
+  }
+  if (cleanedDomTitle) {
+    return { title: cleanedDomTitle, source: "dom" };
+  }
+  return { title: "Untitled item", source: "inferred" };
 }
 
 function canonicalize(url: string): string {
@@ -306,6 +431,51 @@ function overlayContainer(): HTMLDivElement {
   overlayNode.style.pointerEvents = "none";
   document.body.appendChild(overlayNode);
   return overlayNode;
+}
+
+function readPendingAutoStartPayload(): CaptureJobPayload | null {
+  const node = document.getElementById(CAPTURE_AUTO_START_NODE_ID);
+  if (!(node instanceof HTMLScriptElement)) {
+    return null;
+  }
+  const rawPayload = node.textContent?.trim();
+  if (!rawPayload) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawPayload) as Partial<CaptureJobPayload>;
+    if (
+      typeof parsed.jobId !== "string"
+      || (parsed.mode !== "complete" && parsed.mode !== "learning")
+      || !parsed.course
+      || typeof parsed.course.courseId !== "string"
+      || typeof parsed.course.courseName !== "string"
+      || typeof parsed.course.courseUrl !== "string"
+      || typeof parsed.course.modulesUrl !== "string"
+      || typeof parsed.course.origin !== "string"
+      || typeof parsed.course.host !== "string"
+      || !parsed.settings
+      || typeof parsed.settings.requestDelay !== "number"
+      || typeof parsed.settings.maxRetries !== "number"
+      || typeof parsed.settings.retryBackoffMs !== "number"
+    ) {
+      return null;
+    }
+    return {
+      jobId: parsed.jobId,
+      mode: parsed.mode,
+      course: parsed.course,
+      settings: parsed.settings
+    };
+  } catch {
+    return null;
+  }
+}
+
+function consumePendingAutoStartPayload(): CaptureJobPayload | null {
+  const payload = readPendingAutoStartPayload();
+  document.getElementById(CAPTURE_AUTO_START_NODE_ID)?.remove();
+  return payload;
 }
 
 function renderOverlay(runtime: {
@@ -548,11 +718,9 @@ function parseHtml(html: string): Document {
 }
 
 function cleanHtmlFragment(html: string): string {
-  return html
-    .replace(/\sdata-[^=]+=\"[^\"]*\"/g, "")
-    .replace(/\sclass=\"[^\"]*\"/g, "")
-    .replace(/\sid=\"[^\"]*\"/g, "")
-    .trim();
+  const doc = parseHtml(html);
+  sanitizeHtmlNode(doc);
+  return doc.body.innerHTML.trim();
 }
 
 function blockScore(text: string): number {
@@ -573,9 +741,7 @@ function blockScore(text: string): number {
 }
 
 function learningBlocks(doc: Document): string[] {
-  for (const selector of CANVAS_CHROME_SELECTORS) {
-    doc.querySelectorAll(selector).forEach((node) => node.remove());
-  }
+  removeCanvasChrome(doc);
 
   const candidates = Array.from(doc.querySelectorAll("main h1, main h2, main h3, main p, main li, article h1, article h2, article h3, article p, article li, .user_content p, .user_content li, .show-content p, .show-content li"))
     .map((node) => normalizeWhitespace(node.textContent ?? ""))
@@ -589,7 +755,7 @@ function learningBlocks(doc: Document): string[] {
       continue;
     }
     seen.add(normalized);
-    if (blockScore(candidate) >= LEARNING_MIN_SCORE) {
+    if (blockScore(candidate) >= LEARNING_MIN_SCORE && !isFragmentaryText(candidate)) {
       deduped.push(candidate);
     }
   }
@@ -616,35 +782,42 @@ function titleTrail(title: string, queueItem: QueueItem): string[] {
 function buildCaptureItem(input: {
   queueItem: QueueItem;
   title: string;
+  titleSource: CaptureItem["titleSource"];
   plainText: string;
   html?: string;
   tags?: string[];
+  dueAt?: string;
+  unlockAt?: string;
+  lockAt?: string;
+  pointsPossible?: number;
+  questionCount?: number;
+  submissionTypes?: string[];
+  moduleName?: string;
+  moduleKey?: string;
 }): CaptureItem {
   const capturedAt = new Date().toISOString();
   return {
     id: stableHash(`${input.queueItem.type}:${input.queueItem.url}:${input.plainText}`),
     kind: input.queueItem.type === "page" ? "page" : input.queueItem.type,
     title: input.title,
+    titleSource: input.titleSource,
     canonicalUrl: canonicalize(input.queueItem.url),
     plainText: normalizeWhitespace(input.plainText),
     excerpt: normalizeWhitespace(input.plainText).slice(0, 240),
     html: input.html,
     headingTrail: titleTrail(input.title, input.queueItem),
     tags: Array.from(new Set([input.queueItem.type, ...(input.tags ?? [])])),
+    dueAt: input.dueAt,
+    unlockAt: input.unlockAt,
+    lockAt: input.lockAt,
+    pointsPossible: input.pointsPossible,
+    questionCount: input.questionCount,
+    submissionTypes: input.submissionTypes ?? [],
+    moduleName: input.moduleName ?? input.queueItem.moduleName,
+    moduleKey: input.moduleKey ?? (input.queueItem.moduleName ? normalizeModuleKey(input.queueItem.moduleName) : undefined),
     capturedAt,
     contentHash: stableHash(normalizeWhitespace(input.plainText))
   };
-}
-
-function dateLine(label: string, rawValue: unknown): string | null {
-  if (typeof rawValue !== "string" || !rawValue) {
-    return null;
-  }
-  const parsed = new Date(rawValue);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-  return `${label} ${parsed.toLocaleString()}`;
 }
 
 function extractRubricText(doc: Document): string[] {
@@ -670,21 +843,16 @@ function buildAssignmentPayload(queueItem: QueueItem, html: string, mode: Captur
   warning?: CaptureWarning;
 } {
   const doc = parseHtml(html);
-  const title = normalizeWhitespace(
-    doc.querySelector("h1.title, .assignment-title .title-content, h1")?.textContent ||
-    queueItem.title
+  const titleChoice = chooseCaptureTitle(
+    queueItem.title,
+    doc.querySelector("h1.title, .assignment-title .title-content, h1")?.textContent ?? ""
   );
   const contentRoot = bestContentRoot(doc);
   const learning = learningBlocks(doc);
   const rubric = extractRubricText(doc);
   const metadata = queueItem.raw ?? {};
   const lines = composeLearningText([
-    title,
-    dateLine("Due", metadata.due_at),
-    typeof metadata.points_possible === "number" ? `Points ${metadata.points_possible}` : null,
-    Array.isArray(metadata.submission_types) && metadata.submission_types.length > 0
-      ? `Submission types ${metadata.submission_types.join(", ")}`
-      : null,
+    titleChoice.title,
     ...learning,
     ...rubric
   ]);
@@ -702,10 +870,18 @@ function buildAssignmentPayload(queueItem: QueueItem, html: string, mode: Captur
 
   const item = buildCaptureItem({
     queueItem,
-    title,
+    title: titleChoice.title,
+    titleSource: titleChoice.source,
     plainText: lines,
     html: mode === "complete" ? cleanHtmlFragment(contentRoot.innerHTML) : undefined,
-    tags: ["canvas", "assignment"]
+    tags: ["canvas", "assignment"],
+    dueAt: normalizeIsoDate(metadata.due_at),
+    lockAt: normalizeIsoDate(metadata.lock_at),
+    unlockAt: normalizeIsoDate(metadata.unlock_at),
+    pointsPossible: typeof metadata.points_possible === "number" ? metadata.points_possible : undefined,
+    submissionTypes: Array.isArray(metadata.submission_types)
+      ? metadata.submission_types.map((entry) => normalizeWhitespace(String(entry))).filter(Boolean)
+      : undefined
   });
   return {
     item,
@@ -721,14 +897,15 @@ function buildDiscussionPayload(queueItem: QueueItem, html: string, mode: Captur
   warning?: CaptureWarning;
 } {
   const doc = parseHtml(html);
-  const title = normalizeWhitespace(doc.querySelector("h1.discussion-title, h1")?.textContent || queueItem.title);
+  const titleChoice = chooseCaptureTitle(
+    queueItem.title,
+    doc.querySelector("h1.discussion-title, h1")?.textContent ?? ""
+  );
   const promptRoot = bestContentRoot(doc);
   const promptBlocks = learningBlocks(doc);
   const metadata = queueItem.raw ?? {};
   const prompt = composeLearningText([
-    title,
-    dateLine("Due", metadata.due_at),
-    typeof metadata.points_possible === "number" ? `Points ${metadata.points_possible}` : null,
+    titleChoice.title,
     ...promptBlocks
   ]);
 
@@ -745,10 +922,15 @@ function buildDiscussionPayload(queueItem: QueueItem, html: string, mode: Captur
 
   const item = buildCaptureItem({
     queueItem,
-    title,
+    title: titleChoice.title,
+    titleSource: titleChoice.source,
     plainText: prompt,
     html: mode === "complete" ? cleanHtmlFragment(promptRoot.innerHTML) : undefined,
-    tags: ["canvas", "discussion"]
+    tags: ["canvas", "discussion"],
+    dueAt: normalizeIsoDate(metadata.due_at),
+    lockAt: normalizeIsoDate(metadata.lock_at),
+    unlockAt: normalizeIsoDate(metadata.unlock_at),
+    pointsPossible: typeof metadata.points_possible === "number" ? metadata.points_possible : undefined
   });
   return {
     item,
@@ -764,10 +946,13 @@ function buildPagePayload(queueItem: QueueItem, html: string, mode: CaptureMode)
   warning?: CaptureWarning;
 } {
   const doc = parseHtml(html);
-  const title = normalizeWhitespace(doc.querySelector("h1.page-title, .page-title, h1")?.textContent || queueItem.title);
+  const titleChoice = chooseCaptureTitle(
+    queueItem.title,
+    doc.querySelector("h1.page-title, .page-title, h1")?.textContent ?? ""
+  );
   const root = bestContentRoot(doc);
   const learning = learningBlocks(doc);
-  const text = composeLearningText([title, ...learning]);
+  const text = composeLearningText([titleChoice.title, ...learning]);
 
   if (!text || text.length < 80) {
     return {
@@ -782,7 +967,8 @@ function buildPagePayload(queueItem: QueueItem, html: string, mode: CaptureMode)
 
   const item = buildCaptureItem({
     queueItem,
-    title,
+    title: titleChoice.title,
+    titleSource: titleChoice.source,
     plainText: text,
     html: mode === "complete" ? cleanHtmlFragment(root.innerHTML) : undefined,
     tags: ["canvas", "page"]
@@ -801,15 +987,15 @@ function buildQuizPayload(queueItem: QueueItem, html: string, mode: CaptureMode)
   warning?: CaptureWarning;
 } {
   const doc = parseHtml(html);
-  const title = normalizeWhitespace(doc.querySelector("h1.quiz-title, h1")?.textContent || queueItem.title);
+  const titleChoice = chooseCaptureTitle(
+    queueItem.title,
+    doc.querySelector("h1.quiz-title, h1")?.textContent ?? ""
+  );
   const root = bestContentRoot(doc);
   const blocks = learningBlocks(doc);
   const metadata = queueItem.raw ?? {};
   const text = composeLearningText([
-    title,
-    dateLine("Due", metadata.due_at),
-    typeof metadata.points_possible === "number" ? `Points ${metadata.points_possible}` : null,
-    typeof metadata.question_count === "number" ? `Question count ${metadata.question_count}` : null,
+    titleChoice.title,
     ...blocks
   ]);
 
@@ -826,10 +1012,16 @@ function buildQuizPayload(queueItem: QueueItem, html: string, mode: CaptureMode)
 
   const item = buildCaptureItem({
     queueItem,
-    title,
+    title: titleChoice.title,
+    titleSource: titleChoice.source,
     plainText: text,
     html: mode === "complete" ? cleanHtmlFragment(root.innerHTML) : undefined,
-    tags: ["canvas", "quiz"]
+    tags: ["canvas", "quiz"],
+    dueAt: normalizeIsoDate(metadata.due_at),
+    lockAt: normalizeIsoDate(metadata.lock_at),
+    unlockAt: normalizeIsoDate(metadata.unlock_at),
+    pointsPossible: typeof metadata.points_possible === "number" ? metadata.points_possible : undefined,
+    questionCount: typeof metadata.question_count === "number" ? metadata.question_count : undefined
   });
   return {
     item,
@@ -853,7 +1045,6 @@ function buildApiOnlyPayload(queueItem: QueueItem, mode: CaptureMode): {
       .slice(0, 40);
     lines = [
       queueItem.title,
-      normalizeWhitespace(String(metadata.unlock_at ?? "")).length > 0 ? `Unlock ${metadata.unlock_at}` : "",
       ...itemLines
     ].filter(Boolean);
   } else if (queueItem.type === "file") {
@@ -864,10 +1055,10 @@ function buildApiOnlyPayload(queueItem: QueueItem, mode: CaptureMode): {
       typeof metadata["size"] === "number" ? `Size ${metadata["size"]} bytes` : ""
     ].filter(Boolean);
   } else if (queueItem.type === "announcement") {
-    const body = normalizeWhitespace(String(metadata.message ?? ""));
+    const body = sanitizeHtmlText(String(metadata.message ?? ""));
     lines = [queueItem.title, body];
   } else if (queueItem.type === "syllabus") {
-    const body = normalizeWhitespace(String(metadata.syllabus_body ?? ""));
+    const body = sanitizeHtmlText(String(metadata.syllabus_body ?? ""));
     lines = [queueItem.title, body];
   }
 
@@ -879,9 +1070,17 @@ function buildApiOnlyPayload(queueItem: QueueItem, mode: CaptureMode): {
   const item = buildCaptureItem({
     queueItem,
     title: queueItem.title,
+    titleSource: "structured",
     plainText: plain,
     html: mode === "complete" && typeof metadata["html"] === "string" ? cleanHtmlFragment(String(metadata["html"])) : undefined,
-    tags: ["canvas", queueItem.type]
+    tags: ["canvas", queueItem.type],
+    dueAt: normalizeIsoDate(metadata.due_at),
+    lockAt: normalizeIsoDate(metadata.lock_at),
+    unlockAt: normalizeIsoDate(metadata.unlock_at),
+    pointsPossible: typeof metadata.points_possible === "number" ? metadata.points_possible : undefined,
+    questionCount: typeof metadata.question_count === "number" ? metadata.question_count : undefined,
+    moduleName: queueItem.type === "module" ? queueItem.title : queueItem.moduleName,
+    moduleKey: queueItem.type === "module" ? normalizeModuleKey(queueItem.title) : undefined
   });
 
   const resources: CaptureResource[] = typeof metadata["url"] === "string"
@@ -895,6 +1094,63 @@ function buildApiOnlyPayload(queueItem: QueueItem, mode: CaptureMode): {
     : [];
 
   return { item, resources };
+}
+
+function candidateModuleUrls(
+  moduleItem: Record<string, unknown>,
+  course: CourseContext
+): string[] {
+  const urls = new Set<string>();
+  const directUrl = typeof moduleItem.html_url === "string"
+    ? moduleItem.html_url
+    : typeof moduleItem.url === "string"
+      ? moduleItem.url
+      : null;
+  if (directUrl) {
+    urls.add(normalizeDiscoveredCourseUrl(directUrl, course));
+  }
+  if (typeof moduleItem.page_url === "string" && moduleItem.page_url) {
+    urls.add(normalizeDiscoveredCourseUrl(`${course.courseUrl}/pages/${moduleItem.page_url}`, course));
+  }
+  const contentId = moduleItem.content_id ?? moduleItem.id;
+  const rawType = normalizeWhitespace(String(moduleItem.type ?? moduleItem.content_type ?? "")).toLowerCase();
+  if (contentId !== undefined && contentId !== null) {
+    const id = String(contentId);
+    if (rawType.includes("assignment")) {
+      urls.add(normalizeDiscoveredCourseUrl(`${course.courseUrl}/assignments/${id}`, course));
+    }
+    if (rawType.includes("discussion")) {
+      urls.add(normalizeDiscoveredCourseUrl(`${course.courseUrl}/discussion_topics/${id}`, course));
+    }
+    if (rawType.includes("quiz")) {
+      urls.add(normalizeDiscoveredCourseUrl(`${course.courseUrl}/quizzes/${id}`, course));
+    }
+    if (rawType.includes("file")) {
+      urls.add(normalizeDiscoveredCourseUrl(`${course.courseUrl}/files/${id}`, course));
+    }
+  }
+  return [...urls];
+}
+
+function buildModuleMembershipLookup(
+  modules: Array<Record<string, unknown>>,
+  course: CourseContext
+): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const moduleEntry of modules) {
+    const moduleName = normalizeWhitespace(String(moduleEntry.name ?? "Module"));
+    const items = Array.isArray(moduleEntry.items)
+      ? moduleEntry.items as Array<Record<string, unknown>>
+      : [];
+    for (const moduleItem of items) {
+      for (const url of candidateModuleUrls(moduleItem, course)) {
+        if (!lookup.has(url)) {
+          lookup.set(url, moduleName);
+        }
+      }
+    }
+  }
+  return lookup;
 }
 
 async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscovery> {
@@ -930,6 +1186,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
   const quizzes = quizzesResult.items;
   const files = filesResult.items;
   const announcements = announcementsResult.items;
+  const moduleMembershipByUrl = buildModuleMembershipLookup(modules, payload.course);
   const queue: QueueItem[] = [];
   const warnings = [
     modulesResult.warning,
@@ -972,6 +1229,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       title: normalizeWhitespace(String(assignment.name ?? "Assignment")),
       url,
       strategy: "html-fetch",
+      moduleName: moduleMembershipByUrl.get(url),
       raw: assignment
     });
   }
@@ -987,6 +1245,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       title: normalizeWhitespace(String(discussion.title ?? "Discussion")),
       url,
       strategy: "html-fetch",
+      moduleName: moduleMembershipByUrl.get(url),
       raw: discussion
     });
   }
@@ -1002,6 +1261,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       title: normalizeWhitespace(String(page.title ?? "Page")),
       url,
       strategy: "html-fetch",
+      moduleName: moduleMembershipByUrl.get(url),
       raw: page
     });
   }
@@ -1017,6 +1277,7 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
       title: normalizeWhitespace(String(quiz.title ?? "Quiz")),
       url,
       strategy: "html-fetch",
+      moduleName: moduleMembershipByUrl.get(url),
       raw: quiz
     });
   }
@@ -1031,6 +1292,12 @@ async function discoverCourse(payload: CaptureJobPayload): Promise<CourseDiscove
         payload.course
       ),
       strategy: "api-only",
+      moduleName: moduleMembershipByUrl.get(
+        normalizeDiscoveredCourseUrl(
+          String(file.html_url ?? `${payload.course.courseUrl}/files/${file.id ?? stableHash(JSON.stringify(file))}`),
+          payload.course
+        )
+      ),
       raw: file
     });
   }
@@ -1129,6 +1396,14 @@ async function emitProgress(input: {
   totalQueued: number;
   progressPct: number;
 }): Promise<void> {
+  renderOverlay({
+    status: state.paused ? "paused" : "capturing",
+    phaseLabel: input.phaseLabel,
+    progressPct: input.progressPct,
+    currentTitle: input.currentTitle,
+    completedCount: input.completedCount,
+    totalQueued: input.totalQueued
+  });
   await chrome.runtime.sendMessage({ type: "aeon:job-progress", ...input });
 }
 
@@ -1294,7 +1569,23 @@ async function runCaptureJob(payload: CaptureJobPayload): Promise<void> {
       course: discovery.course,
       cancelled: state.cancelled
     });
+    renderOverlay({
+      status: state.cancelled ? "cancelled" : "completed",
+      phaseLabel: state.cancelled ? "Capture Cancelled" : "Capture Complete",
+      progressPct: 100,
+      currentTitle: discovery.course.courseName,
+      completedCount,
+      totalQueued
+    });
   } catch (error) {
+    renderOverlay({
+      status: "error",
+      phaseLabel: "Capture Failed",
+      progressPct: 100,
+      currentTitle: error instanceof Error ? error.message : "Capture failed unexpectedly.",
+      completedCount,
+      totalQueued: completedCount + skippedCount + failedCount
+    });
     await chrome.runtime.sendMessage({
       type: "aeon:job-error",
       jobId: payload.jobId,
@@ -1304,39 +1595,72 @@ async function runCaptureJob(payload: CaptureJobPayload): Promise<void> {
     state.running = false;
     state.paused = false;
     state.cancelled = false;
+    window.setTimeout(() => {
+      renderOverlay({
+        status: "idle",
+        phaseLabel: "",
+        progressPct: 0,
+        currentTitle: "",
+        completedCount: 0,
+        totalQueued: 0
+      });
+    }, 3200);
   }
 }
 
+function respondWithCourseContext(): CanvasBootstrapResponse {
+  const course = parseCourseFromLocation();
+  return course ? { ok: true, course } : { ok: false, message: "This page is not inside a Canvas course." };
+}
+
+function startCaptureFromBootstrap(payload: CaptureJobPayload): CanvasBootstrapResponse {
+  if (state.running) {
+    return { ok: false, message: "A capture job is already running in this tab." };
+  }
+
+  void runCaptureJob(payload);
+  return { ok: true };
+}
+
+function setCaptureControlFromBootstrap(control: "pause" | "resume" | "cancel"): CanvasBootstrapResponse {
+  if (control === "pause") state.paused = true;
+  if (control === "resume") state.paused = false;
+  if (control === "cancel") state.cancelled = true;
+  return { ok: true };
+}
+
+function renderOverlayFromBootstrap(runtime: RuntimeState): { ok: true } {
+  renderOverlay(runtime);
+  return { ok: true };
+}
+
+window.__aeonthraCaptureBootstrap = {
+  getCourseContext: respondWithCourseContext,
+  startCapture: startCaptureFromBootstrap,
+  setCaptureControl: setCaptureControlFromBootstrap,
+  renderOverlay: renderOverlayFromBootstrap
+};
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "aeon:get-course-context") {
-    const course = parseCourseFromLocation();
-    sendResponse(course ? { ok: true, course } : { ok: false, message: "This page is not inside a Canvas course." });
+    sendResponse(respondWithCourseContext());
     return true;
   }
 
   if (message.type === "aeon:start-course-capture") {
     const payload = message.payload as CaptureJobPayload;
-    if (state.running) {
-      sendResponse({ ok: false, message: "A capture job is already running in this tab." });
-      return true;
-    }
-    void runCaptureJob(payload);
-    sendResponse({ ok: true });
+    sendResponse(startCaptureFromBootstrap(payload));
     return true;
   }
 
   if (message.type === "aeon:set-capture-control") {
     const control = message.control as "pause" | "resume" | "cancel";
-    if (control === "pause") state.paused = true;
-    if (control === "resume") state.paused = false;
-    if (control === "cancel") state.cancelled = true;
-    sendResponse({ ok: true });
+    sendResponse(setCaptureControlFromBootstrap(control));
     return true;
   }
 
   if (message.type === "aeon:overlay-state") {
-    renderOverlay(message.runtime);
-    sendResponse({ ok: true });
+    sendResponse(renderOverlayFromBootstrap(message.runtime as RuntimeState));
     return true;
   }
 
@@ -1355,5 +1679,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return undefined;
 });
+
+const pendingAutoStartPayload = consumePendingAutoStartPayload();
+if (pendingAutoStartPayload && !state.running) {
+  void runCaptureJob(pendingAutoStartPayload);
+}
 
 installSessionObserver();

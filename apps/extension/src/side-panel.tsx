@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import ReactDOM from "react-dom/client";
-import { Button, Card, ModeCard, Progress, Shell, Stat, formatBytes, formatRuntime, sendExtensionMessage, useExtensionState } from "./ui/shared";
+import { Button, Card, Progress, Shell, Stat, formatBytes, formatRuntime, sendExtensionMessage, useExtensionState } from "./ui/shared";
 import "./styles/global.css";
 
 function formatDateTime(value: string): string {
@@ -14,13 +14,6 @@ function shortHash(value: string, size = 12): string {
 
 function SidePanelApp() {
   const { state, statusText, setStatusText } = useExtensionState();
-  const [selectedMode, setSelectedMode] = useState<"complete" | "learning">("learning");
-
-  useEffect(() => {
-    if (state?.settings.defaultMode) {
-      setSelectedMode(state.settings.defaultMode);
-    }
-  }, [state?.settings.defaultMode]);
 
   const activeCourse = state?.runtime.course ?? state?.activeCourse ?? null;
   const activeSession = state?.session ?? null;
@@ -38,10 +31,9 @@ function SidePanelApp() {
 
   const startCapture = async () => {
     const response = await sendExtensionMessage<{ ok: boolean; message?: string }>({
-      type: "aeon:start-capture",
-      mode: selectedMode
+      type: "aeon:start-capture"
     });
-    setStatusText(response.ok ? "Capture launched in the background. You can leave this panel open or come back later." : (response.message ?? "Unable to start capture."));
+    setStatusText(response.ok ? "Capture started in the current Canvas tab. AEONTHRA is now showing live progress while it captures the course." : (response.message ?? "Unable to start capture."));
   };
 
   const pauseCapture = async () => {
@@ -135,7 +127,7 @@ function SidePanelApp() {
             {isBusy
               ? state.runtime.currentTitle || "Walking the course in the background."
               : activeCourse
-                ? "AEONTHRA can capture supported course surfaces or strip them down to forge-ready learning content."
+                ? "AEONTHRA now captures one complete supported course snapshot with preserved HTML, metadata, and the strongest recovery path."
                 : "Open any Canvas course page first. The extension only runs where it can truthfully detect a course."}
           </p>
 
@@ -157,12 +149,11 @@ function SidePanelApp() {
             </>
           ) : activeCourse ? (
             <>
-              <div className="mode-grid">
-                <ModeCard mode="learning" selected={selectedMode === "learning"} onSelect={setSelectedMode} />
-                <ModeCard mode="complete" selected={selectedMode === "complete"} onSelect={setSelectedMode} />
-              </div>
+              <p className="ae-copy">
+                Capture mode is fixed to <strong>Complete Snapshot</strong>. Start the run and AEONTHRA will preserve the broadest supported course surface automatically.
+              </p>
               <div className="ae-inline-actions">
-                <Button variant="primary" onClick={() => void startCapture()}>Capture Supported Content</Button>
+                <Button variant="primary" onClick={() => void startCapture()}>Capture Complete Snapshot</Button>
                 <Button variant="ghost" onClick={() => void openWorkspace()}>Open AEONTHRA Only</Button>
               </div>
             </>

@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLearningBundleWithProgress, createDemoSourceText } from "@learning/content-engine";
 import { BRIDGE_SOURCE, captureBundleId, createManualCaptureBundle, type CaptureBundle } from "@learning/schema";
 import {
   buildAeonthraShellInstanceKey,
   clearPersistedWorkspaceState,
+  describePdfIngestLoadFailure,
   discardLegacyProgressMigration,
+  loadPdfIngestModule,
   mergeProgressUpdate,
   normalizeRestoredWorkspacePayload,
   resolveBridgeMessageAction,
@@ -374,6 +376,31 @@ describe("App intake orchestration", () => {
     expect(buildAeonthraShellInstanceKey("scope-a", 0)).toBe("scope-a:0");
     expect(buildAeonthraShellInstanceKey("scope-a", 1)).toBe("scope-a:1");
     expect(buildAeonthraShellInstanceKey(null, 2)).toBe("no-scope:2");
+  });
+
+  it("maps dynamic PDF loader fetch failures to a precise restart message", () => {
+    expect(describePdfIngestLoadFailure(
+      new TypeError("Failed to fetch dynamically imported module: http://localhost:5176/src/lib/pdf-ingest.ts")
+    )).toBe(
+      "PDF intake module failed to load. Restart the web dev server and retry the upload. Original loader error: Failed to fetch dynamically imported module: http://localhost:5176/src/lib/pdf-ingest.ts"
+    );
+  });
+
+  it("rethrows pdf loader failures with the mapped textbook message", async () => {
+    await expect(loadPdfIngestModule(async () => {
+      throw new TypeError("Failed to fetch dynamically imported module: http://localhost:5176/src/lib/pdf-ingest.ts");
+    })).rejects.toThrow(
+      "PDF intake module failed to load. Restart the web dev server and retry the upload. Original loader error: Failed to fetch dynamically imported module: http://localhost:5176/src/lib/pdf-ingest.ts"
+    );
+  });
+
+  it("returns the imported pdf module when lazy loading succeeds", async () => {
+    const module = {
+      extractTextFromPdf: vi.fn(),
+      loadPdfJsRuntime: vi.fn()
+    };
+
+    await expect(loadPdfIngestModule(async () => module as never)).resolves.toBe(module);
   });
 
   it("restores offline site bundles with progress and note scope metadata", () => {

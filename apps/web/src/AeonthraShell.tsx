@@ -36,6 +36,8 @@ const INVALID_CONCEPT_LABELS=new Set([
 ]);
 
 const normalizePanelText=(value)=>(value??"").replace(/\s+/g," ").trim();
+const normalizePanelKeyText=(value)=>normalizePanelText(value).toLowerCase();
+const isSamePanelText=(left,right)=>normalizePanelKeyText(left)===normalizePanelKeyText(right);
 const isBadConceptLabel=(label)=>{const normalized=normalizePanelText(label).toLowerCase();return normalized.length<4||INVALID_CONCEPT_LABELS.has(normalized);};
 const isRenderablePanelText=(value)=>normalizePanelText(value).length>=20;
 const uniqueNonEmptyPanels=(panels)=>{
@@ -421,7 +423,12 @@ const skillHistoryMap=initialProgress.skillHistory??{};
 const atlasProjection=buildAtlasShellProjection({skillTree:data.skillTree,assignments:ASSIGNMENTS,progress:{conceptMastery:conceptMasteryMap,chapterCompletion:chapterProgressMap,skillHistory:skillHistoryMap}});
 const atlasSkillModel=atlasProjection.atlasSkillModel;
 const atlasSkillById=atlasProjection.atlasSkillById;
-const assignmentReadiness=(assignment)=>atlasProjection.assignmentReadinessById.get(assignment.id)||{assignmentId:assignment.id,requirement:null,requiredSkills:[],missingSkills:[],readiness:null,status:"unmapped",label:"Unmapped",progressPercent:0};
+const assignmentReadiness=(assignment)=>atlasProjection.assignmentReadinessById.get(assignment.id)||{assignmentId:assignment.id,requirement:null,requiredSkills:[],missingSkills:[],readiness:null,status:"unmapped",label:"Needs mapping",progressPercent:0};
+const visibleConcepts=cc.filter(isRenderableConcept);
+const visibleConceptById=new Map(visibleConcepts.map((concept)=>[concept.id,concept]));
+const visibleDone=completedConceptSet(visibleConcepts,initialProgress);
+const visibleMastered=visibleConcepts.filter((concept)=>concept.mastery>=.8).length;
+const visibleConceptCount=visibleConcepts.length;
 
 const MODULES=data.modules;
 
@@ -534,11 +541,11 @@ const go=useCallback((to,d)=>{
   setTimeout(()=>{
     setV(to);if(d?.c)setSC(d.c);if(d?.a)setSA(d.a);
     if(to==="explore"&&!d?.c){
-      const pick=cc.filter(c=>!done.has(c.id)).sort((a,b)=>a.mastery-b.mastery)[0]||cc[0]||null;
+      const pick=visibleConcepts.filter(c=>!visibleDone.has(c.id)).sort((a,b)=>a.mastery-b.mastery)[0]||visibleConcepts[0]||null;
       setSC(pick);
     }
     if(to==="forge"){
-      const t=d?.c||cc.filter(c=>!done.has(c.id)&&c.mastery<.8).sort((a,b)=>a.mastery-b.mastery)[0]||cc[0];
+      const t=d?.c||visibleConcepts.filter(c=>!visibleDone.has(c.id)&&c.mastery<.8).sort((a,b)=>a.mastery-b.mastery)[0]||visibleConcepts[0]||null;
       setFC(t);setFP("intro");setIS(0);setDC(null);setTI(0);setTA(null);setMI(0);setMA(null);setFI(0);setFF(false);setWS(null);setWD(new Set());setSCO({c:0,w:0});
     }
     setFade(true);
@@ -559,6 +566,36 @@ const mastered=cc.filter(c=>c.mastery>=.8).length;
 const avg=cc.length>0?cc.reduce((s,c)=>s+c.mastery,0)/cc.length:0;
 const nextA=[...ASSIGNMENTS].sort((a,b)=>a.due-b.due)[0];
 const nextAReadiness=nextA?assignmentReadiness(nextA):null;
+const nextAReadinessHasSupport=Boolean(nextAReadiness&&(nextAReadiness.requiredSkills.length>0||nextAReadiness.missingSkills.length>0||nextAReadiness.requirement?.checklist?.length>0));
+const nextAHeader=nextA?((isSamePanelText(nextA.title,nextA.sub)||!normalizePanelText(nextA.sub))?nextA.title:`${nextA.title}: ${nextA.sub}`):"";
+const nextAVisibleConcepts=nextA?nextA.con.map((id)=>visibleConceptById.get(id)).filter((concept)=>Boolean(concept)):[];
+const nextAVisibleReady=nextAVisibleConcepts.filter((concept)=>concept.mastery>=.6);
+const nextAVisibleNotReady=nextAVisibleConcepts.filter((concept)=>concept.mastery<.6);
+const nextAVisibleSupportText=nextAReadinessHasSupport
+  ? assignmentReadinessSupportLabel(nextAReadiness)
+  : "No readiness support has been derived yet.";
+const assignmentDueCounter=(assignment)=>{
+  if(assignment.dueState==="unknown")return "Date not captured";
+  if(assignment.dueState==="today")return "Due today";
+  if(assignment.dueState==="overdue")return assignment.dueLabel;
+  return assignment.due+"d left";
+};
+const assignmentDueLine=(assignment,urgent)=>{
+  if(assignment.dueState==="unknown")return "Date not captured";
+  return urgent?"Due now: "+assignment.dueLabel:assignment.dueLabel;
+};
+const assignmentReadinessLabel=(state)=>state.status==="unmapped"?"Needs mapping":state.status==="concept-prep"?"Concept prep":state.label;
+const assignmentReadinessStateLabel=(state)=>state.status==="unmapped"?"Needs mapping":state.status==="concept-prep"?"Concept prep":"Ready";
+const assignmentReadinessSupportLabel=(state)=>state.status==="ready"?"Skill chain earned":state.status==="concept-prep"?"Concept grounding exists, but the checklist-backed skill chain is not complete yet.":"No readiness support has been derived yet.";
+const selAHeader=selA?((isSamePanelText(selA.title,selA.sub)||!normalizePanelText(selA.sub))?selA.title:`${selA.title}: ${selA.sub}`):"";
+const selAVisibleConcepts=selA?selA.con.map((id)=>visibleConceptById.get(id)).filter((concept)=>Boolean(concept)):[];
+const selAVisibleReady=selAVisibleConcepts.filter((concept)=>concept.mastery>=.6);
+const selAVisibleNotReady=selAVisibleConcepts.filter((concept)=>concept.mastery<.6);
+const selAReadiness=selA?assignmentReadiness(selA):null;
+const selAReadinessHasSupport=Boolean(selAReadiness&&(selAReadiness.requiredSkills.length>0||selAReadiness.missingSkills.length>0||selAReadiness.requirement?.checklist?.length>0));
+const selAVisibleSupportText=selAReadinessHasSupport&&selA
+  ? assignmentReadinessSupportLabel(selAReadiness)
+  : "No readiness support has been derived yet.";
 
 const askO=()=>{if(!oq.trim())return;const w=oq.toLowerCase().split(/\s+/).filter(x=>x.length>2);
   setOR(PH.map((p,pi)=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b&&p.q.length)b=p.q[stableHash(`${p.n}:${pi}:${oq}`)%p.q.length];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r||a.n.localeCompare(b.n)));};
@@ -725,7 +762,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     </div>
   </div>
   <div style={{display:"flex",gap:36}}>
-    {[[mastered+"/"+cc.length,"Mastered","🏆"],[done.size+"/"+cc.length,"Learned","🧠"],[bestStreak>0?bestStreak+"x":"—","Streak","🔥"],[totalAnswered>0?Math.round(totalCorrect/totalAnswered*100)+"%":"—","Accuracy","🎯"]].map(([val,lb,ic],i)=>(
+    {[[visibleMastered+"/"+visibleConceptCount,"Mastered","🏆"],[visibleDone.size+"/"+visibleConceptCount,"Learned","🧠"],[bestStreak>0?bestStreak+"x":"—","Streak","🔥"],[totalAnswered>0?Math.round(totalCorrect/totalAnswered*100)+"%":"—","Accuracy","🎯"]].map(([val,lb,ic],i)=>(
       <div key={i} style={{textAlign:"center"}}>
         <div style={{fontSize:".95rem",marginBottom:4}}>{ic}</div>
         <div style={{fontSize:"1.5rem",fontWeight:700,fontVariantNumeric:"tabular-nums",fontFamily:"'Space Grotesk',sans-serif"}}>{val}</div>
@@ -756,8 +793,8 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:24,flexWrap:"wrap"}}>
     <div style={{flex:1,minWidth:320}}>
       <div style={{...ey,color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>🎯 YOUR NEXT WIN</div>
-      <h2 style={hd(1.35)}>{nextA.title}: {nextA.sub}</h2>
-      <p style={{color:MU,fontSize:".9rem",marginTop:8}}>{nextA.type} {nextA.pts}pts · Due in {nextA.due} days</p>
+      <h2 style={hd(1.35)}>{nextAHeader}</h2>
+      <p style={{color:MU,fontSize:".9rem",marginTop:8}}>{nextA.type} {nextA.pts}pts · {assignmentDueLine(nextA,false)}</p>
 
       {/* Why this matters */}
       <div style={{marginTop:16,padding:"16px 20px",borderRadius:14,background:"rgba(255,255,255,.02)",border:`1px solid ${BD}`}}>
@@ -766,17 +803,20 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
       </div>
 
       {/* What you need — supportive framing */}
-      {(()=>{const needed=nextA.con.map(id=>cc.find(c=>c.id===id)).filter(Boolean);const ready=needed.filter(c=>c.mastery>=.6);const notReady=needed.filter(c=>c.mastery<.6);
+      {(()=>{const ready=nextAVisibleReady;const notReady=nextAVisibleNotReady;
         return(<div style={{marginTop:16}}>
           {ready.length>0&&<p style={{color:TL,fontSize:".88rem",marginBottom:6}}>✓ You already know {ready.map(c=>c.name).join(", ")}</p>}
-          {notReady.length>0?<p style={{color:CY,fontSize:".88rem"}}>→ {notReady.length===1?"One concept still needs attention":"Concept groundwork still needs attention"}: {notReady.map(c=>c.name).join(", ")}.</p>:
-            <p style={{color:nextAReadiness?.status==="ready"?TL:CY,fontSize:".92rem",fontWeight:600}}>{nextAReadiness?.status==="ready"?"✓ Skill chain earned. You can move into the assignment.":"→ Concepts are prepared, but Atlas is not treating this as a full readiness claim yet."}</p>}
-          {nextAReadiness?.status&&nextAReadiness.status!=="ready"&&<p style={{color:MU,fontSize:".82rem",marginTop:8}}>{nextAReadiness.status==="building"?"Atlas is still building the skill chain for this assignment.":"Use this as concept groundwork rather than an exact readiness score."}</p>}
+          {notReady.length>0
+            ? <p style={{color:CY,fontSize:".88rem"}}>→ {notReady.length===1?"One concept still needs attention":"Concept groundwork still needs attention"}: {notReady.map(c=>c.name).join(", ")}.</p>
+            : nextAVisibleConcepts.length>0
+              ? <p style={{color:nextAReadiness?.status==="ready"?TL:CY,fontSize:".92rem",fontWeight:600}}>{nextAReadiness?.status==="ready"?"✓ Skill chain earned. You can move into the assignment.":"→ Concept grounding exists, but it is not a readiness claim yet."}</p>
+              : <p style={{color:MU,fontSize:".88rem"}}>{nextAVisibleSupportText}</p>}
+          {nextAReadiness?.status&&nextAReadiness.status!=="ready"&&<p style={{color:MU,fontSize:".82rem",marginTop:8}}>{nextAVisibleSupportText}</p>}
         </div>);
       })()}
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
-      {(()=>{const notReady=nextA.con.filter(id=>(cc.find(c=>c.id===id)?.mastery??0)<.6);
+      {(()=>{const notReady=nextAVisibleNotReady;
         return notReady.length>0||nextAReadiness?.status!=="ready"?
           <button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>⚡ Strengthen groundwork</button>:
           <button onClick={()=>go("assignment",{a:nextA})} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>✓ Open Assignment</button>;
@@ -792,16 +832,19 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     <div style={{...ey,color:TL,margin:0,fontFamily:"'Space Grotesk',sans-serif"}}>📊 ASSIGNMENT READINESS</div>
     <span style={{fontSize:".82rem",color:MU}}>How prepared you are for each task</span>
   </div>
-  {ASSIGNMENTS.map(a=>{const readinessState=assignmentReadiness(a);const readiness=readinessState.progressPercent;const readinessLabel=readinessState.label;const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";const urgent=a.due<=3;
+  {ASSIGNMENTS.map(a=>{const readinessState=assignmentReadiness(a);const readiness=readinessState.progressPercent;const readinessLabel=assignmentReadinessLabel(readinessState);const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";const urgent=a.dueState==="today"||a.dueState==="overdue"||(a.dueState==="upcoming"&&a.due<=3);
     return(<button key={a.id} onClick={()=>go("assignment",{a})} style={{display:"flex",alignItems:"center",gap:16,padding:"14px 18px",background:innr,border:`1px solid ${urgent?`${RD}33`:BD}`,borderRadius:16,cursor:"pointer",width:"100%",color:TX,transition:"all 250ms",marginBottom:8}}>
       <span style={{fontSize:"1.3rem",width:36}}>{a.type}</span>
       <div style={{flex:1,textAlign:"left"}}>
         <div style={{fontSize:".92rem",fontWeight:600}}>{a.title}</div>
-        <div style={{width:"100%",height:4,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:readinessColor,width:readiness+"%",transition:"width 500ms ease"}}/></div>
+        {readinessState.status==="unmapped"
+          ? <div style={{marginTop:6,height:4,borderRadius:2,background:DM,opacity:.55}} />
+          : <div style={{width:"100%",height:4,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:readinessColor,width:readiness+"%",transition:"width 500ms ease"}}/></div>}
       </div>
-      <div style={{textAlign:"right",minWidth:70}}>
-        <div style={{fontSize:"1.1rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessLabel}</div>
-        <div style={{fontSize:".65rem",color:urgent?RD:MU}}>{urgent?"⚠ "+a.due+"d":a.due+"d left"}</div>
+      <div style={{textAlign:"right",minWidth:70,position:"relative"}}>
+        <div style={{fontSize:"1.1rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{assignmentReadinessLabel(readinessState)}</div>
+        <div style={{fontSize:".65rem",color:urgent?RD:MU,position:"absolute",right:0,top:24,background:innr,paddingLeft:6}}>{assignmentDueLine(a,urgent)}</div>
+        {a.dueState!=="unknown"&&<div style={{fontSize:".65rem",color:urgent?RD:MU}}>{assignmentDueCounter(a)}</div>}
       </div>
     </button>);
   })}
@@ -811,9 +854,9 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   {/* Module Progress Strip */}
   <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28}}>
     {MODULES.map(m=>{
-      const mConcepts=m.concepts.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
+      const mConcepts=m.concepts.map(id=>visibleConceptById.get(id)).filter(Boolean);
       const mAvg=mConcepts.length?mConcepts.reduce((s,c)=>s+c.mastery,0)/mConcepts.length:0;
-      const allDone=mConcepts.every(c=>done.has(c.id));
+      const allDone=mConcepts.every(c=>visibleDone.has(c.id));
       return(
         <button key={m.id} onClick={()=>go("courseware")} style={{...card,padding:"22px 18px",textAlign:"center",cursor:"pointer",borderTop:`3px solid ${allDone?GD:mAvg>.5?TL:mAvg>0?CY:BD}`,transition:"all 250ms"}}>
           <div style={{fontSize:allDone?"1.3rem":".9rem",marginBottom:8}}>{allDone?"🔥":mAvg>.5?"⚡":"📖"}</div>
@@ -829,14 +872,14 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   <div style={{...card,padding:"32px 36px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <div style={{...ey,margin:0,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT MASTERY</div>
-      <span style={{fontSize:".82rem",color:MU}}>{done.size} completed · {mastered} mastered</span>
+      <span style={{fontSize:".82rem",color:MU}}>{visibleDone.size} completed · {visibleMastered} mastered</span>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-      {cc.map(c=>(
+      {visibleConcepts.map(c=>(
         <button key={c.id} onClick={()=>go("explore",{c})} style={{display:"flex",alignItems:"center",gap:12,background:innr,border:`1px solid ${BD}`,borderRadius:14,padding:"14px 18px",cursor:"pointer",color:TX,fontSize:".92rem",textAlign:"left",width:"100%",transition:"all 250ms"}}>
           <span style={{fontSize:".72rem",width:16,textAlign:"center"}}>{memoryStageIcon(getMemoryStage(c.id))}</span>
           <span style={{flex:1,fontWeight:500}}>{c.name}</span>
-          {done.has(c.id)&&<span style={{fontSize:".85rem"}}>🔥</span>}
+          {visibleDone.has(c.id)&&<span style={{fontSize:".85rem"}}>🔥</span>}
           <div style={{width:80,height:5,borderRadius:3,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:mc2(c.mastery),width:P(c.mastery),transition:"width 600ms cubic-bezier(.22,1,.36,1)"}}/></div>
           <span style={{color:mc2(c.mastery),fontSize:".82rem",fontWeight:700,width:40,textAlign:"right"}}>{c.mastery>0?P(c.mastery):"—"}</span>
         </button>
@@ -852,7 +895,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   atlasSkillById={atlasSkillById}
   assignmentReadinessById={atlasProjection.assignmentReadinessById}
   assignments={ASSIGNMENTS}
-  concepts={cc}
+  concepts={visibleConcepts}
   modules={MODULES}
   mobileLayout={mobileLayout}
   atlasLaneWidth={atlasLaneWidth}
@@ -872,8 +915,8 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 {v==="explore"&&<div style={{display:"grid",gridTemplateColumns:mobileLayout?"1fr":"320px 1fr",gap:28,alignItems:"start",animation:"fadeUp .5s ease"}}>
 <div style={{...card,position:"sticky",top:88,padding:"28px 24px"}}>
   <div style={{...ey,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT LIBRARY</div>
-  <p style={{fontSize:".82rem",color:MU,marginBottom:20,marginTop:-12}}>{cc.length} concept{cc.length!==1?"s":""} · {mastered} mastered</p>
-  {cc.map(c=>{const act=selC?.id===c.id;const dn=done.has(c.id);const stage=getMemoryStage(c.id);
+  <p style={{fontSize:".82rem",color:MU,marginBottom:20,marginTop:-12}}>{visibleConceptCount} concept{visibleConceptCount!==1?"s":""} · {visibleMastered} mastered</p>
+  {visibleConcepts.map(c=>{const act=selC?.id===c.id;const dn=visibleDone.has(c.id);const stage=getMemoryStage(c.id);
     return(<button key={c.id} onClick={()=>setSC(c)} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",borderRadius:14,background:act?`${CY}0c`:"transparent",border:act?`1px solid ${CY}28`:"1px solid transparent",cursor:"pointer",width:"100%",color:TX,fontSize:".92rem",transition:"all 200ms",marginBottom:4}}>
     <span style={{fontSize:".75rem",width:18,textAlign:"center"}}>{memoryStageIcon(stage)}</span>
     <span style={{flex:1,textAlign:"left",fontWeight:act?600:400}}>{c.name}</span>
@@ -926,7 +969,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 
     {selC.conn.length>0&&<div style={{marginBottom:28}}>
       <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>🔗 Connected Concepts</div>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{selC.conn.map(id=>{const r=cc.find(c=>c.id===id);return r?<button key={id} onClick={()=>setSC(r)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:20,border:`1px solid ${CY}22`,color:CY,background:`${CY}08`,cursor:"pointer",fontSize:".88rem",fontWeight:600,transition:"all 200ms"}}><div style={{width:8,height:8,borderRadius:"50%",background:mc2(r.mastery)}}/>{r.name}</button>:null;})}</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{selC.conn.map(id=>{const r=visibleConceptById.get(id);return r?<button key={id} onClick={()=>setSC(r)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:20,border:`1px solid ${CY}22`,color:CY,background:`${CY}08`,cursor:"pointer",fontSize:".88rem",fontWeight:600,transition:"all 200ms"}}><div style={{width:8,height:8,borderRadius:"50%",background:mc2(r.mastery)}}/>{r.name}</button>:null;})}</div>
     </div>}
 
     {isDemoMode||selC.practiceReady!==false
@@ -942,18 +985,18 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 </div>}
 
 {/* ASSIGNMENT */}
-{v==="assignment"&&selA&&(()=>{
-const needed=selA.con.map(id=>cc.find(c=>c.id===id)).filter(Boolean);
-const readinessState=assignmentReadiness(selA);
+{v==="assignment"&&selA&&(()=>{ 
+const readinessState=selAReadiness;
 const requiredSkills=readinessState.requiredSkills;
-const ready=needed.filter(c=>c.mastery>=.6);
-const weak=needed.filter(c=>c.mastery<.6);
+const needed=selAVisibleConcepts;
+const ready=selAVisibleReady;
+const weak=selAVisibleNotReady;
 const readiness=readinessState.progressPercent;
-const readinessLabel=readinessState.label;
+const readinessLabel=assignmentReadinessLabel(readinessState);
 const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";
 const readinessBorder=readinessState.status==="unmapped"?BD:readinessState.status==="concept-prep"?CY:readiness>=100?TL:urgent?RD:CY;
 const readinessFill=readinessState.status==="unmapped"?"rgba(125,148,178,.06)":readinessState.status==="concept-prep"?"rgba(61,149,255,.08)":readiness>=100?`${TL}06`:urgent?`${RD}04`:`${CY}04`;
-const urgent=selA.due<=3;
+const urgent=selA.dueState==="today"||selA.dueState==="overdue"||(selA.dueState==="upcoming"&&selA.due<=3);
 
 return(<div style={{maxWidth:880}}>
 <button onClick={()=>go("home")} style={{background:"transparent",border:"none",color:MU,cursor:"pointer",fontSize:".92rem",marginBottom:20}}>← Back</button>
@@ -965,8 +1008,8 @@ return(<div style={{maxWidth:880}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
         <span style={{fontSize:"2rem"}}>{selA.type}</span>
         <div>
-          <h2 style={hd(1.4)}>{selA.title}</h2>
-          <p style={{color:MU,fontSize:".88rem",margin:"4px 0 0"}}>{selA.sub} · {selA.pts}pts · {urgent?"⚠ ":""}Due in {selA.due} days</p>
+          <h2 style={hd(1.4)}>{selAHeader}</h2>
+          <p style={{color:MU,fontSize:".88rem",margin:"4px 0 0"}}>{[normalizePanelText(selA.sub)&&!isSamePanelText(selA.title,selA.sub)?selA.sub:null,`${selA.pts}pts`,assignmentDueLine(selA,urgent)].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
       {selA.demandIcon&&<div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",borderRadius:12,background:innr,border:`1px solid ${BD}`,marginTop:4}}>
@@ -979,14 +1022,14 @@ return(<div style={{maxWidth:880}}>
         <svg viewBox="0 0 80 80" style={{width:80,height:80}}><circle cx="40" cy="40" r="36" fill="none" stroke={DM} strokeWidth="4"/><circle cx="40" cy="40" r="36" fill="none" stroke={readinessColor} strokeWidth="4" strokeDasharray={`${readiness/100*226} 226`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
         <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"1.3rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessLabel}</span></div>
       </div>
-      <div style={{fontSize:".68rem",color:MU,marginTop:6}}>{readinessState.status==="unmapped"?"SKILL MAP":readinessState.status==="concept-prep"?"CONCEPT PREP":"READINESS"}</div>
+      <div style={{fontSize:".68rem",color:MU,marginTop:6}}>{assignmentReadinessStateLabel(readinessState)}</div>
     </div>
   </div>
 </div>
 
 {["unmapped","concept-prep"].includes(readinessState.status)&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${readinessState.status==="concept-prep"?CY:MU}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:readinessState.status==="concept-prep"?CY:MU,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessState.status==="concept-prep"?"CONCEPT PREP ONLY":"MAP STILL NEEDED"}</div>
-  <p style={{color:T2,fontSize:".9rem",lineHeight:1.6,margin:0}}>{readinessState.status==="concept-prep"?"Atlas found concept grounding for this assignment, but it does not have enough checklist-backed skill evidence to claim readiness yet.":"Atlas has not derived a trustworthy assignment skill chain for this task yet. The concept evidence below is still useful, but it is not being promoted into a fake readiness score."}</p>
+  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:readinessState.status==="concept-prep"?CY:MU,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessState.status==="concept-prep"?"Concept prep":"Needs mapping"}</div>
+  <p style={{color:T2,fontSize:".9rem",lineHeight:1.6,margin:0}}>{readinessState.status==="concept-prep"?"Concept grounding exists, but the checklist-backed skill chain is not complete yet.":selAVisibleSupportText}</p>
   {readinessState.requirement?.checklist?.length>0&&<div style={{marginTop:14,display:"grid",gap:8}}>{readinessState.requirement.checklist.slice(0,3).map((line,index)=><div key={`${selA.id}-check-${index}`} style={{padding:"10px 12px",borderRadius:12,background:innr,border:`1px solid ${BD}`,color:T2,fontSize:".82rem"}}>{line}</div>)}</div>}
   {readinessState.requirement?.pitfalls?.length>0&&<p style={{color:MU,fontSize:".78rem",lineHeight:1.5,margin:"12px 0 0"}}>Watch for: {readinessState.requirement.pitfalls.slice(0,2).join(" · ")}</p>}
 </div>}
@@ -996,7 +1039,7 @@ return(<div style={{maxWidth:880}}>
   <div style={{display:"grid",gap:10}}>
     {requiredSkills.map((skill)=><div key={skill.id} style={{padding:"14px 16px",borderRadius:14,background:innr,border:`1px solid ${skill.state==="mastered"?`${GD}22`:skill.state==="earned"?`${TL}22`:skill.state==="recovery"?"rgba(251,146,60,.24)":BD}`}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
-        <div>
+        <div style={{position:"relative",minHeight:50}}>
           <div style={{fontSize:".86rem",fontWeight:700,color:TX}}>{skill.label}</div>
           <div style={{fontSize:".76rem",color:MU,marginTop:4}}>{skill.summary}</div>
         </div>
@@ -1021,8 +1064,12 @@ return(<div style={{maxWidth:880}}>
 {/* Concept readiness */}
 <div style={{...card,marginBottom:20}}>
   <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:TL,marginBottom:16,fontFamily:"'Space Grotesk',sans-serif"}}>🧠 CONCEPT READINESS</div>
-  {ready.length>0&&<p style={{color:TL,fontSize:".92rem",marginBottom:12}}>✓ You're prepared in: {ready.map(c=>c.name).join(", ")}</p>}
-  {weak.length>0&&<p style={{color:"#ff8800",fontSize:".92rem",marginBottom:16}}>→ Needs work: {weak.map(c=>c.name).join(", ")}</p>}
+  {needed.length===0
+    ? <p style={{color:MU,fontSize:".92rem",marginBottom:12}}>{selAVisibleSupportText}</p>
+    : <>
+      {ready.length>0&&<p style={{color:TL,fontSize:".92rem",marginBottom:12}}>✓ You're prepared in: {ready.map(c=>c.name).join(", ")}</p>}
+      {weak.length>0&&<p style={{color:"#ff8800",fontSize:".92rem",marginBottom:16}}>→ Needs work: {weak.map(c=>c.name).join(", ")}</p>}
+    </>}
   <div style={{display:"flex",flexDirection:"column",gap:8}}>
     {needed.map((c,i)=>{const r=c.mastery>=.6;const stage=getMemoryStage(c.id);
       return(<div key={c.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderRadius:14,background:innr,border:`1px solid ${r?`${TL}22`:BD}`}}>
@@ -1416,7 +1463,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
   {/* Next concept button */}
   <div style={{textAlign:"center",marginTop:28}}>
-    <button onClick={()=>{const n=cc.filter(c=>c.id!==fc.id&&!done.has(c.id)&&c.mastery<.8);if(n.length)go("forge",{c:n[0]});}} style={{fontSize:".88rem",color:MU,background:"transparent",border:`1px solid ${BD}`,padding:"10px 24px",borderRadius:20,cursor:"pointer"}}>Switch to another concept →</button>
+    <button onClick={()=>{const n=visibleConcepts.filter(c=>c.id!==fc.id&&!visibleDone.has(c.id)&&c.mastery<.8);if(n.length)go("forge",{c:n[0]});}} style={{fontSize:".88rem",color:MU,background:"transparent",border:`1px solid ${BD}`,padding:"10px 24px",borderRadius:20,cursor:"pointer"}}>Switch to another concept →</button>
   </div>
 </div>);
 })())}
@@ -1426,8 +1473,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 <h2 style={hd(1.5)}>Compare Concepts</h2>
 <p style={{color:T2,fontSize:"1rem",margin:"10px 0 32px"}}>See two concepts side by side — where they agree and clash.</p>
 <div style={{display:"flex",gap:18,marginBottom:36}}>
-  <select value={cA?.id||""} onChange={e=>setCA(cc.find(c=>c.id===e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept A</option>{cc.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-  <select value={cB?.id||""} onChange={e=>setCB(cc.find(c=>c.id===e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept B</option>{cc.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+  <select value={cA?.id||""} onChange={e=>setCA(visibleConceptById.get(e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept A</option>{visibleConcepts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+  <select value={cB?.id||""} onChange={e=>setCB(visibleConceptById.get(e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept B</option>{visibleConcepts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
 </div>
 {cA&&cB&&cA.id!==cB.id&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
   {[cA,cB].map(c=>(<div key={c.id} style={{...card,borderTop:`5px solid ${mc2(c.mastery)}`}}>
@@ -1595,7 +1642,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
         {/* Concepts in this module */}
         <div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:TL,marginBottom:12,marginTop:20,fontFamily:"'Space Grotesk',sans-serif"}}>🧠 CONCEPTS</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          {m.concepts.map(id=>{const c=cc.find(x=>x.id===id);if(!c)return null;
+          {m.concepts.map(id=>{const c=visibleConceptById.get(id);if(!c)return null;
             return(<button key={id} onClick={()=>setCWC(cwConcept===id?null:id)} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:14,border:cwConcept===id?`2px solid ${CY}`:`1px solid ${BD}`,background:cwConcept===id?`${CY}0d`:innr,cursor:"pointer",color:TX,fontSize:".88rem",fontWeight:600,transition:"all 250ms"}}>
               <div style={{width:10,height:10,borderRadius:"50%",background:mc2(c.mastery)}}/>
               {c.name}
@@ -1637,7 +1684,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
           {ASSIGNMENTS.filter(a=>a.con.some(id=>m.concepts.includes(id))).map(a=>(
             <button key={a.id} onClick={()=>go("assignment",{a})} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:innr,border:`1px solid ${BD}`,borderRadius:12,cursor:"pointer",width:"100%",color:TX,marginBottom:8,transition:"all 200ms"}}>
               <span style={{fontSize:"1.1rem"}}>{a.type}</span>
-              <div style={{flex:1,textAlign:"left"}}><div style={{fontSize:".88rem",fontWeight:600}}>{a.title}</div><div style={{fontSize:".75rem",color:MU}}>{a.pts}pts · {a.due}d</div></div>
+              <div style={{flex:1,textAlign:"left"}}><div style={{fontSize:".88rem",fontWeight:600}}>{a.title}</div><div style={{fontSize:".75rem",color:MU}}>{a.pts}pts · {assignmentDueCounter(a)}</div></div>
             </button>
           ))}
         </div>
@@ -1647,7 +1694,7 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 </div>
 
 {/* Concept deep-dive panel */}
-{cwConcept&&(()=>{const c=cc.find(x=>x.id===cwConcept);if(!c)return null;
+{cwConcept&&(()=>{const c=visibleConceptById.get(cwConcept);if(!c)return null;
 return(<div style={{...card,position:"sticky",top:88,padding:"28px 24px",animation:"fadeUp .35s ease"}}>
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
     <div style={{fontSize:".7rem",fontWeight:700,letterSpacing:".14em",color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT DETAIL</div>
@@ -1746,7 +1793,7 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
         </button>);
       })}
       {readerContent.concepts&&readerContent.concepts.length>0&&<><div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".12em",color:TL,marginTop:24,marginBottom:10}}>CONCEPTS</div>
-        {readerContent.concepts.map(id=>{const c=cc.find(x=>x.id===id);if(!c)return null;return(<button key={id} onClick={()=>go("forge",{c})} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:innr,border:`1px solid ${BD}`,cursor:"pointer",width:"100%",color:TX,fontSize:".82rem",marginBottom:4}}><span style={{fontSize:".7rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1}}>{c.name}</span><span style={{color:mc2(c.mastery),fontSize:".72rem",fontWeight:600}}>{c.mastery>0?P(c.mastery):""}</span></button>);})}</>}
+        {readerContent.concepts.map(id=>{const c=visibleConceptById.get(id);if(!c)return null;return(<button key={id} onClick={()=>go("forge",{c})} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:innr,border:`1px solid ${BD}`,cursor:"pointer",width:"100%",color:TX,fontSize:".82rem",marginBottom:4}}><span style={{fontSize:".7rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1}}>{c.name}</span><span style={{color:mc2(c.mastery),fontSize:".72rem",fontWeight:600}}>{c.mastery>0?P(c.mastery):""}</span></button>);})}</>}
     </>}
   </div>
   {hlPopover&&<div style={{position:"fixed",left:Math.max(60,Math.min(hlPopover.x-140,window.innerWidth-340)),top:Math.max(10,hlPopover.y-52),zIndex:200,animation:"fadeUp .15s ease"}}><div style={{display:"flex",gap:4,padding:"8px 10px",borderRadius:14,background:"rgba(8,8,20,.95)",border:`1px solid ${BD}`,boxShadow:"0 8px 32px rgba(0,0,0,.6)"}}>
@@ -1758,13 +1805,13 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
       {readingPositions[readerContent.id]>0&&readerSection===readingPositions[readerContent.id]&&<div style={{padding:"14px 20px",borderRadius:14,background:`${CY}06`,border:`1px solid ${CY}15`,marginBottom:32}}><span style={{fontSize:".85rem",color:CY}}>↻ Resumed from "{readerContent.sections[readerSection]?.heading}"</span></div>}
       <div style={{marginBottom:48,paddingBottom:32,borderBottom:`1px solid ${BD}`}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".2em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.subtitle}</div><h1 style={{fontSize:"2.2rem",fontWeight:700,color:TX,lineHeight:1.35,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.title}</h1></div>
       {readerContent.sections.map((s,i)=>{const mark=getSectionMark(readerContent.id,i);const active=readerSection===i;return(<div key={i} id={"rs-"+i} data-section-idx={i} style={{marginBottom:48,scrollMarginTop:80,padding:"24px 28px",marginLeft:-28,marginRight:-28,borderRadius:18,background:mark==="understood"?"rgba(6,214,160,.03)":mark==="confusing"?"rgba(255,68,102,.02)":"transparent",border:mark==="understood"?"1px solid rgba(6,214,160,.08)":mark==="confusing"?"1px solid rgba(255,68,102,.06)":"1px solid transparent",transition:"all 500ms ease"}}>
-        {readerPrimaryConceptId&&active&&(()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(!c)return null;return(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"10px 14px",borderRadius:12,background:`${CY}04`,border:`1px solid ${CY}0a`}}><span style={{fontSize:".72rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{fontSize:".78rem",color:CY,fontWeight:600}}>{c.name}</span></div>);})()}
+        {readerPrimaryConceptId&&active&&(()=>{const c=visibleConceptById.get(readerPrimaryConceptId);if(!c)return null;return(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"10px 14px",borderRadius:12,background:`${CY}04`,border:`1px solid ${CY}0a`}}><span style={{fontSize:".72rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{fontSize:".78rem",color:CY,fontWeight:600}}>{c.name}</span></div>);})()}
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}><div style={{width:4,height:32,borderRadius:2,background:active?CY:mark?sectionMarkColor(mark):"transparent",transition:"all 400ms ease",flexShrink:0}}/><h2 style={{fontSize:"1.4rem",fontWeight:700,color:active?TX:T2,lineHeight:1.4,fontFamily:"'Space Grotesk',sans-serif",margin:0,flex:1}}>{s.heading}</h2>{mark&&<span style={{fontSize:".72rem",fontWeight:700,color:sectionMarkColor(mark),padding:"4px 10px",borderRadius:8,background:sectionMarkColor(mark)+"12"}}>{sectionMarkIcon(mark)} {mark}</span>}</div>
         {s.body.split("\n\n").map((para,j)=>(<p key={j} style={{fontSize:"1.08rem",lineHeight:2.05,color:T2,marginBottom:20,letterSpacing:".01em"}}>{para}</p>))}
         {(()=>{const key=readerContent.id+":"+i;const notes=MARGINS[key];if(!notes||!notes.length)return null;const visible=active?notes:notes.filter(n=>n.type==="confusion");if(!visible.length)return null;return(<div style={{marginTop:8,marginBottom:16,display:"flex",flexDirection:"column",gap:8,animation:active?"fadeUp .4s ease":"none"}}>{visible.map((note,ni)=>{const dismissed=marginDismissed.has(key+":"+ni);if(dismissed)return null;const mt=MARGIN_TYPES[note.type]||{icon:"•",label:"Note"};return(<div key={ni} style={{display:"flex",gap:12,padding:"12px 16px",borderRadius:14,background:note.color+"06",borderLeft:`3px solid ${note.color}44`}}><span style={{fontSize:".82rem",flexShrink:0}}>{mt.icon}</span><div style={{flex:1}}><div style={{fontSize:".64rem",fontWeight:700,letterSpacing:".1em",color:note.color,marginBottom:4}}>{mt.label.toUpperCase()}</div><p style={{fontSize:".85rem",lineHeight:1.6,color:T2,margin:0}}>{note.text}</p></div><button onClick={()=>setMarginDismissed(p=>new Set([...p,key+":"+ni]))} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".72rem",opacity:.5}}>✕</button></div>);})}</div>);})()}
         <div style={{display:"flex",alignItems:"center",gap:6,marginTop:12,paddingTop:12,borderTop:"1px solid rgba(50,50,100,.25)",flexWrap:"wrap"}}>{["understood","important","revisit","confusing"].map(m=>(<button key={m} onClick={()=>markSection(readerContent.id,i,m)} style={{padding:"5px 12px",borderRadius:10,border:`1px solid ${mark===m?sectionMarkColor(m)+"44":BD}`,background:mark===m?sectionMarkColor(m)+"12":"transparent",color:mark===m?sectionMarkColor(m):MU,fontSize:".72rem",fontWeight:600,cursor:"pointer"}}>{sectionMarkIcon(m)} {m}</button>))}<div style={{flex:1}}/><button onClick={()=>{setReaderSaved(p=>[...p,{heading:s.heading,body:s.body.slice(0,120),from:readerContent.title}]);flash("Saved",true);}} style={{padding:"5px 12px",borderRadius:10,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".72rem",cursor:"pointer"}}>💾</button></div>
       </div>);})}
-      <div style={{textAlign:"center",padding:"40px 0",borderTop:`1px solid ${BD}`}}><p style={{color:TX,fontSize:"1.05rem",fontWeight:600,marginBottom:16}}>Chapter complete</p><div style={{display:"flex",gap:12,justifyContent:"center"}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(c)go("forge",{c});}} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Practice</button>}<button onClick={()=>setReaderContent(null)} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Library</button></div></div>
+      <div style={{textAlign:"center",padding:"40px 0",borderTop:`1px solid ${BD}`}}><p style={{color:TX,fontSize:"1.05rem",fontWeight:600,marginBottom:16}}>Chapter complete</p><div style={{display:"flex",gap:12,justifyContent:"center"}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=visibleConceptById.get(readerPrimaryConceptId);if(c)go("forge",{c});}} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Practice</button>}<button onClick={()=>setReaderContent(null)} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Library</button></div></div>
     </div>:
     <div style={{maxWidth:720,padding:mobileLayout?"32px 18px":"56px 48px",width:"100%"}}><div style={{textAlign:"center",marginBottom:40}}><div style={{fontSize:"2rem",marginBottom:12}}>📖</div><h2 style={{...hd(1.5),marginBottom:8}}>Reader</h2><p style={{color:T2,fontSize:"1rem"}}>Focused, distraction-free reading.</p></div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>{READING.map(r=>{const prog=getReadingProgress(r.id,r.sections.length);const lastPos=readingPositions[r.id];return(<button key={r.id} onClick={()=>openReader(r.id)} style={{display:"flex",alignItems:"center",gap:16,padding:"22px 26px",borderRadius:18,background:CD2,border:`1px solid ${BD}`,cursor:"pointer",color:TX,textAlign:"left",width:"100%"}}><div style={{position:"relative",width:44,height:44,flexShrink:0}}><svg viewBox="0 0 44 44" style={{width:44,height:44}}><circle cx="22" cy="22" r="19" fill="none" stroke={DM} strokeWidth="3"/><circle cx="22" cy="22" r="19" fill="none" stroke={prog>=100?TL:prog>0?CY:DM} strokeWidth="3" strokeDasharray={`${prog/100*119} 119`} strokeLinecap="round" transform="rotate(-90 22 22)"/></svg><div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:".7rem"}}>{prog>=100?"✓":"📖"}</div></div><div style={{flex:1}}><div style={{fontSize:"1.02rem",fontWeight:600,marginBottom:2}}>{r.title}</div><div style={{fontSize:".82rem",color:MU}}>{r.subtitle}</div>{lastPos>0&&prog<100&&<div style={{fontSize:".75rem",color:CY,marginTop:4}}>↻ Resume from "{r.sections[lastPos]?.heading}"</div>}</div><span style={{color:CY}}>→</span></button>);})}</div>
@@ -1797,10 +1844,10 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
 {/* ═══ DISTINCTION GYM ═══ */}
 {v==="gym"&&<div style={{maxWidth:920,margin:"0 auto"}}>
 {!gymPair?<><div style={{...card,textAlign:"center",marginBottom:24}}><div style={ey}>DISTINCTION GYM</div><h2 style={hd(1.4)}>Sharpen Your Concept Boundaries</h2><p style={{color:T2,fontSize:"1rem",marginTop:10}}>Master the differences between concepts that students commonly confuse.</p></div>
-  {DISTS.filter(d=>cc.find(c=>c.id===d.a)&&cc.find(c=>c.id===d.b)).length===0?<div style={{...card,textAlign:"center",padding:"60px 24px",color:MU}}><div style={{fontSize:"2.5rem",marginBottom:16}}>🥊</div><p style={{fontSize:"1rem",marginBottom:20}}>No concept pairs available yet for this course.</p><button onClick={()=>go("journey")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>Explore the Atlas →</button></div>
-  :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{DISTS.map((d,i)=>{const cA=cc.find(c=>c.id===d.a);const cB=cc.find(c=>c.id===d.b);if(!cA||!cB)return null;return(<button key={i} onClick={()=>{setGymPair(d);setGymA(null);setGymExplained(false);}} style={{...card,padding:"28px",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:".72rem",fontWeight:700,color:CY,marginBottom:12}}>{d.label}</div><div style={{display:"flex",justifyContent:"center",gap:8}}><span style={{padding:"4px 12px",borderRadius:10,background:`${CY}0a`,border:`1px solid ${CY}15`,fontSize:".82rem",color:CY}}>{cA.name}</span><span style={{color:MU,fontSize:".82rem"}}>vs</span><span style={{padding:"4px 12px",borderRadius:10,background:`${TL}0a`,border:`1px solid ${TL}15`,fontSize:".82rem",color:TL}}>{cB.name}</span></div></button>);})}</div>}
+  {DISTS.filter(d=>visibleConceptById.has(d.a)&&visibleConceptById.has(d.b)).length===0?<div style={{...card,textAlign:"center",padding:"60px 24px",color:MU}}><div style={{fontSize:"2.5rem",marginBottom:16}}>🥊</div><p style={{fontSize:"1rem",marginBottom:20}}>No concept pairs available yet for this course.</p><button onClick={()=>go("journey")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}}>Explore the Atlas →</button></div>
+  :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{DISTS.filter(d=>visibleConceptById.has(d.a)&&visibleConceptById.has(d.b)).map((d,i)=>{const cA=visibleConceptById.get(d.a);const cB=visibleConceptById.get(d.b);if(!cA||!cB)return null;return(<button key={i} onClick={()=>{setGymPair(d);setGymA(null);setGymExplained(false);}} style={{...card,padding:"28px",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:".72rem",fontWeight:700,color:CY,marginBottom:12}}>{d.label}</div><div style={{display:"flex",justifyContent:"center",gap:8}}><span style={{padding:"4px 12px",borderRadius:10,background:`${CY}0a`,border:`1px solid ${CY}15`,fontSize:".82rem",color:CY}}>{cA.name}</span><span style={{color:MU,fontSize:".82rem"}}>vs</span><span style={{padding:"4px 12px",borderRadius:10,background:`${TL}0a`,border:`1px solid ${TL}15`,fontSize:".82rem",color:TL}}>{cB.name}</span></div></button>);})}</div>}
 </>:
-(()=>{const cA=cc.find(c=>c.id===gymPair.a);const cB=cc.find(c=>c.id===gymPair.b);if(!cA||!cB)return null;return(<div>
+(()=>{const cA=visibleConceptById.get(gymPair.a);const cB=visibleConceptById.get(gymPair.b);if(!cA||!cB)return null;return(<div>
   <button onClick={()=>setGymPair(null)} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".88rem",marginBottom:20}}>← All Pairs</button>
   <div style={{...card,borderTop:`3px solid ${CY}`,marginBottom:20}}><div style={ey}>{gymPair.label}</div>
     <div style={{padding:"20px 24px",borderRadius:16,background:innr,border:`1px solid ${BD}`,marginBottom:16}}><div style={{fontSize:".68rem",fontWeight:700,color:TL,marginBottom:8}}>THE BORDER</div><p style={{fontSize:".95rem",color:T2,lineHeight:1.7,margin:0}}>{gymPair.border}</p></div>
@@ -1855,11 +1902,11 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
 {v==="stats"&&<div style={{maxWidth:720,margin:"0 auto"}}>
 <div style={{...card}}><div style={ey}>PERFORMANCE</div>
 <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:CY}}>{mastered}/{cc.length}</div><div style={{color:MU,fontSize:".82rem"}}>Mastered</div></div>
+<div><div style={{fontSize:"2rem",fontWeight:800,color:CY}}>{visibleMastered}/{visibleConceptCount}</div><div style={{color:MU,fontSize:".82rem"}}>Mastered</div></div>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:TL}}>{P(avg)}</div><div style={{color:MU,fontSize:".82rem"}}>Average</div></div>
 <div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalAnswered>0?`${totalCorrect}/${totalAnswered}`:"—"}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
 </div></div>
-{cc.map(c=><div key={c.id} style={{...card,padding:"16px 20px",marginTop:8,display:"flex",alignItems:"center",gap:12}}><span>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1,fontWeight:600}}>{c.name}</span><span style={{color:mc2(c.mastery),fontWeight:700}}>{P(c.mastery)}</span></div>)}
+{visibleConcepts.map(c=><div key={c.id} style={{...card,padding:"16px 20px",marginTop:8,display:"flex",alignItems:"center",gap:12}}><span>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1,fontWeight:600}}>{c.name}</span><span style={{color:mc2(c.mastery),fontWeight:700}}>{P(c.mastery)}</span></div>)}
 </div>}
 
 </main>

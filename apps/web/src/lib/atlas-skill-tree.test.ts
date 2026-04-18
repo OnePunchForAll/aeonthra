@@ -69,7 +69,12 @@ const baseTree = buildAtlasSkillTree({
         evidence: [{
           label: "Assignment prompt",
           excerpt: "Compare virtue ethics and deontology with a concrete case.",
-          sourceItemId: "assignment-1"
+          sourceItemId: "assignment-1",
+          sourceKind: "assignment",
+          sourceOrigin: "source-block",
+          sourceType: "prompt",
+          evidenceScore: 4,
+          passReason: "This assignment prompt stayed visible because it survived the truth gate."
         }],
         summary: "Stay ready to compare the frameworks without collapsing one into the other."
       }
@@ -182,5 +187,93 @@ describe("atlas skill tree", () => {
 
     expect(withoutHistory.nodes.find((node) => node.id === "skill-foundation-virtue")?.state).toBe("in-progress");
     expect(withHistory.nodes.find((node) => node.id === "skill-foundation-virtue")?.state).toBe("recovery");
+  });
+
+  it("keeps valid nodes renderable through fallback groups when no modules are present", () => {
+    const orphanTree = buildAtlasSkillTree({
+      concepts: [
+        {
+          id: "virtue",
+          name: "Virtue Ethics",
+          core: "Virtue ethics asks what kind of character a choice cultivates.",
+          depth: "It evaluates action through habits, exemplars, and stable traits.",
+          dist: "It is not reducible to rule compliance or outcome maximization.",
+          trap: "Students often flatten virtue ethics into personality preference."
+        },
+        {
+          id: "deontology",
+          name: "Deontology",
+          core: "Deontology judges action by duties and constraints.",
+          depth: "It holds that some actions stay wrong even when outcomes tempt us otherwise.",
+          dist: "It separates rule-bound duties from consequence-led tradeoffs.",
+          trap: "Students often treat duty as a forecast about good outcomes."
+        }
+      ],
+      assignments: [
+        {
+          id: "assignment-1",
+          title: "Compare virtue and duty",
+          con: ["virtue", "deontology"],
+          requirementLines: [
+            "Compare virtue ethics and deontology with a concrete case from the reading."
+          ]
+        }
+      ],
+      modules: [],
+      distinctions: [
+        {
+          a: "virtue",
+          b: "deontology",
+          label: "Virtue versus duty",
+          border: "One asks who you are becoming; the other asks what duty forbids or requires.",
+          trap: "They overlap on moral seriousness, which makes them easy to swap."
+        }
+      ],
+      synthesis: {
+        focusThemes: [
+          {
+            id: "theme-1",
+            label: "moral reasoning under pressure",
+            summary: "Apply the chapter frameworks when cases force a tradeoff.",
+            verbs: ["apply"],
+            conceptIds: ["virtue", "deontology"]
+          }
+        ],
+        assignmentIntel: [
+          {
+            sourceItemId: "assignment-1",
+            title: "Compare virtue and duty",
+            likelySkills: ["compare", "justify"],
+            conceptIds: ["virtue", "deontology"],
+            focusThemeIds: ["theme-1"],
+            checklist: ["Support the comparison with course evidence."],
+            likelyPitfalls: ["Do not collapse duty into consequences."],
+            evidence: [
+              {
+                label: "Assignment prompt",
+                excerpt: "Compare virtue ethics and deontology with a concrete case.",
+                sourceItemId: "assignment-1",
+                sourceKind: "assignment",
+                sourceOrigin: "source-block",
+                sourceType: "prompt",
+                evidenceScore: 4,
+                passReason: "This assignment prompt stayed visible because it survived the truth gate."
+              }
+            ],
+            summary: "Stay ready to compare the frameworks without collapsing one into the other."
+          }
+        ],
+        likelyAssessedSkills: ["compare virtue and duty"]
+      }
+    });
+
+    const groupedNodeIds = new Set(orphanTree.groups.flatMap((group) => group.skillIds));
+
+    expect(orphanTree.groups.length).toBeGreaterThan(0);
+    expect(orphanTree.groups.every((group) => group.moduleId === null)).toBe(true);
+    expect(groupedNodeIds.size).toBe(orphanTree.nodes.length);
+    expect([...groupedNodeIds].sort()).toEqual(orphanTree.nodes.map((node) => node.id).sort());
+    expect(groupedNodeIds.has("skill-ready-assignment-1")).toBe(true);
+    expect(groupedNodeIds.has("skill-transfer-assignment-1")).toBe(true);
   });
 });

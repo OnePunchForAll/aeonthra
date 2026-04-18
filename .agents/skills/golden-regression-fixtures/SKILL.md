@@ -1,5 +1,7 @@
 # golden-regression-fixtures
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Defines the structure, storage, and maintenance protocol for regression test
 fixtures that prevent pipeline regressions from shipping silently.
 

@@ -32,6 +32,19 @@ export type AtlasShellProjection = {
   assignmentReadinessById: Map<string, AssignmentReadinessState>;
 };
 
+type ProjectedAssignmentReadiness = {
+  status?: AssignmentReadinessStatus;
+  label?: string;
+  readiness?: number | null;
+  progressPercent?: number | null;
+  requiredSkillIds?: string[];
+  missingSkillIds?: string[];
+};
+
+type ProjectedShellAssignment = ShellAssignment & {
+  assignmentReadiness?: ProjectedAssignmentReadiness | null;
+};
+
 export type AtlasNodeDependency = Pick<
   MaterializedAtlasSkillNode,
   "id" | "label" | "kind" | "state" | "moduleId" | "branchId" | "tier"
@@ -51,24 +64,90 @@ export type AtlasNodeInspector = {
 
 type BuildAtlasShellProjectionInput = {
   skillTree: AtlasSkillTree | null | undefined;
-  assignments: ShellAssignment[];
+  assignments: ProjectedShellAssignment[];
   progress: Pick<AppProgress, "conceptMastery" | "chapterCompletion" | "skillHistory">;
 };
 
 function buildAssignmentReadinessState(
-  assignment: ShellAssignment,
+  assignment: ProjectedShellAssignment,
   atlasRequirementByAssignment: Map<string, AtlasAssignmentRequirement>,
   atlasSkillById: Map<string, MaterializedAtlasSkillNode>
 ): AssignmentReadinessState {
+  const projected = assignment.assignmentReadiness ?? null;
   const requirement = atlasRequirementByAssignment.get(assignment.id) ?? null;
+  const hasGrounding = Boolean(
+    requirement
+    && (
+      requirement.conceptIds.length > 0
+      || requirement.checklist.length > 0
+      || requirement.evidence.length > 0
+    )
+  );
+  const hasTrustworthyRequirement = Boolean(
+    requirement
+    && requirement.basis !== "concept-only"
+    && requirement.checklist.length > 0
+    && requirement.evidence.length > 0
+  );
   const requiredSkills = (requirement?.skillIds ?? [])
     .map((id) => atlasSkillById.get(id))
     .filter((node): node is MaterializedAtlasSkillNode => Boolean(node));
   const missingSkills = requiredSkills.filter((node) => !["earned", "mastered"].includes(node.state));
 
-  if (!requirement || requiredSkills.length === 0) {
-    const status: AssignmentReadinessStatus =
-      requirement?.basis === "concept-only" ? "concept-prep" : "unmapped";
+  if (projected) {
+    const requiredSkillIds = projected.requiredSkillIds?.length
+      ? projected.requiredSkillIds
+      : requirement?.skillIds ?? [];
+    const projectedRequiredSkills = requiredSkillIds
+      .map((id) => atlasSkillById.get(id))
+      .filter((node): node is MaterializedAtlasSkillNode => Boolean(node));
+    const projectedMissingSkillIds = projected.missingSkillIds?.length
+      ? projected.missingSkillIds
+      : projectedRequiredSkills
+        .filter((node) => !["earned", "mastered"].includes(node.state))
+        .map((node) => node.id);
+    const projectedMissingSkills = projectedMissingSkillIds
+      .map((id) => atlasSkillById.get(id))
+      .filter((node): node is MaterializedAtlasSkillNode => Boolean(node));
+    const status = projected.status
+      ?? (projectedMissingSkills.length > 0
+        ? "building"
+        : projectedRequiredSkills.length > 0
+          ? "ready"
+          : "concept-prep");
+    const progressPercent = projected.progressPercent ?? projected.readiness ?? 0;
+    return {
+      assignmentId: assignment.id,
+      requirement,
+      requiredSkills: projectedRequiredSkills,
+      missingSkills: projectedMissingSkills,
+      readiness: projected.readiness ?? (status === "ready" ? progressPercent : null),
+      status,
+      label: projected.label
+        ?? (status === "concept-prep"
+          ? "Concept Prep"
+          : status === "ready"
+            ? "Ready"
+            : `${progressPercent}%`),
+      progressPercent
+    };
+  }
+
+  if (!requirement) {
+    return {
+      assignmentId: assignment.id,
+      requirement,
+      requiredSkills,
+      missingSkills: [],
+      readiness: null,
+      status: "unmapped",
+      label: "Unmapped",
+      progressPercent: 0
+    };
+  }
+
+  if (requiredSkills.length === 0 || !hasTrustworthyRequirement) {
+    const status: AssignmentReadinessStatus = hasGrounding ? "concept-prep" : "unmapped";
     return {
       assignmentId: assignment.id,
       requirement,
@@ -93,7 +172,7 @@ function buildAssignmentReadinessState(
     missingSkills,
     readiness: progressPercent,
     status,
-    label: `${progressPercent}%`,
+    label: status === "ready" ? "Ready" : `${progressPercent}%`,
     progressPercent
   };
 }

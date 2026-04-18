@@ -32,13 +32,9 @@ function OptionsApp() {
         <>
           <Card accent="cyan">
             <div className="ae-card__title">Capture</div>
-            <label className="field">
-              <span>Default mode</span>
-              <select value={draft.defaultMode} onChange={(event) => setDraft({ ...draft, defaultMode: event.target.value as "complete" | "learning" })}>
-                <option value="learning">Learning Content Only</option>
-                <option value="complete">Complete Snapshot</option>
-              </select>
-            </label>
+            <p className="ae-copy">
+              Capture now always runs as <strong>Complete Snapshot</strong> so the extension preserves the full supported Canvas surface instead of splitting between partial and full modes.
+            </p>
             <label className="field">
               <span>Inter-request delay ({draft.requestDelay} ms)</span>
               <input type="range" min="400" max="1200" step="50" value={draft.requestDelay} onChange={(event) => setDraft({ ...draft, requestDelay: Number(event.target.value) })} />

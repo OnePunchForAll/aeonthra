@@ -9,6 +9,10 @@
 - Queue envelopes now come from `createBridgeHandoffEnvelope()`.
 - The unpacked extension build now carries a validated `build-info.json` marker.
 - The side panel surfaces build identity and live forensics.
+- Popup stale-worker contradictions now have pure regression coverage and an in-product runtime-restart path.
+- URL-fallback start now has explicit regression coverage for reopening a fresh background Canvas modules tab, which matches the last committed working launch path.
+- URL-fallback start now also has regression coverage that the fresh background capture tab stays off the manual injection path and simply waits for the declarative receiver to appear.
+- Receiverless same-tab start now has regression coverage for the DOM-seeded auto-start handshake race.
 - Regression coverage now exists for:
   - worker routing of `aeon:item-captured`
   - build marker validation
@@ -16,6 +20,9 @@
   - queue timestamp semantics
   - empty-bundle rejection summaries
   - extension state exposure of build/forensics
+  - popup stale-worker detection and runtime-reload recommendation
+  - background capture-tab fallback on `detect url-fallback`
+  - buffered auto-start handshake signals for receiverless same-tab start
 
 ## Remaining gaps
 

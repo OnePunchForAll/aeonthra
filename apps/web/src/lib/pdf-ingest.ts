@@ -1,6 +1,3 @@
-// @ts-expect-error Vite resolves worker assets via ?url.
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
 export type ExtractedPdfChapter = {
   title: string;
   startPage: number;
@@ -15,21 +12,148 @@ export type ExtractedPdf = {
   chapters: ExtractedPdfChapter[];
 };
 
+export type PdfExtractStatus = {
+  stage: "loading-runtime" | "opening-document" | "retrying-without-worker" | "extracting-pages";
+  progress: number;
+  label: string;
+};
+
 function inferTitleFromName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Untitled PDF";
 }
 
-let pdfJsLoader: Promise<typeof import("pdfjs-dist")> | null = null;
+type PdfJsModule = typeof import("pdfjs-dist/legacy/webpack.mjs");
 
-async function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
+type PdfTextItem = {
+  str?: string;
+  transform?: number[];
+};
+
+type PdfPageTextContent = {
+  items: unknown[];
+};
+
+type PdfPageLike = {
+  getTextContent(): Promise<PdfPageTextContent>;
+};
+
+type PdfDocumentLike = {
+  numPages: number;
+  getPage(pageNumber: number): Promise<PdfPageLike>;
+};
+
+type PdfLoadingTaskLike = {
+  promise: Promise<PdfDocumentLike>;
+  destroy?: () => Promise<void> | void;
+};
+
+type PdfRuntimeLike = {
+  getDocument(options: Record<string, unknown>): PdfLoadingTaskLike;
+};
+
+let pdfJsLoader: Promise<PdfJsModule> | null = null;
+
+const PDF_DOCUMENT_OPEN_TIMEOUT_MS = 12000;
+const PDF_DOCUMENT_FALLBACK_TIMEOUT_MS = 20000;
+
+export async function loadPdfJsRuntime(): Promise<PdfJsModule> {
   if (!pdfJsLoader) {
-    pdfJsLoader = import("pdfjs-dist").then((pdfjsLib) => {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-      return pdfjsLib;
+    pdfJsLoader = import("pdfjs-dist/legacy/webpack.mjs").catch((error) => {
+      pdfJsLoader = null;
+      throw error;
     });
   }
 
   return pdfJsLoader;
+}
+
+function pdfStatus(stage: PdfExtractStatus["stage"], progress: number, label: string): PdfExtractStatus {
+  return { stage, progress, label };
+}
+
+function clonePdfBinaryPayload(arrayBuffer: ArrayBuffer): Uint8Array {
+  return new Uint8Array(arrayBuffer.slice(0));
+}
+
+async function destroyPdfLoadingTask(task: PdfLoadingTaskLike): Promise<void> {
+  try {
+    await task.destroy?.();
+  } catch {
+    // Ignore cleanup failures; the primary error explains the actual ingest fault.
+  }
+}
+
+async function awaitPdfLoadingTask(
+  task: PdfLoadingTaskLike,
+  timeoutMs: number
+): Promise<PdfDocumentLike> {
+  let timeoutHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
+  const timeoutPromise = new Promise<PdfDocumentLike>((_, reject) => {
+    timeoutHandle = globalThis.setTimeout(() => {
+      reject(new Error(`PDF document open timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([task.promise, timeoutPromise]);
+  } catch (error) {
+    await destroyPdfLoadingTask(task);
+    throw error;
+  } finally {
+    if (timeoutHandle !== null) {
+      globalThis.clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+function describePdfDocumentOpenFailure(primaryError: unknown, fallbackError: unknown): string {
+  const primaryDetail = primaryError instanceof Error ? primaryError.message : String(primaryError);
+  const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+
+  return [
+    "PDF intake stalled before text extraction could begin.",
+    "AEONTHRA retried in compatibility mode, but the document still would not open.",
+    `Primary open error: ${primaryDetail}`,
+    `Compatibility open error: ${fallbackDetail}`,
+    "Try a text-based PDF, DOCX, or pasted textbook text."
+  ].join(" ");
+}
+
+export async function openPdfDocumentWithFallback(
+  pdfjsLib: PdfRuntimeLike,
+  arrayBuffer: ArrayBuffer,
+  onStatus?: (status: PdfExtractStatus) => void,
+  timeouts: {
+    workerOpenTimeoutMs?: number;
+    compatibilityOpenTimeoutMs?: number;
+  } = {}
+): Promise<PdfDocumentLike> {
+  const compatibilityData = clonePdfBinaryPayload(arrayBuffer);
+
+  try {
+    const workerTask = pdfjsLib.getDocument({
+      data: arrayBuffer
+    });
+    return await awaitPdfLoadingTask(
+      workerTask,
+      timeouts.workerOpenTimeoutMs ?? PDF_DOCUMENT_OPEN_TIMEOUT_MS
+    );
+  } catch (primaryError) {
+    onStatus?.(pdfStatus("retrying-without-worker", 18, "Retrying PDF in compatibility mode"));
+
+    try {
+      const compatibilityTask = pdfjsLib.getDocument({
+        data: compatibilityData,
+        disableWorker: true
+      });
+      return await awaitPdfLoadingTask(
+        compatibilityTask,
+        timeouts.compatibilityOpenTimeoutMs ?? PDF_DOCUMENT_FALLBACK_TIMEOUT_MS
+      );
+    } catch (fallbackError) {
+      throw new Error(describePdfDocumentOpenFailure(primaryError, fallbackError));
+    }
+  }
 }
 
 const BOILERPLATE_LINE_PATTERNS = [
@@ -133,20 +257,31 @@ function detectChapters(pageTexts: string[]): ExtractedPdfChapter[] {
 
 export async function extractTextFromPdf(
   file: File,
-  onProgress?: (page: number, total: number) => void
+  onProgress?: (page: number, total: number) => void,
+  onStatus?: (status: PdfExtractStatus) => void
 ): Promise<ExtractedPdf> {
-  const pdfjsLib = await loadPdfJs();
+  onStatus?.(pdfStatus("loading-runtime", 8, "Loading PDF runtime"));
+  const pdfjsLib = await loadPdfJsRuntime();
   const arrayBuffer = await file.arrayBuffer();
-  const document = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  onStatus?.(pdfStatus("opening-document", 12, "Opening PDF document"));
+  const document = await openPdfDocumentWithFallback(pdfjsLib, arrayBuffer, onStatus);
   const pageTexts: string[] = [];
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     const text = await page.getTextContent();
-    const items = text.items as Array<{ str?: string; transform?: number[] }>;
+    const items = text.items as PdfTextItem[];
     const lines: string[] = [];
     let currentLine = "";
     let lastY: number | null = null;
+
+    onStatus?.(
+      pdfStatus(
+        "extracting-pages",
+        document.numPages > 0 ? 24 + (pageNumber / document.numPages) * 76 : 24,
+        `Extracting page ${pageNumber} of ${document.numPages}`
+      )
+    );
 
     items.forEach((item) => {
       const token = (item.str ?? "").trim();
@@ -173,7 +308,7 @@ export async function extractTextFromPdf(
     onProgress?.(pageNumber, document.numPages);
 
     if (pageNumber % 4 === 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
     }
   }
 

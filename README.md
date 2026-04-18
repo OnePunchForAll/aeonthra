@@ -12,7 +12,7 @@ The shipped product and UI name in this repo is `AEONTHRA`.
 
 ## What it does
 
-- Captures supported Canvas course content through a Manifest V3 extension in `Complete Snapshot` or `Learning Content Only` mode.
+- Captures supported Canvas course content through a Manifest V3 extension as a single `Complete Snapshot` flow.
 - Supports bounded visited-page sessions keyed by Canvas origin and course id, then saves them as normal local capture history on demand.
 - Hands validated extension captures directly into the app through a typed local bridge contract.
 - Builds deterministic concepts, relations, provenance-backed study artifacts, and a real Atlas skill tree without runtime AI calls.
@@ -22,7 +22,7 @@ The shipped product and UI name in this repo is `AEONTHRA`.
 
 - `apps/web` - static AEONTHRA classroom
 - `apps/extension` - MV3 Chrome extension for Canvas capture and bridge handoff
-- `packages/content-engine` - deterministic extraction, synthesis, provenance, and distinctness logic
+- `packages/content-engine-v2` - canonical production implementation of `@learning/content-engine`
 - `packages/interactions-engine` - deterministic ambient and interaction systems
 - `packages/schema` - shared schemas and bridge contracts
 - `.agents/skills` - repo-local specialist workflows for this codebase
@@ -61,6 +61,7 @@ Canonical source of truth:
 - `apps/extension/src/**` for extension code
 - `apps/web/src/**` for the classroom
 - `packages/**/src/**` for shared deterministic logic
+- `packages/content-engine-v2/src/**` for the canonical study-compiler engine behind `@learning/content-engine`
 - `apps/extension/dist/` as the generated unpacked-extension output
 
 ## Bridge contract

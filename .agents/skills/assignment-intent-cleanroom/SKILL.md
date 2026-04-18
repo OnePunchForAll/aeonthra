@@ -1,5 +1,7 @@
 # assignment-intent-cleanroom
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Extracts genuine learning intent from assignment, discussion, and quiz items
 while discarding Canvas chrome metadata that has no educational signal.
 

@@ -179,6 +179,8 @@ export interface ExtensionBuildIdentity {
   markerPath: string;
 }
 
+export type CourseDetectionSource = "live-content-script" | "url-fallback" | "none";
+
 export interface CaptureItemVerdict {
   queueItemId: string;
   type: QueueItemType;
@@ -214,6 +216,8 @@ export interface CaptureForensics {
 export type ExtensionStatusPayload = {
   ok: true;
   activeCourse: CourseContext | null;
+  activeCourseSource: CourseDetectionSource;
+  workerCodeSignature: string;
   runtime: RuntimeState;
   settings: ExtensionSettings;
   history: CaptureHistorySummary[];

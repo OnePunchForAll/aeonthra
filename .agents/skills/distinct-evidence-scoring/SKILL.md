@@ -1,5 +1,7 @@
 # distinct-evidence-scoring
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Prevents structural repetition from inverting concept ranking in synthesis.
 Repeated boilerplate items (reflection prompts, clone discussions) must NOT
 outrank genuine academic concepts just because they appear more often.

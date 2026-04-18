@@ -172,6 +172,10 @@ function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function hasEvidence(fragments: EvidenceFragment[] | null | undefined): boolean {
+  return (fragments?.length ?? 0) > 0;
+}
+
 function shortTitle(title: string): string {
   return title.length <= 34 ? title : `${title.slice(0, 31).trimEnd()}...`;
 }
@@ -299,17 +303,10 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
   const foundationNodeIds = new Set(foundationNodes.map((node) => node.id));
 
   const themeEntries = synthesis.focusThemes.flatMap((theme) => {
-    const conceptIds = unique(
-      (theme.conceptIds && theme.conceptIds.length > 0
-        ? theme.conceptIds
-        : concepts
-            .filter((concept) =>
-              theme.label.toLowerCase().includes(concept.name.toLowerCase())
-              || concept.name.toLowerCase().includes(theme.label.toLowerCase())
-            )
-            .map((concept) => concept.id))
-        .filter((conceptId) => conceptById.has(conceptId))
-    );
+    if (!theme.conceptIds || theme.conceptIds.length === 0) {
+      return [];
+    }
+    const conceptIds = unique(theme.conceptIds.filter((conceptId) => conceptById.has(conceptId)));
 
     if (conceptIds.length === 0) {
       return [];
@@ -384,6 +381,9 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
 
   const transferNodes: AtlasSkillNode[] = assignments.flatMap((assignment) => {
     const intel = assignmentIntelById.get(assignment.id);
+    if (!intel || !hasEvidence(intel.evidence)) {
+      return [];
+    }
     const conceptIds = unique(
       [...assignment.con, ...(intel?.conceptIds ?? [])].filter((conceptId) => conceptById.has(conceptId))
     );
@@ -436,6 +436,9 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
 
   const readinessNodes: AtlasSkillNode[] = assignments.flatMap((assignment) => {
     const intel = assignmentIntelById.get(assignment.id);
+    if (!intel || !hasEvidence(intel.evidence) || intel.checklist.length === 0) {
+      return [];
+    }
     const conceptIds = unique(
       [...assignment.con, ...(intel?.conceptIds ?? [])].filter((conceptId) => conceptById.has(conceptId))
     );
@@ -557,7 +560,7 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
   ];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
 
-  const groups = modules
+  const moduleGroups = modules
     .map((module) => ({
       id: `group-${module.id}`,
       title: module.title,
@@ -566,6 +569,30 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
       skillIds: nodes.filter((node) => node.moduleId === module.id).map((node) => node.id)
     }))
     .filter((group) => group.skillIds.length > 0);
+
+  const groupedNodeIds = new Set(moduleGroups.flatMap((group) => group.skillIds));
+  const orphanGroupsByBranch = new Map<string, AtlasSkillNode[]>();
+  for (const node of nodes) {
+    if (groupedNodeIds.has(node.id)) {
+      continue;
+    }
+    const branchKey = node.branchId ?? "global";
+    const branchNodes = orphanGroupsByBranch.get(branchKey) ?? [];
+    branchNodes.push(node);
+    orphanGroupsByBranch.set(branchKey, branchNodes);
+  }
+
+  const orphanGroups = [...orphanGroupsByBranch.entries()].map(([branchKey, branchNodes]) => ({
+    id: `group-${slug(branchKey)}`,
+    title: branchKey === "global" ? "Global Skills" : "Orphaned Skills",
+    summary: branchKey === "global"
+      ? "Skills that do not belong to a chapter-backed module still render here."
+      : "Skills that are not tied to a chapter-backed module still render here.",
+    moduleId: null,
+    skillIds: branchNodes.map((node) => node.id)
+  }));
+
+  const groups = [...moduleGroups, ...orphanGroups];
 
   const chapterRewards = modules
     .map((module) => ({
@@ -597,6 +624,10 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
         ? "derived-checklist"
         : "concept-only";
 
+    if (rootSkillIds.length === 0 && (basis === "concept-only" || !hasEvidence(intel?.evidence))) {
+      return [];
+    }
+
     if (rootSkillIds.length === 0 && conceptIds.length === 0 && checklist.length === 0) {
       return [];
     }
@@ -605,7 +636,7 @@ export function buildAtlasSkillTree(input: BuildAtlasSkillTreeInput): AtlasSkill
       assignmentId: assignment.id,
       title: assignment.title,
       summary: "This assignment becomes ready when its prerequisite skill chain is earned.",
-      skillIds: rootSkillIds.length > 0 ? collectSkillChain(rootSkillIds, nodesById) : [],
+      skillIds: basis === "concept-only" ? [] : (rootSkillIds.length > 0 ? collectSkillChain(rootSkillIds, nodesById) : []),
       basis,
       conceptIds,
       focusThemeIds: intel?.focusThemeIds ?? [],

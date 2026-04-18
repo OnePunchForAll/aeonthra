@@ -129,6 +129,10 @@ export function collectManifestReferencedFiles(manifest) {
   return [...referencedFiles].sort();
 }
 
+function containsClassicScriptBreakingEsmSyntax(code) {
+  return /^\s*(?:import|export)\s/m.test(code);
+}
+
 function resolveDistPath(baseOutDir, relativePath) {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     throw new Error("Extension dist validation encountered an empty manifest asset path.");
@@ -173,6 +177,21 @@ export async function validateBuiltExtensionDist(baseOutDir = outDir) {
     throw new Error(
       `Extension dist is incomplete. Missing file${missingFiles.length === 1 ? "" : "s"}: ${missingFiles.join(", ")}`
     );
+  }
+
+  if (Array.isArray(manifest?.content_scripts)) {
+    const contentScriptFiles = new Set(
+      manifest.content_scripts.flatMap((script) => Array.isArray(script?.js) ? script.js : [])
+    );
+    for (const relativePath of [...contentScriptFiles].sort()) {
+      const absolutePath = resolveDistPath(baseOutDir, relativePath);
+      const code = await readFile(absolutePath, "utf8");
+      if (containsClassicScriptBreakingEsmSyntax(code)) {
+        throw new Error(
+          `Content script "${relativePath}" contains ESM syntax and will not load as a classic MV3 content script.`
+        );
+      }
+    }
   }
 
   if (

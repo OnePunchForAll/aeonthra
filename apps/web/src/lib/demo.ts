@@ -6,6 +6,7 @@ import {
   type CaptureItem,
   type ConceptRelation,
   type EngineProfile,
+  type EvidenceFragment,
   type LearningBundle,
   type LearningConcept,
   type LearningSynthesis,
@@ -71,12 +72,14 @@ function createItem(input: {
     id: stableHash(`${input.canonicalUrl}:${input.title}:${text}`),
     kind: input.kind,
     title: input.title,
+    titleSource: "inferred",
     canonicalUrl: input.canonicalUrl,
     plainText: text,
     excerpt: text.slice(0, 240),
     html: input.html,
     headingTrail: input.headingTrail ?? [input.title],
     tags: ["demo", ...(input.tags ?? [])],
+    submissionTypes: [],
     capturedAt: DEMO_CAPTURED_AT,
     contentHash: stableHash(text)
   };
@@ -471,7 +474,30 @@ function sourceItemId(bundle: CaptureBundle, title: string): string {
   return bundle.items.find((item) => item.title === title)?.id ?? stableHash(title);
 }
 
+function evidenceFragment(
+  bundle: CaptureBundle,
+  sourceId: string,
+  label: string,
+  excerpt: string,
+  sourceType: EvidenceFragment["sourceType"],
+  sourceField?: string
+): EvidenceFragment {
+  const sourceItem = bundle.items.find((item) => item.id === sourceId);
+  return {
+    label,
+    excerpt,
+    sourceItemId: sourceId,
+    sourceKind: sourceItem?.kind ?? "document",
+    sourceOrigin: "source-block",
+    sourceType,
+    sourceField,
+    evidenceScore: 5,
+    passReason: "This demo evidence is anchored to a captured source item and passes the deterministic truth gate."
+  };
+}
+
 function makeConcept(seed: DemoConceptSeed, bundle: CaptureBundle): LearningConcept {
+  const anchorSourceItemId = sourceItemId(bundle, seed.sourceTitle);
   return {
     id: slugify(seed.label),
     label: seed.label,
@@ -486,12 +512,50 @@ function makeConcept(seed: DemoConceptSeed, bundle: CaptureBundle): LearningConc
     transferHook: seed.transferHook,
     category: seed.category,
     keywords: seed.keywords,
-    sourceItemIds: [sourceItemId(bundle, seed.sourceTitle)],
-    relatedConceptIds: seed.related.map((entry) => slugify(entry))
+    sourceItemIds: [anchorSourceItemId],
+    relatedConceptIds: seed.related.map((entry) => slugify(entry)),
+    fieldSupport: {
+      definition: {
+        quality: "strong",
+        supportScore: 9,
+        passReason: "The concept definition is anchored to a captured module source.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Definition anchor", seed.definition, "definition", "definition")]
+      },
+      summary: {
+        quality: "supported",
+        supportScore: 8,
+        passReason: "The concept summary stays tied to the captured source detail.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Summary anchor", seed.detail, "summary", "summary")]
+      },
+      primer: {
+        quality: "supported",
+        supportScore: 7,
+        passReason: "The primer condenses the same grounded definition into a short line.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Primer anchor", seed.definition, "summary", "primer")]
+      },
+      mnemonic: {
+        quality: "supported",
+        supportScore: 6,
+        passReason: "The mnemonic is preserved only because it stays attached to a grounded concept source.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Mnemonic anchor", seed.mnemonic, "summary", "mnemonic")]
+      },
+      commonConfusion: {
+        quality: "supported",
+        supportScore: 7,
+        passReason: "The confusion note is grounded in the same captured concept source.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Confusion anchor", seed.commonConfusion, "summary", "commonConfusion")]
+      },
+      transferHook: {
+        quality: "supported",
+        supportScore: 7,
+        passReason: "The transfer hook is shown only because it remains tied to the captured concept source.",
+        evidence: [evidenceFragment(bundle, anchorSourceItemId, "Transfer anchor", seed.transferHook, "summary", "transferHook")]
+      }
+    }
   };
 }
 
-function buildDemoRelations(): ConceptRelation[] {
+function buildDemoRelations(bundle: CaptureBundle): ConceptRelation[] {
   const relations: Array<{ from: string; to: string; type: ConceptRelation["type"]; label: string; strength: number }> = [
     { from: "Utilitarianism", to: "Deontology", type: "contrasts", label: "Utilitarianism judges acts by outcomes, while deontology asks whether the act respects duty regardless of outcome.", strength: 0.96 },
     { from: "Utilitarianism", to: "Virtue Ethics", type: "contrasts", label: "Utilitarianism scores outcomes, while virtue ethics asks what kind of person the action is forming.", strength: 0.88 },
@@ -514,7 +578,16 @@ function buildDemoRelations(): ConceptRelation[] {
     toId: slugify(relation.to),
     type: relation.type,
     label: relation.label,
-    strength: relation.strength
+    strength: relation.strength,
+    evidence: [
+      evidenceFragment(
+        bundle,
+        sourceItemId(bundle, DEMO_CONCEPTS.find((seed) => seed.label === relation.from)?.sourceTitle ?? relation.from),
+        "Relation anchor",
+        relation.label,
+        "summary"
+      )
+    ]
   }));
 }
 
@@ -532,7 +605,7 @@ function phaseConcepts(concepts: LearningConcept[], start: number): LearningConc
 }
 
 function phaseEvidence(concept: LearningConcept) {
-  return [{ label: "Anchor line", excerpt: concept.definition, sourceItemId: concept.sourceItemIds[0] ?? concept.id }];
+  return concept.fieldSupport?.definition?.evidence.slice(0, 1) ?? [];
 }
 
 function buildDemoProtocol(concepts: LearningConcept[]): { totalMinutes: number; phases: MegaPhase[] } {
@@ -678,11 +751,15 @@ function buildDemoSynthesis(
         )
         .map((item) => item.id)
         .slice(0, 3),
-      evidence: [{
-        label: "Source anchor",
-        excerpt: excerptForSource(bundle, concept.sourceItemIds[0] ?? concept.id, concept.definition),
-        sourceItemId: concept.sourceItemIds[0] ?? concept.id
-      }]
+      evidence: [
+        evidenceFragment(
+          bundle,
+          concept.sourceItemIds[0] ?? concept.id,
+          "Source anchor",
+          excerptForSource(bundle, concept.sourceItemIds[0] ?? concept.id, concept.definition),
+          "summary"
+        )
+      ]
     };
   });
 
@@ -706,6 +783,12 @@ function buildDemoSynthesis(
         title: item.title,
         kind: item.kind,
         url: item.canonicalUrl,
+        dueAt: null,
+        dueTrust: {
+          state: "rejected" as const,
+          score: 0,
+          reasons: ["Demo synthesis does not project a trustworthy due date."]
+        },
         summary: item.excerpt,
         likelySkills,
         conceptIds,
@@ -713,6 +796,13 @@ function buildDemoSynthesis(
           .filter((theme) => theme.conceptIds.some((conceptId) => conceptIds.includes(conceptId)))
           .map((theme) => theme.id)
           .slice(0, 3),
+        readinessEligible: conceptIds.length > 0 && likelySkills.length > 0,
+        readinessAcceptanceReasons: conceptIds.length > 0
+          ? ["Demo assignment mapping has grounded concept coverage."]
+          : [],
+        readinessRejectionReasons: conceptIds.length > 0
+          ? []
+          : ["No grounded concept coverage survived for this demo assignment."],
         likelyPitfalls: mappedConcepts
           .map((concept) => concept.commonConfusion)
           .filter(Boolean)
@@ -721,13 +811,20 @@ function buildDemoSynthesis(
           ...likelySkills.map((skill) => `${skill.charAt(0).toUpperCase()}${skill.slice(1)} the framework instead of summarizing it.`),
           ...mappedConcepts.slice(0, 2).map((concept) => `Use ${concept.label} with one source-backed explanation.`)
         ].slice(0, 4),
-        evidence: [{
-          label: "Assignment signal",
-          excerpt: item.excerpt,
-          sourceItemId: item.id
-        }]
+        evidence: [evidenceFragment(bundle, item.id, "Assignment signal", item.excerpt, "prompt")]
       };
     });
+  const assignmentReadiness = assignmentMappings.map((mapping) => ({
+    id: `${mapping.id}:readiness`,
+    sourceItemId: mapping.sourceItemId,
+    title: mapping.title,
+    conceptIds: mapping.conceptIds,
+    checklist: mapping.checklist,
+    evidence: mapping.evidence,
+    ready: mapping.readinessEligible && mapping.checklist.length > 0,
+    acceptanceReasons: mapping.readinessAcceptanceReasons,
+    rejectionReasons: mapping.readinessRejectionReasons
+  }));
 
   const retentionModules = [
     {
@@ -737,11 +834,9 @@ function buildDemoSynthesis(
       summary: "Climb the strongest demo concepts in a stable sequence.",
       conceptIds: concepts.slice(0, 5).map((concept) => concept.id),
       prompts: concepts.slice(0, 5).map((concept) => `Teach ${concept.label} in one clean sentence, then connect it to another framework.`),
-      evidence: concepts.slice(0, 2).map((concept) => ({
-        label: "Stable concept",
-        excerpt: concept.definition,
-        sourceItemId: concept.sourceItemIds[0] ?? concept.id
-      }))
+      evidence: concepts.slice(0, 2).map((concept) =>
+        evidenceFragment(bundle, concept.sourceItemIds[0] ?? concept.id, "Stable concept", concept.definition, "definition")
+      )
     },
     {
       id: "distinction-drill",
@@ -750,11 +845,16 @@ function buildDemoSynthesis(
       summary: "Separate the frameworks that most easily blur together.",
       conceptIds: relations.slice(0, 4).flatMap((relation) => [relation.fromId, relation.toId]),
       prompts: relations.slice(0, 3).map((relation) => relation.label),
-      evidence: relations.slice(0, 2).map((relation) => ({
-        label: "Contrast edge",
-        excerpt: relation.label,
-        sourceItemId: relation.fromId
-      }))
+      evidence: relations.slice(0, 2).map((relation) =>
+        relation.evidence?.[0]
+        ?? evidenceFragment(
+          bundle,
+          sourceItemId(bundle, DEMO_CONCEPTS.find((seed) => slugify(seed.label) === relation.fromId)?.sourceTitle ?? relation.fromId),
+          "Contrast edge",
+          relation.label,
+          "summary"
+        )
+      )
     },
     {
       id: "corruption-detection",
@@ -763,11 +863,15 @@ function buildDemoSynthesis(
       summary: "Catch the polished wrong version before it hardens.",
       conceptIds: concepts.slice(0, 4).map((concept) => concept.id),
       prompts: concepts.slice(0, 4).map((concept) => `What mistake would distort ${concept.label}, and what repairs it?`),
-      evidence: concepts.slice(0, 2).map((concept) => ({
-        label: "Confusion risk",
-        excerpt: concept.commonConfusion || concept.summary,
-        sourceItemId: concept.sourceItemIds[0] ?? concept.id
-      }))
+      evidence: concepts.slice(0, 2).map((concept) =>
+        evidenceFragment(
+          bundle,
+          concept.sourceItemIds[0] ?? concept.id,
+          "Confusion risk",
+          concept.commonConfusion || concept.summary,
+          "summary"
+        )
+      )
     },
     {
       id: "teach-back",
@@ -794,11 +898,9 @@ function buildDemoSynthesis(
       summary: "Separate recognition from real command before the next quiz or paper.",
       conceptIds: concepts.slice(0, 5).map((concept) => concept.id),
       prompts: concepts.slice(0, 5).map((concept) => `Could you define, contrast, and apply ${concept.label} without looking?`),
-      evidence: concepts.slice(0, 2).map((concept) => ({
-        label: "Confidence cue",
-        excerpt: concept.transferHook,
-        sourceItemId: concept.sourceItemIds[0] ?? concept.id
-      }))
+      evidence: concepts.slice(0, 2).map((concept) =>
+        evidenceFragment(bundle, concept.sourceItemIds[0] ?? concept.id, "Confidence cue", concept.transferHook, "summary")
+      )
     },
     {
       id: "review-queue",
@@ -807,11 +909,9 @@ function buildDemoSynthesis(
       summary: "Keep the later-course ideas warm between sessions.",
       conceptIds: concepts.slice(-4).map((concept) => concept.id),
       prompts: concepts.slice(-4).map((concept) => `Recover ${concept.label} from memory, then verify with one supporting sentence.`),
-      evidence: concepts.slice(-2).map((concept) => ({
-        label: "Review target",
-        excerpt: concept.summary,
-        sourceItemId: concept.sourceItemIds[0] ?? concept.id
-      }))
+      evidence: concepts.slice(-2).map((concept) =>
+        evidenceFragment(bundle, concept.sourceItemIds[0] ?? concept.id, "Review target", concept.summary, "summary")
+      )
     }
   ];
 
@@ -838,6 +938,7 @@ function buildDemoSynthesis(
     likelyAssessedSkills: Array.from(new Set(assignmentMappings.flatMap((mapping) => mapping.likelySkills))).sort(),
     focusThemes,
     assignmentMappings,
+    assignmentReadiness,
     retentionModules,
     deterministicHash,
     qualityBanner: "",
@@ -866,7 +967,7 @@ export function createDemoBundle(): CaptureBundle {
 
 export function createDemoLearningBundle(bundle: CaptureBundle): LearningBundle {
   const concepts = DEMO_CONCEPTS.map((seed) => makeConcept(seed, bundle));
-  const relations = buildDemoRelations();
+  const relations = buildDemoRelations(bundle);
   const protocol = buildDemoProtocol(concepts);
   const neuralForge = buildDemoNeuralForge(concepts);
   const topLabel = concepts[0]?.label ?? "Ethics";

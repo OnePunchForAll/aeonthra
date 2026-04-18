@@ -189,4 +189,53 @@ describe("extension build contract", () => {
       /build info marker is malformed/
     );
   });
+
+  it("rejects content scripts that still ship ESM syntax", async () => {
+    const distDir = await makeTempDist();
+    const requiredFiles = [
+      "service-worker.js",
+      "content-canvas.js",
+      "content-bridge.js",
+      "popup.js",
+      "side-panel.js",
+      "options.js",
+      "popup.html",
+      "side-panel.html",
+      "options.html",
+      "global.css",
+      "tokens.css",
+      "icon.ico"
+    ];
+
+    await Promise.all(requiredFiles.map((file) => writeFile(resolve(distDir, file), "")));
+    await writeFile(resolve(distDir, "content-canvas.js"), "export { broken };\n");
+    await writeFile(
+      resolve(distDir, "manifest.json"),
+      JSON.stringify({
+        manifest_version: 3,
+        background: { service_worker: "service-worker.js", type: "module" },
+        side_panel: { default_path: "side-panel.html" },
+        action: { default_popup: "popup.html" },
+        options_page: "options.html",
+        content_scripts: [
+          { js: ["content-canvas.js"] },
+          { js: ["content-bridge.js"] }
+        ]
+      })
+    );
+    await writeFile(
+      resolve(distDir, buildInfoFilename),
+      JSON.stringify({
+        version: "1.0.0",
+        builtAt: "2026-04-18T00:00:00.000Z",
+        sourceHash: "abc123",
+        unpackedPath: "apps/extension/dist",
+        markerPath: buildInfoFilename
+      })
+    );
+
+    await expect(validateBuiltExtensionDist(distDir)).rejects.toThrow(
+      /contains ESM syntax/
+    );
+  });
 });

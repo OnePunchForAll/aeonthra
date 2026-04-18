@@ -49,6 +49,36 @@ function previewList(values: string[], emptyLabel: string): string {
   return values.length > 0 ? values.join(" · ") : emptyLabel;
 }
 
+function readinessLabel(state: AssignmentReadinessState): string {
+  if (state.status === "unmapped") {
+    return "Needs mapping";
+  }
+  if (state.status === "concept-prep") {
+    return "Concept prep";
+  }
+  return state.label;
+}
+
+function dueLabel(assignment: ShellAssignment): string {
+  return assignment.dueState === "unknown" ? "Date not captured" : assignment.dueLabel;
+}
+
+function readinessSummary(status: AssignmentReadinessState["status"], missing: { label: string }[]): string {
+  if (status === "unmapped") {
+    return "Concept grounding still needs a skill chain.";
+  }
+  if (status === "concept-prep") {
+    return "Concept grounding exists, but the checklist-backed skill chain is not complete yet.";
+  }
+  return missing.length ? `Missing ${missing.map((node) => node.label).join(" · ")}` : "Skill chain earned";
+}
+
+function humanizeStatusSummary(summary: string): string {
+  return summary
+    .replace("Atlas skill chain still needs deterministic evidence mapping.", "Concept grounding still needs a skill chain.")
+    .replace("No assignment-specific skill chains were derived yet.", "No assignment-ready skill chains were derived yet.");
+}
+
 export function AtlasJourneyPanel({
   atlasSkillModel,
   atlasSkillById,
@@ -91,6 +121,7 @@ export function AtlasJourneyPanel({
   const selectedInspector = selectedNodeId
     ? buildAtlasNodeInspector(selectedNodeId, atlasSkillModel, atlasSkillById)
     : null;
+  const selectedInspectorStatusSummary = selectedInspector ? humanizeStatusSummary(selectedInspector.statusSummary) : null;
   const selectedNode = selectedInspector?.node ?? null;
   const selectedConcept = selectedNode
     ? selectedNode.conceptIds
@@ -138,14 +169,14 @@ export function AtlasJourneyPanel({
         missingSkills: [],
         readiness: null,
         status: "unmapped",
-        label: "Unmapped",
+        label: "Needs mapping",
         progressPercent: 0
       };
       return {
         assignment,
         readiness: readinessState.progressPercent,
         status: readinessState.status,
-        label: readinessState.label,
+        label: readinessLabel(readinessState),
         missing: readinessState.missingSkills.slice(0, 2)
       };
     })
@@ -157,7 +188,7 @@ export function AtlasJourneyPanel({
     setSelectedNodeId(node.id);
     if (node.missingPrerequisiteIds.length > 0) {
       const inspector = buildAtlasNodeInspector(node.id, atlasSkillModel, atlasSkillById);
-      flash(inspector?.statusSummary ?? "This skill is still locked.", false);
+      flash(humanizeStatusSummary(inspector?.statusSummary ?? "This skill is still locked."), false);
     }
   };
 
@@ -244,22 +275,27 @@ export function AtlasJourneyPanel({
           <div style={{ display: "grid", gap: 10 }}>
             {upcomingAssignments.length ? upcomingAssignments.map(({ assignment, readiness, status, label, missing }) => {
               const readinessColor = status === "unmapped" ? theme.MU : status === "concept-prep" ? theme.CY : readiness >= 100 ? theme.TL : readiness > 60 ? theme.CY : "#fb923c";
+              const dueUrgent = assignment.dueState === "today"
+                || assignment.dueState === "overdue"
+                || (assignment.dueState === "upcoming" && assignment.due <= 3);
               return (
-                <button key={assignment.id} onClick={() => goToAssignment(assignment)} style={{ padding: "16px 18px", borderRadius: 16, background: theme.innr, border: `1px solid ${assignment.due <= 3 ? `${theme.RD}33` : theme.BD}`, cursor: "pointer", textAlign: "left", color: theme.TX }}>
+                <button key={assignment.id} onClick={() => goToAssignment(assignment)} style={{ padding: "16px 18px", borderRadius: 16, background: theme.innr, border: `1px solid ${dueUrgent ? `${theme.RD}33` : theme.BD}`, cursor: "pointer", textAlign: "left", color: theme.TX }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                     <div>
                       <div style={{ fontSize: ".92rem", fontWeight: 700 }}>{assignment.title}</div>
-                      <div style={{ fontSize: ".76rem", color: theme.MU, marginTop: 4 }}>{status === "unmapped" ? "Atlas skill chain still needs deterministic evidence mapping." : status === "concept-prep" ? "Concept grounding exists, but there is no checklist-backed skill chain yet." : missing.length ? `Missing ${missing.map((node) => node.label).join(" · ")}` : "Skill chain earned"}</div>
+                      <div style={{ fontSize: ".76rem", color: theme.MU, marginTop: 4 }}>{readinessSummary(status, missing)}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "1rem", fontWeight: 800, color: readinessColor, fontFamily: "'Space Grotesk',sans-serif" }}>{label}</div>
-                      <div style={{ fontSize: ".68rem", color: assignment.due <= 3 ? theme.RD : theme.MU }}>{assignment.due}d</div>
+                      <div style={{ fontSize: ".68rem", color: dueUrgent ? theme.RD : theme.MU }}>{dueLabel(assignment)}</div>
                     </div>
                   </div>
-                  <div style={{ height: 4, borderRadius: 999, background: theme.DM, overflow: "hidden", marginTop: 10 }}><div style={{ height: "100%", width: `${readiness}%`, background: readinessColor, borderRadius: 999 }} /></div>
+                  {status === "unmapped"
+                    ? <div style={{ height: 4, borderRadius: 999, background: theme.DM, opacity: .55, marginTop: 10 }} />
+                    : <div style={{ height: 4, borderRadius: 999, background: theme.DM, overflow: "hidden", marginTop: 10 }}><div style={{ height: "100%", width: `${readiness}%`, background: readinessColor, borderRadius: 999 }} /></div>}
                 </button>
               );
-            }) : <div style={{ color: theme.MU, fontSize: ".88rem" }}>No assignment-specific skill chains were derived yet.</div>}
+            }) : <div style={{ color: theme.MU, fontSize: ".88rem" }}>No assignment-ready skill chains were derived yet.</div>}
           </div>
         </div>
       </div>
@@ -276,7 +312,7 @@ export function AtlasJourneyPanel({
                 </div>
               </div>
               <p style={{ fontSize: ".92rem", lineHeight: 1.7, color: theme.T2, margin: "0 0 12px" }}>{selectedNode?.summary}</p>
-              <div style={{ fontSize: ".84rem", color: theme.MU, marginBottom: 14 }}>{selectedInspector.statusSummary}</div>
+              <div style={{ fontSize: ".84rem", color: theme.MU, marginBottom: 14 }}>{selectedInspectorStatusSummary}</div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button onClick={openSelectedNode} style={{ padding: "10px 16px", borderRadius: 12, border: "none", background: `linear-gradient(135deg,${skillStateColor(selectedNode?.state ?? "locked")},${theme.CY})`, color: "#02040c", fontWeight: 700, cursor: "pointer" }}>{primaryActionLabel}</button>
                 {selectedModule && <button onClick={() => openReaderForChapter(selectedModule.id, 0)} style={{ padding: "10px 16px", borderRadius: 12, border: `1px solid ${theme.BD}`, background: "transparent", color: theme.MU, fontWeight: 600, cursor: "pointer" }}>Open chapter</button>}

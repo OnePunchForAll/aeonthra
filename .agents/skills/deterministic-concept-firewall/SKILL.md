@@ -1,5 +1,7 @@
 # deterministic-concept-firewall
 
+Cutover note: the canonical engine runtime now lives in `packages/content-engine-v2/src/**` and is consumed as `@learning/content-engine`. Any older `packages/content-engine/src/**` references in this skill are historical and should be mapped onto the v2 engine before editing.
+
 Defines which candidate labels must be blocked or demoted before stabilization.
 Applied in `packages/content-engine/src/pipeline.ts::blockedLabel()`.
 

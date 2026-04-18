@@ -97,4 +97,18 @@ describe("textbook import", () => {
     expect(bundle.items[0]?.plainText).not.toMatch(/copyright/i);
     expect(bundle.items[0]?.plainText).not.toMatch(/table of contents/i);
   });
+
+  it("falls back to deterministic paragraph chunks instead of one giant textbook document", () => {
+    const paragraph = "Deterministic synthesis keeps every visible claim tied to captured evidence and rejects generic filler before it becomes a learner-facing concept.";
+    const longText = Array.from({ length: 10 }, (_, index) => `Section ${index + 1}\n${paragraph} ${paragraph}`).join("\n\n");
+
+    const bundle = createTextbookCaptureBundle({
+      title: "Long Textbook",
+      text: longText,
+      format: "paste"
+    });
+
+    expect(bundle.items.length).toBeGreaterThan(1);
+    expect(bundle.items.every((item) => item.tags.includes("fallback-paragraph-window"))).toBe(true);
+  });
 });
