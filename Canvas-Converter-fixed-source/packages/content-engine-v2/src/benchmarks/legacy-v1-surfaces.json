@@ -1,0 +1,206 @@
+{
+  "hard-noise-js-disabled": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Many items contain mostly Canvas platform metadata (points, submission type, attempt limits) rather than academic content. The extracted concepts may be thin.",
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "fragmentary-title": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Average item content is very short. Not enough grounded concept evidence may survive the truth gate.",
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "mixed-noise-and-real-concept": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Many items contain mostly Canvas platform metadata (points, submission type, attempt limits) rather than academic content. The extracted concepts may be thin.",
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "single-page-mixed-live-junk": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "orientation-salvage": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "This bundle contains a high proportion of administrative or orientation content. Concepts extracted from orientation guides, syllabus pages, and platform instructions may not represent actual course learning objectives.",
+      "Multiple items share near-identical structure (\"reflection activity\" appears in 67% of items). Repeated discussion/reflection prompts may crowd out academic concepts in ranking.",
+      "Many items contain mostly Canvas platform metadata (points, submission type, attempt limits) rather than academic content. The extracted concepts may be thin.",
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "admin-heavy-orientation-clones": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "This bundle contains a high proportion of administrative or orientation content. Concepts extracted from orientation guides, syllabus pages, and platform instructions may not represent actual course learning objectives.",
+      "Multiple items share near-identical structure (\"reflection activity\" appears in 50% of items). Repeated discussion/reflection prompts may crowd out academic concepts in ranking.",
+      "Many items contain mostly Canvas platform metadata (points, submission type, attempt limits) rather than academic content. The extracted concepts may be thin.",
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "clean-textbook-ethics": {
+    "engineId": "v1",
+    "deterministicHash": "h33eadb7c",
+    "concepts": [
+      {
+        "label": "Deontology",
+        "conceptId": "deontology",
+        "visibleFields": {
+          "definition": "Deontology is the view that duties constrain action even when outcomes tempt us otherwise.",
+          "trap": "Students often blur Deontology with Utilitarianism. Utilitarianism is the view that actions should maximize overall well-being.",
+          "mnemonic": "Picture two lanes: Deontology is where utilitarianism and maximize belong. Anything pulling toward Utilitarianism is the wrong lane."
+        },
+        "evidenceCount": 3,
+        "provenanceComplete": true
+      },
+      {
+        "label": "Utilitarianism",
+        "conceptId": "utilitarianism",
+        "visibleFields": {
+          "definition": "Utilitarianism is the view that actions should maximize overall well-being.",
+          "trap": "Students often blur Utilitarianism with Deontology. Deontology is the view that duties constrain action even when outcomes tempt us otherwise.",
+          "mnemonic": "Picture two lanes: Utilitarianism is where maximize and well-being belong. Anything pulling toward Deontology is the wrong lane."
+        },
+        "evidenceCount": 3,
+        "provenanceComplete": true
+      }
+    ],
+    "assignments": [
+      {
+        "sourceItemId": "hcd0eac80",
+        "title": "Ethics Primer",
+        "titleAccepted": true,
+        "dueState": "unknown",
+        "readinessEligible": false,
+        "conceptIds": [
+          "deontology",
+          "utilitarianism"
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "fromLabel": "Deontology",
+        "toLabel": "Utilitarianism",
+        "type": "contrasts",
+        "evidenceCount": 1
+      }
+    ],
+    "rejectionCodes": []
+  },
+  "trusted-assignment": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [
+      {
+        "sourceItemId": "h81d94b28",
+        "title": "Essay 1",
+        "titleAccepted": true,
+        "dueState": "trusted",
+        "readinessEligible": false,
+        "conceptIds": []
+      }
+    ],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "suspicious-date": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [
+      {
+        "sourceItemId": "h43f22015",
+        "title": "Essay 2",
+        "titleAccepted": true,
+        "dueState": "unknown",
+        "readinessEligible": false,
+        "conceptIds": []
+      }
+    ],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "thin-discussion-salvage": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [
+      {
+        "sourceItemId": "h76cdc8f9",
+        "title": "Week 4 Discussion Forum",
+        "titleAccepted": true,
+        "dueState": "unknown",
+        "readinessEligible": false,
+        "conceptIds": []
+      },
+      {
+        "sourceItemId": "h8d6b0af5",
+        "title": "Reply to Classmates",
+        "titleAccepted": false,
+        "dueState": "unknown",
+        "readinessEligible": false,
+        "conceptIds": []
+      }
+    ],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "academic-wrapper-dedupe": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  },
+  "html-article-header": {
+    "engineId": "v1",
+    "deterministicHash": "h39ad3ec7",
+    "concepts": [],
+    "assignments": [],
+    "relations": [],
+    "rejectionCodes": [
+      "Only Canvas items were captured and the bundle is small. For best results, import a textbook PDF after capturing the course."
+    ]
+  }
+}

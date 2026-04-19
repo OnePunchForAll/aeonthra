@@ -18,6 +18,7 @@ const METRIC_WEIGHTS = {
   dueDateSanity: 8,
   assignmentTitleSanity: 5,
   readinessHonesty: 10,
+  consumerProjectionIntegrity: 12,
   failClosedBehavior: 14,
   outputUsefulness: 3
 } as const;
@@ -52,6 +53,15 @@ function fixtureScore(surface: BenchmarkSurface, expectation: BenchmarkFixtureEx
   const suppressedAssignments = normalizedSet(expectation.suppressedAssignmentTitles);
   const readinessAssignments = normalizedSet(surface.assignments.filter((assignment) => assignment.readinessEligible).map((assignment) => assignment.title));
   const expectedReadiness = normalizedSet(expectation.readinessTitles);
+  const moduleTitles = normalizedSet(surface.moduleTitles ?? []);
+  const suppressedModuleTitles = normalizedSet(expectation.suppressedModuleTitles ?? []);
+  const expectedModuleTitles = normalizedSet(expectation.expectedModuleTitles ?? []);
+  const skillLabels = surface.skillLabels ?? [];
+  const expectedSkillPrefixes = expectation.expectedSkillLabelPrefixes ?? [];
+  const suppressedSkillPrefixes = expectation.suppressedSkillLabelPrefixes ?? [];
+  const checklistLines = surface.checklistLines ?? [];
+  const suppressedChecklistFragments = expectation.suppressedChecklistFragments ?? [];
+  const shellAssignmentTitles = normalizedSet(surface.shellAssignmentTitles ?? []);
 
   const conceptRecall = expectedConcepts.size === 0
     ? 1
@@ -59,7 +69,7 @@ function fixtureScore(surface: BenchmarkSurface, expectation: BenchmarkFixtureEx
   const suppressedPass = [...suppressedConcepts].every((label) => !actualConcepts.has(label));
   const suppressedAssignmentPass = [...suppressedAssignments].every((label) => !actualAssignments.has(label));
   const expectedAssignmentRecall = expectedAssignments.size === 0
-    ? 1
+    ? actualAssignments.size === 0 ? 1 : 0
     : [...expectedAssignments].filter((label) => actualAssignments.has(label)).length / expectedAssignments.size;
   const unknownDuePass = expectation.expectedUnknownDueTitles.every((title) => {
     const normalizedTitle = normalizeForCompare(title);
@@ -80,6 +90,42 @@ function fixtureScore(surface: BenchmarkSurface, expectation: BenchmarkFixtureEx
           && candidate.type === relation.type
         )
       ).length / expectation.expectedRelationPairs.length;
+  const consumerProjectionChecks: number[] = [];
+
+  if (expectedModuleTitles.size > 0 || suppressedModuleTitles.size > 0) {
+    const expectedModulePass = expectedModuleTitles.size === 0
+      ? 1
+      : [...expectedModuleTitles].filter((title) => moduleTitles.has(title)).length / expectedModuleTitles.size;
+    const suppressedModulePass = [...suppressedModuleTitles].every((title) => !moduleTitles.has(title)) ? 1 : 0;
+    consumerProjectionChecks.push((expectedModulePass + suppressedModulePass) / 2);
+  }
+
+  if (expectedSkillPrefixes.length > 0 || suppressedSkillPrefixes.length > 0) {
+    const expectedSkillPass = expectedSkillPrefixes.length === 0
+      ? 1
+      : expectedSkillPrefixes.filter((prefix) => skillLabels.some((label) => label.startsWith(prefix))).length / expectedSkillPrefixes.length;
+    const suppressedSkillPass = suppressedSkillPrefixes.every((prefix) => skillLabels.every((label) => !label.startsWith(prefix))) ? 1 : 0;
+    consumerProjectionChecks.push((expectedSkillPass + suppressedSkillPass) / 2);
+  }
+
+  if (expectedAssignments.size > 0 || suppressedAssignments.size > 0) {
+    const shellAssignmentRecall = expectedAssignments.size === 0
+      ? shellAssignmentTitles.size === 0 ? 1 : 0
+      : [...expectedAssignments].filter((title) => shellAssignmentTitles.has(title)).length / expectedAssignments.size;
+    const shellAssignmentSuppressedPass = [...suppressedAssignments].every((title) => !shellAssignmentTitles.has(title)) ? 1 : 0;
+    consumerProjectionChecks.push((shellAssignmentRecall + shellAssignmentSuppressedPass) / 2);
+  }
+
+  if (suppressedChecklistFragments.length > 0) {
+    const checklistPass = suppressedChecklistFragments.every((fragment) =>
+      checklistLines.every((line) => !line.includes(fragment))
+    ) ? 1 : 0;
+    consumerProjectionChecks.push(checklistPass);
+  }
+
+  const consumerProjectionPass = consumerProjectionChecks.length === 0
+    ? 1
+    : consumerProjectionChecks.reduce((sum, value) => sum + value, 0) / consumerProjectionChecks.length;
 
   const metrics: BenchmarkMetricScore[] = [
     metric("noiseRejection", suppressedPass && suppressedAssignmentPass ? METRIC_WEIGHTS.noiseRejection : 0, METRIC_WEIGHTS.noiseRejection),
@@ -90,6 +136,7 @@ function fixtureScore(surface: BenchmarkSurface, expectation: BenchmarkFixtureEx
     metric("dueDateSanity", unknownDuePass ? METRIC_WEIGHTS.dueDateSanity : 0, METRIC_WEIGHTS.dueDateSanity),
     metric("assignmentTitleSanity", Math.round(METRIC_WEIGHTS.assignmentTitleSanity * expectedAssignmentRecall), METRIC_WEIGHTS.assignmentTitleSanity),
     metric("readinessHonesty", Math.round(METRIC_WEIGHTS.readinessHonesty * readinessPass), METRIC_WEIGHTS.readinessHonesty),
+    metric("consumerProjectionIntegrity", Math.round(METRIC_WEIGHTS.consumerProjectionIntegrity * consumerProjectionPass), METRIC_WEIGHTS.consumerProjectionIntegrity),
     metric("failClosedBehavior", expectation.hardNoiseOnly ? (surface.concepts.length === 0 ? METRIC_WEIGHTS.failClosedBehavior : 0) : METRIC_WEIGHTS.failClosedBehavior, METRIC_WEIGHTS.failClosedBehavior),
     metric("outputUsefulness", Math.round(METRIC_WEIGHTS.outputUsefulness * conceptRecall), METRIC_WEIGHTS.outputUsefulness)
   ];

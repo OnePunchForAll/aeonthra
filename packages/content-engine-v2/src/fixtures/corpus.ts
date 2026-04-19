@@ -218,8 +218,8 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       expectedConceptLabels: ["Positive Reinforcement"],
       suppressedLabels: ["Week 1", "JavaScript"],
       expectedRelationPairs: [],
-      expectedAssignmentTitles: ["Positive Reinforcement"],
-      suppressedAssignmentTitles: ["Week 1"],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Week 1", "Positive Reinforcement"],
       expectedUnknownDueTitles: [],
       readinessTitles: [],
       maxVisibleConcepts: 1
@@ -243,6 +243,13 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       summary: "A single mixed page should salvage the grounded concept while suppressing browser junk and fragments.",
       expectedConceptLabels: ["Positive Reinforcement"],
       suppressedLabels: ["JavaScript", "Creating Produce New Or"],
+      expectedModuleTitles: ["Positive Reinforcement"],
+      suppressedModuleTitles: ["Course Capture"],
+      suppressedSkillLabelPrefixes: ["Explain "],
+      suppressedChecklistFragments: [
+        "You need to have JavaScript enabled in order to access this site",
+        "Creating Produce New Or"
+      ],
       expectedRelationPairs: [],
       expectedAssignmentTitles: [],
       suppressedAssignmentTitles: [],
@@ -280,11 +287,14 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       summary: "Orientation clones should not crowd out the one real academic lane.",
       expectedConceptLabels: ["Operant Conditioning", "Positive Reinforcement", "Negative Reinforcement"],
       suppressedLabels: ["Reflection Activity", "Reflection Activity Copy"],
+      expectedModuleTitles: ["Operant Conditioning"],
+      suppressedModuleTitles: ["Reflection Activity", "Reflection Activity Copy"],
+      suppressedSkillLabelPrefixes: ["Explain "],
       expectedRelationPairs: [
         { from: "Positive Reinforcement", to: "Negative Reinforcement", type: "contrasts" }
       ],
-      expectedAssignmentTitles: ["Operant Conditioning"],
-      suppressedAssignmentTitles: ["Reflection Activity", "Reflection Activity Copy"],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Reflection Activity", "Reflection Activity Copy", "Operant Conditioning"],
       expectedUnknownDueTitles: [],
       readinessTitles: [],
       maxVisibleConcepts: 3
@@ -297,11 +307,14 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       summary: "Admin-heavy orientation clones should still preserve the one real academic lane and suppress the rest.",
       expectedConceptLabels: ["Operant Conditioning", "Positive Reinforcement", "Negative Reinforcement"],
       suppressedLabels: ["Reflection Activity", "Reflection Activity Copy", "Start Here"],
+      expectedModuleTitles: ["Operant Conditioning"],
+      suppressedModuleTitles: ["Reflection Activity", "Reflection Activity Copy", "Start Here"],
+      suppressedSkillLabelPrefixes: ["Explain "],
       expectedRelationPairs: [
         { from: "Positive Reinforcement", to: "Negative Reinforcement", type: "contrasts" }
       ],
-      expectedAssignmentTitles: ["Operant Conditioning"],
-      suppressedAssignmentTitles: ["Reflection Activity", "Reflection Activity Copy", "Start Here"],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Reflection Activity", "Reflection Activity Copy", "Start Here", "Operant Conditioning"],
       expectedUnknownDueTitles: [],
       readinessTitles: [],
       maxVisibleConcepts: 3
@@ -386,6 +399,7 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       summary: "Suspicious due dates must become unknown, not trusted.",
       expectedConceptLabels: [],
       suppressedLabels: [],
+      suppressedChecklistFragments: ["Due in", "Overdue by"],
       expectedRelationPairs: [],
       expectedAssignmentTitles: ["Essay 2"],
       suppressedAssignmentTitles: [],
@@ -400,9 +414,12 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       summary: "Thin discussion bundles should salvage the single academic lane and suppress forum wrappers.",
       expectedConceptLabels: ["Cognitive Load Theory"],
       suppressedLabels: ["Week 4 Discussion Forum", "Reply to Classmates"],
+      expectedModuleTitles: ["Cognitive Load Theory"],
+      suppressedModuleTitles: ["Week 4 Discussion Forum", "Reply to Classmates"],
+      suppressedSkillLabelPrefixes: ["Explain "],
       expectedRelationPairs: [],
-      expectedAssignmentTitles: ["Cognitive Load Theory"],
-      suppressedAssignmentTitles: ["Week 4 Discussion Forum", "Reply to Classmates"],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Week 4 Discussion Forum", "Reply to Classmates", "Cognitive Load Theory"],
       expectedUnknownDueTitles: [],
       readinessTitles: [],
       maxVisibleConcepts: 1
@@ -416,8 +433,8 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       expectedConceptLabels: ["Classical Conditioning", "Operant Conditioning"],
       suppressedLabels: ["Overview of Classical Conditioning", "Principles of Classical Conditioning"],
       expectedRelationPairs: [],
-      expectedAssignmentTitles: ["Classical Conditioning", "Operant Conditioning"],
-      suppressedAssignmentTitles: [],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Classical Conditioning", "Operant Conditioning"],
       expectedUnknownDueTitles: [],
       readinessTitles: []
     }
@@ -430,8 +447,8 @@ export const benchmarkCorpus: BenchmarkFixture[] = [
       expectedConceptLabels: ["Classical Conditioning"],
       suppressedLabels: ["Course Navigation"],
       expectedRelationPairs: [],
-      expectedAssignmentTitles: ["Article Root"],
-      suppressedAssignmentTitles: ["Course Navigation"],
+      expectedAssignmentTitles: [],
+      suppressedAssignmentTitles: ["Course Navigation", "Article Root"],
       expectedUnknownDueTitles: [],
       readinessTitles: [],
       maxVisibleConcepts: 1

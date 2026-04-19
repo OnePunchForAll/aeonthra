@@ -2,18 +2,18 @@
 
 ## Highest leverage next work
 
-- Expand the semantic-garbage regression corpus with more wrapper-title, front-matter, and textbook-container cases so future concept/theme/readiness leaks stay closed after the support-gate relaxation.
-- Project canonical readiness and due-trust metadata through the compatibility boundary so the app stops reparsing trust from raw prose:
-  - carry `readiness` / `dueTrust` instead of reconstructing `Unmapped` and due state from shell heuristics
-  - keep grounded requirement chains and evidence visible without flattening them into generic fallback strings
-  - make sure `data.synthesis` consumers do not outlive the richer `skillTree` / readiness truth
-- Audit the remaining shell consumers of `data.synthesis` versus `skillTree` for any last heuristic fallback that still weakens Atlas or assignment surfaces:
-  - remove stale display-time slices where they hide real support data
-  - keep the learner-facing summary truthful when support is grounded but incomplete
-- Run one live textbook import retest with a real PDF now that the pre-page progress/fallback repair is in:
-  - confirm the intake card advances past `Loading PDF runtime` / `Opening PDF document`
-  - confirm a healthy file reaches page extraction instead of staying at `0%`
-  - if a file still fails, record the exact final textbook error message rather than only the stalled percentage
+- Run one authenticated Chrome -> Canvas -> extension -> import -> shell proof using a real course capture and the new semantic-leak fixtures as the oracle:
+  - confirm mixed-noise pages do not create shell assignments or wrapper module titles
+  - confirm thin discussion captures anchor on the concept-bearing page/module instead of the forum wrapper
+  - confirm Atlas labels stay outcome-driven in the live imported shell, not only in fixtures
+- Add one more shell/Atlas red-test pass for the still-unproven generic-wrapper edges that the current acceptance suite does not name explicitly:
+  - generic `Week N` / `Module N Overview` module titles in `shell-mapper`
+  - task-title fallback wrappers and weak `quickPrep` honesty when requirements are concept-only
+  - wrapper verbs in `likelySkills`, distinction reward wrapper leakage, and duplicate transfer/readiness branches in Atlas
+- Expand the semantic-garbage regression corpus with more wrapper-title, front-matter, orientation-clone, and suspicious-date cases so the new page gate and consumer-projection benchmark stay closed under broader capture noise.
+- Project canonical readiness and due-trust metadata farther through the compatibility boundary so fewer consumers need to infer truth from flattened synthesis strings:
+  - carry richer readiness / due-trust state instead of reconstructing it from shell heuristics
+  - keep grounded requirement chains and evidence visible without weakening them into generic fallback copy
 
 ## Repo hygiene and determinism
 

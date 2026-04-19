@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "AEONTHRA Capture Intelligence",
+  "version": "1.0.0",
+  "description": "Auto-capture Canvas courses for deterministic learning in AEONTHRA.",
+  "permissions": [
+    "storage",
+    "downloads",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "sidePanel",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://*.instructure.com/*",
+    "https://*.canvas.edu/*",
+    "https://*/courses/*",
+    "https://*.github.io/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "side-panel.html"
+  },
+  "action": {
+    "default_title": "AEONTHRA Capture Intelligence",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.instructure.com/*",
+        "https://*.canvas.edu/*",
+        "https://*/courses/*"
+      ],
+      "js": ["content-canvas.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.github.io/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

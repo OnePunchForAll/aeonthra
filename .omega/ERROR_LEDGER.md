@@ -553,3 +553,35 @@
 **Symptom**: A plain-text bundle titled `Overview of Classical Conditioning` with a grounded definition sentence produced zero concepts, even though the title was already rejected and the body clearly contained the real concept.
 **Fix**: `packages/content-engine-v2/src/candidates/concepts.ts` now allows the first explicit-definition evidence unit to satisfy the support lane when no other grounded support survives, and `packages/content-engine-v2/src/outputs/result.ts` keeps untrusted titles out of theme and assignment display labels unless no grounded concept label exists.
 **Guard**: `packages/content-engine-v2/src/tests/engine.test.ts` now proves wrapper titles stay rejected while the real body concept still survives. Verified by engine tests and repo typecheck.
+
+### [SEMANTIC OUTPUT LEAK] Wrapper pages and overlap-only discussions could still survive as shell-facing modules, tasks, and Atlas labels
+
+**Status**: FIXED
+**Root cause**: The content engine still treated plain `page` sources as assignment-like by default, workspace chapter grouping kept orphan concept pages in synthetic modules instead of attaching them to the explicit wrapper module they explained, and shell/Atlas fallback text still promoted wrapper titles or generic `Explain ...` labels when stronger concept-backed anchors existed.
+**Symptom**: Live-style fixtures could still produce `Course Capture`, `Week 4 Discussion Forum`, or `Reply to Classmates` as visible module titles, shell tasks, checklist text, or Atlas nodes even when the real concept lane was present.
+**Fix**: `packages/content-engine-v2/src/outputs/result.ts` now enforces a strict page surface gate with sentence-grounded requirement extraction and explicit rejection codes; `apps/web/src/lib/workspace.ts` now reattaches concept pages to explicit module keys and uses concept-backed display anchors only after ranking; `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/lib/atlas-shell.ts`, and `apps/web/src/lib/atlas-skill-tree.ts` now fail closed on noisy projections and wrapper-title fallback labels.
+**Guard**: `packages/content-engine-v2/src/tests/engine.test.ts`, `packages/content-engine-v2/src/tests/consumer-compat.test.ts`, `apps/web/src/lib/workspace.test.ts`, `apps/web/src/lib/shell-mapper.test.ts`, `apps/web/src/lib/atlas-shell.test.ts`, and `apps/web/src/lib/atlas-skill-tree.test.ts` now prove the mixed-noise page, thin discussion salvage, admin-heavy orientation, suspicious-date, and Atlas label cases stay clean. Verified by root `npm test`, `npm run typecheck`, and `npm run build`.
+
+### [BENCHMARK HONESTY] The benchmark could still pass while shell-facing projections were wrong
+
+**Status**: FIXED
+**Root cause**: `runBenchmark()` only scored raw engine surfaces, so shell-facing regressions in module titles, skill labels, shell assignment projection, and checklist noise could hide behind a green benchmark delta.
+**Symptom**: The benchmark suite needed separate consumer-compat assertions to catch wrapper-module and fallback-skill regressions, which meant the benchmark itself was not a truthful acceptance gate for live shell quality.
+**Fix**: `packages/content-engine-v2/src/compatibility/benchmark-surface.ts` now derives the learning bundle, workspace, and shell projections for benchmark scoring, and `packages/content-engine-v2/src/benchmarks/score.ts` now includes a `consumerProjectionIntegrity` metric keyed off expected/suppressed module titles, shell assignment titles, skill-label prefixes, and checklist fragments.
+**Guard**: `packages/content-engine-v2/src/tests/benchmark.test.ts` now passes only when the shell-facing benchmark surfaces stay clean, and the benchmark delta remains above the acceptance threshold with the new integrity metric enabled.
+
+### [PAGE ASSIGNMENT ESCAPE HATCH] Concept-bearing pages were still leaking one fake assignment surface each
+
+**Status**: FIXED
+**Root cause**: `packages/content-engine-v2/src/outputs/result.ts` still treated accepted `page` sources with grounded concepts as assignment-like through `groundedRequirements` and `strictPageSurface`, even though `assignmentPromptTrust` is explicitly not applicable to pages.
+**Symptom**: After tightening the benchmark corpus, `mixed-noise-and-real-concept`, `thin-discussion-salvage`, `orientation-salvage`, and `admin-heavy-orientation-clones` each still produced one `assignmentMapping`, which then surfaced as one `workspace` task or `shell` assignment candidate. The benchmark delta dropped to `5.75` before the engine fix and to `14.91` after the harness-only patch.
+**Fix**: `result.ts` now requires `assignmentPromptTrust.state === "accepted"` for grounded requirements and for any strict page surface, which makes plain pages fail closed by default. Focus-theme labels also reject `Course Capture`-style wrappers in favor of grounded concept labels.
+**Guard**: `packages/content-engine-v2/src/tests/engine.test.ts`, `packages/content-engine-v2/src/tests/consumer-compat.test.ts`, and `packages/content-engine-v2/src/tests/benchmark.test.ts` now require zero page-derived assignment mappings/tasks/assignments for those fixtures.
+
+### [BENCHMARK CALIBRATION] Shell-facing integrity was still underweighted after the corpus stopped rewarding fake page assignments
+
+**Status**: FIXED
+**Root cause**: Once `expectedAssignmentTitles` were corrected to `[]` for page-only fixtures, v2 could score perfectly and still miss the historical `delta >= 15` gate because `consumerProjectionIntegrity` did not carry enough weight relative to other metrics. The gap was calibration, not behavior.
+**Symptom**: Post-fix v2 reached a perfect fixture score on the updated corpus, but `runBenchmarkRepeated(benchmarkCorpus, 3)` still reported `delta: 14.91`, then `14.99`, which kept `benchmark.test.ts` red despite no remaining fixture failures.
+**Fix**: `packages/content-engine-v2/src/benchmarks/score.ts` now treats zero expected assignments as a real zero-surface requirement and raises `consumerProjectionIntegrity` from `10` to `12`, matching the user-facing importance of shell/module/skill/checklist correctness.
+**Guard**: `packages/content-engine-v2/src/tests/benchmark.test.ts` now proves `runBenchmarkRepeated(benchmarkCorpus, 3)` returns `delta >= 15` with `repeatedRunStable: true` on the corrected corpus.

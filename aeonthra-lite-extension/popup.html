@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Aeonthra Lite · Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="popup-header">
+      <div class="brand">AEONTHRA <span>LITE</span></div>
+      <div class="subtitle">Canvas Capture · v0.1</div>
+    </header>
+
+    <section class="status" id="status">
+      <div id="status-line">Checking page…</div>
+      <div id="context-line" class="muted"></div>
+    </section>
+
+    <section class="actions">
+      <button id="btn-capture" class="primary">📸 Capture this page</button>
+      <button id="btn-sweep">🧹 Sweep entire course (from Modules page)</button>
+    </section>
+
+    <section class="queue-section">
+      <div class="queue-header">
+        <strong>Queue</strong>
+        <span class="muted" id="queue-count">0</span>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+    </section>
+
+    <section class="export">
+      <button id="btn-export" class="primary">⬇ Download as .json</button>
+      <button id="btn-clear" class="ghost">Clear queue</button>
+    </section>
+
+    <footer class="popup-footer">
+      <div class="muted" id="footer-line">Load the resulting .json in Aeonthra Lite → Ingest → Extension JSON.</div>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "name": "canvas-converter",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.11.0",
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @learning/web",
+    "test:web": "npm run test --workspace @learning/web",
+    "test:extension": "npm run test --workspace @learning/extension",
+    "build:web": "npm run build --workspace @learning/web",
+    "build:extension": "npm run build --workspace @learning/extension",
+    "build": "npm run build:web && npm run build:extension",
+    "test": "npm run test:web && npm run test:extension && npm run test --workspace @learning/content-engine && npm run test --workspace @learning/interactions-engine",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "docx": "^9.6.1",
+    "framer-motion": "^12.38.0",
+    "js-synonyms": "^1.0.4",
+    "pdfjs-dist": "^5.6.205",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "word-list": "^4.1.0",
+    "zod": "^3.24.1",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.328",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}

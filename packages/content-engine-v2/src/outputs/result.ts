@@ -12,10 +12,15 @@ import type { CaptureBundle } from "@learning/schema";
 import { buildConcepts } from "../candidates/concepts.ts";
 import { buildEvidenceUnits } from "../evidence/build.ts";
 import { classifyBundle } from "../ingestion/classify.ts";
+import {
+  hasChromeSignal,
+  isHardNoiseText,
+  looksFragmentary
+} from "../noise/rules.ts";
 import { buildRelations } from "../relations/build.ts";
 import { extractStructuralNodes } from "../structure/extract.ts";
 import { deterministicHash } from "../utils/stable.ts";
-import { meaningfulTokens, normalizeText } from "../utils/text.ts";
+import { meaningfulTokens, normalizeText, splitSentences } from "../utils/text.ts";
 
 export type AnalyzeBundleStage =
   | "classify"
@@ -27,7 +32,10 @@ export type AnalyzeBundleStage =
   | "finalize";
 
 const REQUIREMENT_VERB_PATTERN = /\b(analyze|apply|assess|cite|compare|complete|contrast|define|describe|discuss|evaluate|explain|identify|prepare|respond|submit|use|write)\b/i;
+const REQUIREMENT_SENTENCE_START_PATTERN = /^(?:Analyze|Apply|Assess|Cite|Compare|Complete|Contrast|Define|Describe|Discuss|Evaluate|Explain|Identify|Prepare|Respond|Submit|Use|Write)\b/i;
 const GENERIC_THEME_LABEL_PATTERN = /^(?:week|module|chapter)\s+\d+\b(?:\s*[-:]\s*.*)?$/i;
+const WRAPPER_THEME_LABEL_PATTERN = /^(?:course capture)$/i;
+const MIXED_OVERLONG_REQUIREMENT_LENGTH = 180;
 
 function conceptIdsForDocument(document: SourceDocument, concepts: ConceptV2[]): string[] {
   const direct = concepts
@@ -68,48 +76,120 @@ function buildAssignments(
   const focusThemes: FocusThemeV2[] = [];
   const rejections: RejectionRecord[] = [];
 
+  function pushFocusTheme(
+    document: SourceDocument,
+    conceptIds: string[],
+    conceptLead: ConceptV2 | undefined
+  ): void {
+    if (conceptIds.length === 0) {
+      return;
+    }
+
+    const preferredLabel = document.classification.titleTrust.state === "accepted"
+      && document.cleanedTitle
+      && !GENERIC_THEME_LABEL_PATTERN.test(document.cleanedTitle)
+      && !WRAPPER_THEME_LABEL_PATTERN.test(document.cleanedTitle)
+      ? document.cleanedTitle
+      : conceptLead?.label ?? "Focus theme";
+    focusThemes.push({
+      id: `${document.item.id}:theme`,
+      label: preferredLabel,
+      summary: conceptLead?.fieldAdmissions.summary?.text
+        ?? conceptLead?.fieldAdmissions.definition?.text
+        ?? document.cleanedText.slice(0, 180),
+      conceptIds,
+      evidenceIds: conceptLead?.evidenceIds.slice(0, 2) ?? [],
+      score: conceptIds.length * 20 + (document.classification.bodyTrust.state === "accepted" ? 20 : 0)
+    });
+  }
+
+  function extractRequirementLines(document: SourceDocument): string[] {
+    const lines: string[] = [];
+
+    for (const sentence of splitSentences(document.cleanedText)) {
+      const normalizedSentence = normalizeText(sentence);
+      const looksLikeRequirementCandidate = REQUIREMENT_VERB_PATTERN.test(normalizedSentence)
+        || hasChromeSignal(normalizedSentence)
+        || isHardNoiseText(normalizedSentence);
+      if (!normalizedSentence || !looksLikeRequirementCandidate) {
+        continue;
+      }
+      const startsWithRequirementVerb = REQUIREMENT_SENTENCE_START_PATTERN.test(normalizedSentence);
+      if (
+        isHardNoiseText(normalizedSentence)
+        || hasChromeSignal(normalizedSentence)
+        || (!startsWithRequirementVerb && looksFragmentary(normalizedSentence))
+      ) {
+        rejections.push({
+          id: `${document.item.id}:requirement:${lines.length + rejections.length}`,
+          stage: "assignments",
+          code: "requirement-sentence-noisy",
+          message: `Rejected a noisy requirement sentence for ${document.item.id}.`,
+          sourceItemId: document.item.id
+        });
+        continue;
+      }
+      if (
+        normalizedSentence.length > MIXED_OVERLONG_REQUIREMENT_LENGTH
+        && (document.classification.contentProfile === "mixed" || document.classification.sourceFamily === "page")
+      ) {
+        rejections.push({
+          id: `${document.item.id}:requirement:${lines.length + rejections.length}`,
+          stage: "assignments",
+          code: "requirement-sentence-mixed-overlong",
+          message: `Rejected an overlong mixed requirement sentence for ${document.item.id}.`,
+          sourceItemId: document.item.id
+        });
+        continue;
+      }
+      lines.push(normalizedSentence);
+      if (lines.length >= 5) {
+        break;
+      }
+    }
+
+    return lines;
+  }
+
   for (const document of documents) {
     const family = document.classification.sourceFamily;
     const conceptIds = conceptIdsForDocument(document, concepts);
     const conceptLead = conceptIds.length > 0
       ? concepts.find((concept) => conceptIds.includes(concept.id))
       : undefined;
-    const requirementLines = document.cleanedText
-      .split(/\n+/)
-      .map((entry) => normalizeText(entry))
-      .filter(Boolean)
-      .filter((entry) => entry.length >= 20)
-      .filter((entry) => REQUIREMENT_VERB_PATTERN.test(entry))
-      .slice(0, 5);
+    const requirementLines = extractRequirementLines(document);
     const groundedRequirements = requirementLines.length > 0
       && document.classification.assignmentPromptTrust.state === "accepted"
       && document.classification.bodyTrust.state !== "rejected";
     const dueGrounded = !document.item.dueAt || document.classification.dateTrust.state === "accepted";
+    const strictPageSurface = family === "page"
+      && document.classification.assignmentPromptTrust.state === "accepted"
+      && document.classification.titleTrust.state === "accepted"
+      && conceptIds.length > 0
+      && requirementLines.length > 0
+      && dueGrounded
+      && document.classification.bodyTrust.state === "accepted";
 
-    const isAssignmentLike = family === "assignment" || family === "discussion" || family === "quiz" || family === "page";
+    const isAssignmentLike = family === "assignment" || family === "discussion" || family === "quiz" || strictPageSurface;
     if (!isAssignmentLike) {
-      if (conceptIds.length > 0) {
-        const preferredLabel = document.classification.titleTrust.state === "accepted"
-          && document.cleanedTitle
-          && !GENERIC_THEME_LABEL_PATTERN.test(document.cleanedTitle)
-          ? document.cleanedTitle
-          : conceptLead?.label ?? "Focus theme";
-        focusThemes.push({
-          id: `${document.item.id}:theme`,
-          label: preferredLabel,
-          summary: conceptLead?.fieldAdmissions.summary?.text
-            ?? conceptLead?.fieldAdmissions.definition?.text
-            ?? document.cleanedText.slice(0, 180),
-          conceptIds,
-          evidenceIds: conceptLead?.evidenceIds.slice(0, 2) ?? [],
-          score: conceptIds.length * 20 + (document.classification.bodyTrust.state === "accepted" ? 20 : 0)
+      if (
+        family === "page"
+        && (conceptIds.length > 0 || requirementLines.length > 0 || document.classification.titleTrust.state === "accepted")
+      ) {
+        rejections.push({
+          id: `${document.item.id}:page-assignment-suppressed`,
+          stage: "assignments",
+          code: "page-assignment-surface-suppressed",
+          message: `Suppressed page-derived assignment surface for ${document.item.id} because the page is not a grounded task surface.`,
+          sourceItemId: document.item.id
         });
       }
+      pushFocusTheme(document, conceptIds, conceptLead);
       continue;
     }
 
     const keepSurfaceWithoutConcepts = document.classification.titleTrust.state === "accepted"
-      && (family === "assignment" || family === "quiz" || family === "page");
+      && (family === "assignment" || family === "quiz");
     const suppressWeakDiscussionSurface = family === "discussion"
       && document.classification.titleTrust.state !== "accepted";
     const suppressSurface = suppressWeakDiscussionSurface

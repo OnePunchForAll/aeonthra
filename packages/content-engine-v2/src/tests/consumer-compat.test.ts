@@ -9,12 +9,18 @@ function fixtureById(fixtureId: string) {
   return benchmarkCorpus.find((entry) => entry.expectation.fixtureId === fixtureId)!;
 }
 
+function buildProjectedSurfaces(fixtureId: string) {
+  const fixture = fixtureById(fixtureId);
+  const learning = buildLearningBundle(fixture.bundle);
+  const workspace = deriveWorkspace(fixture.bundle, learning, createEmptyProgress());
+  const shell = mapToShellData(fixture.bundle, learning, workspace);
+  return { fixture, learning, workspace, shell };
+}
+
 describe("content-engine-v2 consumer compatibility", () => {
   it("keeps suspicious due dates unknown through workspace and shell projections", () => {
-    const fixture = fixtureById("suspicious-date");
-    const learning = buildLearningBundle(fixture.bundle);
-    const workspace = deriveWorkspace(fixture.bundle, learning, createEmptyProgress());
-    const shell = mapToShellData(fixture.bundle, learning, workspace);
+    const { learning, workspace, shell } = buildProjectedSurfaces("suspicious-date");
+    const timelineEvents = workspace.weeks.flatMap((week) => week.events).filter((event) => event.linkedItemId === "Essay 2");
 
     expect(learning.synthesis.assignmentMappings.length).toBe(1);
     expect(learning.synthesis.assignmentMappings[0]).toMatchObject({
@@ -30,19 +36,19 @@ describe("content-engine-v2 consumer compatibility", () => {
       dueState: "unknown",
       dueLabel: "Date not captured"
     });
+    expect(timelineEvents.every((event) => event.status === "upcoming")).toBe(true);
   });
 
   it("preserves grounded concept and Atlas lanes while suppressing orientation wrappers", () => {
-    const fixture = fixtureById("orientation-salvage");
-    const learning = buildLearningBundle(fixture.bundle);
-    const workspace = deriveWorkspace(fixture.bundle, learning, createEmptyProgress());
-    const shell = mapToShellData(fixture.bundle, learning, workspace);
+    const { learning, shell } = buildProjectedSurfaces("orientation-salvage");
     const shellConceptNames = shell.concepts.map((concept) => concept.name);
     const learningConceptLabels = learning.concepts.map((concept) => concept.label);
 
     expect(learningConceptLabels).toContain("Operant Conditioning");
+    expect(learning.synthesis.assignmentMappings).toHaveLength(0);
     expect(shellConceptNames).toContain("Positive Reinforcement");
     expect(shellConceptNames).not.toContain("Reflection Activity");
+    expect(shell.assignments).toHaveLength(0);
     expect(shell.skillTree.nodes.length).toBeGreaterThan(0);
   });
 
@@ -65,8 +71,7 @@ describe("content-engine-v2 consumer compatibility", () => {
   });
 
   it("keeps assignment evidence, checklist, and likely skills grounded for downstream consumers", () => {
-    const fixture = fixtureById("trusted-assignment");
-    const learning = buildLearningBundle(fixture.bundle);
+    const { learning } = buildProjectedSurfaces("trusted-assignment");
     const mapping = learning.synthesis.assignmentMappings[0];
     const readiness = learning.synthesis.assignmentReadiness[0];
 
@@ -86,5 +91,64 @@ describe("content-engine-v2 consumer compatibility", () => {
     });
     expect(readiness?.acceptanceReasons.length ?? 0).toBeGreaterThan(0);
     expect(readiness?.checklist.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("rejects wrapper-first module titles and fallback Atlas skill labels", () => {
+    const fixtures = [
+      "single-page-mixed-live-junk",
+      "thin-discussion-salvage",
+      "admin-heavy-orientation-clones"
+    ] as const;
+
+    for (const fixtureId of fixtures) {
+      const { fixture, shell } = buildProjectedSurfaces(fixtureId);
+      const moduleTitles = shell.modules.map((module) => module.title);
+      const skillLabels = shell.skillTree.nodes.map((node) => node.label);
+      const suppressedModuleTitles = fixture.expectation.suppressedModuleTitles ?? [];
+      const suppressedSkillPrefixes = fixture.expectation.suppressedSkillLabelPrefixes ?? [];
+
+      expect(moduleTitles.some((title) => suppressedModuleTitles.includes(title))).toBe(false);
+      expect(skillLabels.some((label) => suppressedSkillPrefixes.some((prefix) => label.startsWith(prefix)))).toBe(false);
+    }
+  });
+
+  it("keeps the single-page mixed-junk fixture from creating a shell assignment or noisy checklist", () => {
+    const { fixture, learning, workspace, shell } = buildProjectedSurfaces("single-page-mixed-live-junk");
+    const checklistFragments = fixture.expectation.suppressedChecklistFragments ?? [];
+    const shellChecklist = shell.assignments.flatMap((assignment) => assignment.requirementLines);
+
+    expect(learning.synthesis.assignmentMappings).toHaveLength(0);
+    expect(workspace.tasks).toHaveLength(0);
+    expect(shell.assignments).toHaveLength(0);
+    expect(shell.modules.map((module) => module.title)).not.toContain("Course Capture");
+    expect(shell.skillTree.nodes.some((node) => /^Explain\s+/i.test(node.label))).toBe(false);
+    expect(checklistFragments.every((fragment) => shellChecklist.every((line) => !line.includes(fragment)))).toBe(true);
+  });
+
+  it("keeps thin discussion salvage rooted in the concept-bearing chapter rather than wrapper text", () => {
+    const { learning, workspace, shell } = buildProjectedSurfaces("thin-discussion-salvage");
+
+    expect(learning.synthesis.assignmentMappings).toHaveLength(0);
+    expect(workspace.tasks).toHaveLength(0);
+    expect(shell.assignments).toHaveLength(0);
+    expect(shell.modules.map((module) => module.title)).toContain("Cognitive Load Theory");
+    expect(shell.modules.map((module) => module.title)).not.toContain("Week 4 Discussion Forum");
+    expect(shell.modules.map((module) => module.title)).not.toContain("Reply to Classmates");
+    expect(shell.skillTree.nodes.some((node) => /^Explain\s+/i.test(node.label))).toBe(false);
+  });
+
+  it("keeps admin-heavy orientation clones from surfacing fake assignments or wrapper Atlas labels", () => {
+    const { learning, workspace, shell } = buildProjectedSurfaces("admin-heavy-orientation-clones");
+    const skillLabels = shell.skillTree.nodes.map((node) => node.label);
+
+    expect(learning.concepts.map((concept) => concept.label)).toContain("Operant Conditioning");
+    expect(learning.synthesis.assignmentMappings).toHaveLength(0);
+    expect(workspace.tasks).toHaveLength(0);
+    expect(shell.assignments).toHaveLength(0);
+    expect(shell.modules.map((module) => module.title)).not.toContain("Reflection Activity");
+    expect(shell.modules.map((module) => module.title)).not.toContain("Reflection Activity Copy");
+    expect(shell.modules.map((module) => module.title)).not.toContain("Start Here");
+    expect(skillLabels.some((label) => /^Explain\s+/i.test(label))).toBe(false);
+    expect(skillLabels.some((label) => /Reflection Activity|Reflection Activity Copy|Start Here/i.test(label))).toBe(false);
   });
 });

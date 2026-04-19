@@ -56,6 +56,7 @@ describe("content-engine-v2", () => {
 
     expect(result.concepts.map((concept) => concept.label)).toContain("Positive Reinforcement");
     expect(result.concepts.map((concept) => concept.label)).not.toContain("Week 1");
+    expect(result.assignments).toHaveLength(0);
     expect(result.concepts[0]?.fieldAdmissions.definition?.evidenceIds.length ?? 0).toBeGreaterThan(0);
   });
 
@@ -119,6 +120,49 @@ describe("content-engine-v2", () => {
     expect(labels).toContain("Classical Conditioning");
     expect(labels).not.toContain("Overview of Classical Conditioning");
     expect(result.focusThemes.some((theme) => /overview/i.test(theme.label))).toBe(false);
+  });
+
+  it("does not promote a mixed single page into an assignment surface", () => {
+    const fixture = benchmarkCorpus.find((entry) => entry.expectation.fixtureId === "single-page-mixed-live-junk")!;
+    const result = analyzeBundle(fixture.bundle);
+
+    expect(result.concepts.map((concept) => concept.label)).toContain("Positive Reinforcement");
+    expect(result.assignments).toHaveLength(0);
+    expect(result.rejections.some((rejection) => rejection.code === "page-assignment-surface-suppressed")).toBe(true);
+  });
+
+  it("keeps discussion wrappers out of the assignment surface while salvaging the grounded chapter", () => {
+    const fixture = benchmarkCorpus.find((entry) => entry.expectation.fixtureId === "thin-discussion-salvage")!;
+    const result = analyzeBundle(fixture.bundle);
+
+    expect(result.concepts.map((concept) => concept.label)).toContain("Cognitive Load Theory");
+    expect(result.assignments).toHaveLength(0);
+    expect(result.rejections.some((rejection) => rejection.code === "page-assignment-surface-suppressed")).toBe(true);
+  });
+
+  it("rejects noisy and overlong page requirement sentences while keeping focus themes grounded", () => {
+    const bundle = createManualCaptureBundle({
+      title: "Course Capture",
+      text: [
+        "Positive reinforcement increases the chance that a behavior will happen again by adding a rewarding consequence.",
+        "You need to have JavaScript enabled in order to access this site.",
+        [
+          "Explain how positive reinforcement changes classroom participation by connecting the concept to immediate teacher feedback,",
+          "student expectations, peer responses, reinforcement timing, behavior repetition, instructional routines, and follow-up reflection",
+          "in one extended planning paragraph that keeps running without a clean stop and mixes task phrasing with page-like exposition."
+        ].join(" ")
+      ].join(" "),
+      canonicalUrl: "https://local.learning/course-capture",
+      kind: "page"
+    });
+    const result = analyzeBundle(bundle);
+    const rejectionCodes = result.rejections.map((rejection) => rejection.code);
+
+    expect(result.assignments).toHaveLength(0);
+    expect(rejectionCodes).toContain("requirement-sentence-noisy");
+    expect(rejectionCodes).toContain("requirement-sentence-mixed-overlong");
+    expect(result.focusThemes.map((theme) => theme.label)).toContain("Positive Reinforcement");
+    expect(result.focusThemes.some((theme) => theme.label === "Course Capture")).toBe(false);
   });
 
   it("builds relations from indexed candidate concepts without changing shared evidence output", () => {

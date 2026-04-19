@@ -288,3 +288,21 @@
 - Decision: an explicit definition sentence is strong enough to keep a concept alive even if no second support lane survives, provided wrapper titles and generic container prose still fail the title gate.
 - Why: the wrapper-title cleanup correctly removed fake semantic containers, but the concept builder was over-pruning plain-text textbook bundles that only exposed one grounded definitional sentence.
 - Scope: this only applies to definition-led concept admission. Wrapper titles, chapter/week front matter, and generic textbook container prose remain untrusted for display labels.
+
+### Benchmark scoring must include shell-facing projections, not just raw engine surfaces
+
+- Decision: the canonical benchmark surface now includes derived learning-bundle, workspace, and shell projection signals for module titles, skill labels, shell assignment titles, and checklist lines, and benchmark scoring includes a `consumerProjectionIntegrity` metric.
+- Why: raw engine surfaces were insufficient proof. The repo could still pass benchmark scoring while live shell modules and Atlas labels leaked wrapper text, which made the benchmark dishonest as an end-to-end acceptance gate.
+- Scope: this benchmark expansion is limited to deterministic local consumers already in-repo. It does not add any runtime API dependency or change production delivery paths.
+
+### Accepted `page` titles and concepts are not enough to create assignment surfaces
+
+- Decision: page-backed documents must fail closed unless they satisfy the same prompt-trust requirements as real assignment-like sources. In practice, pages with grounded concepts now stay in the focus-theme/chapter lane, not the assignment/readiness lane.
+- Why: treating accepted pages as assignment-like created fake `assignmentMappings` for concept-bearing pages such as `Positive Reinforcement`, `Operant Conditioning`, and `Cognitive Load Theory`, which then leaked into workspace and shell even when no real task surface existed.
+- Scope: this changes deterministic projection only. Real `assignment`, `discussion`, and `quiz` sources still flow through the assignment lane when grounded evidence survives.
+
+### Zero expected assignments means the benchmark must punish any assignment surface
+
+- Decision: when a fixture declares `expectedAssignmentTitles: []`, both engine-level assignment scoring and shell-facing projection scoring treat any surviving assignment surface as a failure. `consumerProjectionIntegrity` is weighted at `12` to keep shell-facing truth material in the overall delta.
+- Why: an empty expectation is a fail-closed contract, not a “don’t care.” Without that rule, page-only fake assignment surfaces could survive the benchmark as long as they were not explicitly named.
+- Scope: this applies only to benchmark scoring. It does not alter runtime behavior directly, but it is now part of the canonical acceptance gate for semantic-output integrity.
