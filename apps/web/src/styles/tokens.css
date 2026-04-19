@@ -1,31 +1,31 @@
 :root {
-  --font-display: "Orbitron", sans-serif;
-  --font-body: "Sora", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-display: "Sitka Display", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Consolas", "Cascadia Mono", "JetBrains Mono", monospace;
 
-  --bg-void: #020208;
-  --bg-deep: #04040c;
-  --bg-card: #06060f;
-  --bg-card-raised: #0a0a1a;
-  --bg-card-active: #0d0d20;
+  --bg-void: #0b1015;
+  --bg-deep: #111821;
+  --bg-card: #18212c;
+  --bg-card-raised: #1f2b38;
+  --bg-card-active: #253241;
 
-  --border: #1a1a3a;
-  --border-subtle: #0f0f20;
-  --border-glow: rgba(0, 240, 255, 0.2);
+  --border: #2f3b4c;
+  --border-subtle: #202a35;
+  --border-glow: rgba(125, 211, 199, 0.16);
 
-  --text-primary: #e0e0ff;
-  --text-secondary: #b0b0d0;
-  --text-muted: #6a6a9a;
-  --text-dim: #3a3a5a;
+  --text-primary: #eef3f8;
+  --text-secondary: #cad4df;
+  --text-muted: #93a1b2;
+  --text-dim: #5e6b7a;
 
-  --cyan: #00f0ff;
-  --teal: #06d6a0;
-  --green: #00ff88;
-  --gold: #ffd700;
-  --orange: #ff6b2b;
-  --red: #ff4466;
-  --purple: #a855f7;
-  --pink: #ff2bbb;
+  --cyan: #7dd3c7;
+  --teal: #5fb3a6;
+  --green: #80c29c;
+  --gold: #d5b06b;
+  --orange: #c9895d;
+  --red: #c57474;
+  --purple: #8d93c9;
+  --pink: #b98cb7;
 
   --unit: 8px;
   --space-0: 0;
@@ -45,6 +45,6 @@
   --space-multiplier: 1;
   --card-min-width: 280px;
   --font-scale: 1;
-  --breath: 0.8;
-  --breath-speed: 2.2s;
+  --breath: 0;
+  --breath-speed: 0s;
 }

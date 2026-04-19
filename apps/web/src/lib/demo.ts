@@ -81,7 +81,12 @@ function createItem(input: {
     tags: ["demo", ...(input.tags ?? [])],
     submissionTypes: [],
     capturedAt: DEMO_CAPTURED_AT,
-    contentHash: stableHash(text)
+    contentHash: stableHash(text),
+    captureStrategy: "demo-seed",
+    provenanceKind: "DEMO_SEED",
+    sourceEndpoint: input.canonicalUrl,
+    sourceHost: "demo.local",
+    adapterVersion: "demo-seed-v1"
   };
 }
 

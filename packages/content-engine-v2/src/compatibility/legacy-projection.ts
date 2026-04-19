@@ -507,6 +507,8 @@ export function projectToLegacy(
     assignmentMappings,
     assignmentReadiness,
     retentionModules: retention,
+    synthesisHash: result.synthesisHash,
+    canonicalArtifact: result.canonicalArtifact,
     deterministicHash: result.deterministicHash,
     qualityBanner: options?.qualityReport?.warnings.length
       ? options.qualityReport.warnings[0] ?? ""
@@ -527,6 +529,7 @@ export function projectToLegacy(
     debug: {
       conceptCount: concepts.length,
       rejectionCount: result.rejections.length,
+      synthesisHash: result.synthesisHash,
       deterministicHash: result.deterministicHash
     }
   };

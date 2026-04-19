@@ -306,3 +306,15 @@
 - Decision: when a fixture declares `expectedAssignmentTitles: []`, both engine-level assignment scoring and shell-facing projection scoring treat any surviving assignment surface as a failure. `consumerProjectionIntegrity` is weighted at `12` to keep shell-facing truth material in the overall delta.
 - Why: an empty expectation is a fail-closed contract, not a “don’t care.” Without that rule, page-only fake assignment surfaces could survive the benchmark as long as they were not explicitly named.
 - Scope: this applies only to benchmark scoring. It does not alter runtime behavior directly, but it is now part of the canonical acceptance gate for semantic-output integrity.
+
+### Canonical truth must land additively before it replaces synthesis-scoped identity
+
+- Decision: add a new tri-channel canonical artifact (`semanticHash`, `structuralHash`, `provenanceHash`) alongside the existing synthesis-scoped `deterministicHash`, and keep the legacy hash alive as the compatibility scope for notes, progress, and offline replay until consumer migration is explicit.
+- Why: `learning.synthesis.deterministicHash` already scopes note state, progress state, offline replay validation, and demo surfaces. Replacing it in one step would silently strand local learner state and make rollback opaque.
+- Scope: the engine and shared schema now emit canonical artifacts additively. Future migration work may promote canonical identity to the primary scope once storage/export consumers are versioned.
+
+### Provenance must be explicit at capture boundaries, not reconstructed later from heuristics
+
+- Decision: `CaptureItem` and `CaptureResource` now support explicit provenance metadata (`captureStrategy`, `provenanceKind`, `sourceEndpoint`, `sourceHost`, `adapterVersion`), and capture/import builders should populate those fields whenever they know them.
+- Why: the deterministic engine cannot enforce a provenance firewall if upstream capture only hands it `plainText`, optional `html`, and a generic `contentHash`. Provenance inferred later is already a lossy guess.
+- Scope: extension HTML/API capture, textbook import, demo seed generation, and manual import paths can now carry explicit provenance without breaking older bundles that lack those fields.

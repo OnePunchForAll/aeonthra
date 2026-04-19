@@ -10,6 +10,7 @@ import type {
 } from "../contracts/types.ts";
 import type { CaptureBundle } from "@learning/schema";
 import { buildConcepts } from "../candidates/concepts.ts";
+import { buildCanonicalArtifact } from "../canonical/build.ts";
 import { buildEvidenceUnits } from "../evidence/build.ts";
 import { classifyBundle } from "../ingestion/classify.ts";
 import {
@@ -282,6 +283,7 @@ export function analyzeBundleWithProgress(
   onProgress?.("classify", 8);
   const nodes = documents.flatMap((document) => extractStructuralNodes(document));
   onProgress?.("structure", 24);
+  const canonicalArtifact = buildCanonicalArtifact(documents, nodes).artifact;
   const evidence = buildEvidenceUnits(documents, nodes);
   onProgress?.("evidence", 42);
   const conceptBuild = buildConcepts(evidence.evidenceUnits);
@@ -307,7 +309,7 @@ export function analyzeBundleWithProgress(
   ];
   const relations: RelationV2[] = relationBuild.relations;
 
-  const deterministicHashValue = deterministicHash({
+  const synthesisHash = deterministicHash({
     bundleTitle: bundle.title,
     concepts: concepts.map((concept) => ({
       id: concept.id,
@@ -351,7 +353,9 @@ export function analyzeBundleWithProgress(
     focusThemes: assignmentBuild.focusThemes,
     readiness: assignmentBuild.readiness,
     rejections,
-    deterministicHash: deterministicHashValue
+    canonicalArtifact,
+    synthesisHash,
+    deterministicHash: synthesisHash
   };
 }
 

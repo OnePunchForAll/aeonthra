@@ -146,7 +146,12 @@ function buildTextbookItem(input: {
     tags: ["textbook", `import:${input.format}`, ...(input.tags ?? [])],
     submissionTypes: [],
     capturedAt: input.capturedAt,
-    contentHash: stableHash(plainText)
+    contentHash: stableHash(plainText),
+    captureStrategy: "document-import",
+    provenanceKind: "DOCUMENT_INGEST",
+    sourceEndpoint: input.canonicalUrl,
+    sourceHost: "local.learning",
+    adapterVersion: `textbook-${input.format}-v1`
   };
 }
 

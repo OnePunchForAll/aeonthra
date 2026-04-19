@@ -1,5 +1,6 @@
 import type {
   AssignmentIntelligence,
+  CanonicalArtifact,
   CaptureBundle,
   CaptureItem,
   ConceptRelation,
@@ -263,6 +264,8 @@ export type EngineV2Result = {
   focusThemes: FocusThemeV2[];
   readiness: ReadinessV2[];
   rejections: RejectionRecord[];
+  canonicalArtifact: CanonicalArtifact;
+  synthesisHash: string;
   deterministicHash: string;
 };
 
@@ -276,6 +279,7 @@ export type LegacyProjection = {
   debug: {
     conceptCount: number;
     rejectionCount: number;
+    synthesisHash: string;
     deterministicHash: string;
   };
 };

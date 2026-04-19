@@ -601,7 +601,7 @@ const askO=()=>{if(!oq.trim())return;const w=oq.toLowerCase().split(/\s+/).filte
   setOR(PH.map((p,pi)=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b&&p.q.length)b=p.q[stableHash(`${p.n}:${pi}:${oq}`)%p.q.length];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r||a.n.localeCompare(b.n)));};
 
 // STYLES
-const B="#020208",CD2="rgba(16,16,36,0.94)",BD="rgba(50,50,100,0.55)",CY="#00f0ff",TL="#06d6a0",GD="#ffd700",RD="#ff4466",TX="#e0e0ff",T2="#b8b8d8",MU="#6a6a9a",DM="#2a2a4a";
+const B="#0b1015",CD2="rgba(24,33,44,0.94)",BD="rgba(80,95,118,0.45)",CY="#7dd3c7",TL="#d5b06b",GD="#d5b06b",RD="#c57474",TX="#eef3f8",T2="#cad4df",MU="#93a1b2",DM="#2f3b4c";
 const card={background:CD2,border:`1px solid ${BD}`,borderRadius:24,padding:"44px 50px",boxShadow:"0 8px 40px rgba(0,0,0,0.5)"};
 const ey={fontSize:".84rem",fontWeight:800,letterSpacing:".2em",textTransform:"uppercase",color:MU,marginBottom:20,fontFamily:"'Space Grotesk',sans-serif"};
 const hd=s=>({fontSize:s+"rem",fontWeight:700,margin:0,lineHeight:1.3,color:TX,fontFamily:"'Space Grotesk','Inter',sans-serif"});
@@ -678,7 +678,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   <div style={{position:"absolute",inset:0,zIndex:5,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
     <div style={{pointerEvents:"auto",textAlign:"center",padding:"44px 56px",borderRadius:28,background:"rgba(4,4,12,.9)",backdropFilter:"blur(40px)",border:`1px solid ${BD}`,boxShadow:"0 20px 100px rgba(0,0,0,.7)",maxWidth:520,animation:"fadeUp .6s ease"}}>
       <div style={{fontSize:"2.6rem",fontWeight:900,letterSpacing:".22em",color:CY,textShadow:`0 0 40px rgba(0,240,255,.4)`,marginBottom:6,fontFamily:"'Space Grotesk',sans-serif"}}>AEONTHRA</div>
-      <div style={{fontSize:".78rem",letterSpacing:".3em",color:MU,textTransform:"uppercase",marginBottom:28}}>Neural Learning System</div>
+      <div style={{fontSize:".78rem",letterSpacing:".3em",color:MU,textTransform:"uppercase",marginBottom:28}}>Evidence-Led Study Workspace</div>
       <h1 style={{fontSize:"1.4rem",fontWeight:600,color:TX,lineHeight:1.5,marginBottom:6}}>{COURSE.title}</h1>
       <p style={{fontSize:".9rem",color:MU,marginBottom:24}}>{COURSE.code} · {COURSE.term}</p>
       <div style={{padding:"14px 20px",borderRadius:14,background:`${TL}08`,border:`1px solid ${TL}15`,marginBottom:24}}>
@@ -698,7 +698,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     {launched&&<span ref={sessionTimerElRef} style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ 0m 0s</span>}
   </div>
   <div style={{display:"flex",gap:4,flexWrap:"wrap",width:mobileLayout?"100%":"auto",overflowX:mobileLayout?"auto":"visible",paddingBottom:mobileLayout?2:0}}>
-    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
+    {[["home","Overview"],["journey","Skill Map"],["explore","Concept Library"],["forge","Practice"],["reader","Reading"],["gym","Compare"],["oracle","Viewpoints"]].map(([id,lb])=>(
       <button key={id} onClick={()=>go(id)} aria-current={v===id?"page":undefined} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
     <button onClick={()=>go("settings")} aria-current={v==="settings"?"page":undefined} aria-label="Settings" title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
@@ -1225,10 +1225,10 @@ return(<div style={{maxWidth:880}}>
     <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:RD,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE UNAVAILABLE</div>
     <h2 style={{...hd(1.5),marginBottom:10}}>{fc.name}</h2>
     <p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:"0 0 18px"}}>{fc.practiceSupportLabel||"Practice unlocks after transfer or assignment evidence is captured."}</p>
-    <p style={{fontSize:".88rem",lineHeight:1.7,color:MU,margin:"0 0 24px"}}>AEONTHRA will not synthesize Neural Forge drills from mapper-authored prose alone. This concept needs real transfer evidence or assignment evidence before practice opens.</p>
+    <p style={{fontSize:".88rem",lineHeight:1.7,color:MU,margin:"0 0 24px"}}>AEONTHRA will not open practice sessions from mapper-authored prose alone. This concept needs real transfer evidence or assignment evidence before practice begins.</p>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <button onClick={()=>go("explore",{c:fc})} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>Review concept →</button>
-      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Open Atlas</button>
+      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Open Skill Map</button>
       <button onClick={()=>go("courseware")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Back to library</button>
     </div>
   </div>
@@ -1494,8 +1494,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 {/* Chamber header */}
 <div style={{textAlign:"center",marginBottom:32}}>
   <div style={{fontSize:"2rem",marginBottom:12}}>🏛</div>
-  <h2 style={{...hd(1.6),marginBottom:8}}>The Oracle</h2>
-  <p style={{color:T2,fontSize:"1rem"}}>{PH.length>0?`Bring a question, thesis, or confusion. ${PH.length} course figure${PH.length!==1?"s":""} will respond.`:"Bring a question or confusion. Upload your textbook to unlock course-specific responses."}</p>
+  <h2 style={{...hd(1.6),marginBottom:8}}>Viewpoints</h2>
+  <p style={{color:T2,fontSize:"1rem"}}>{PH.length>0?`Bring a question, thesis, or confusion. ${PH.length} source-grounded voice${PH.length!==1?"s":""} can respond.`:"Bring a question or confusion. Upload your textbook to unlock course-specific responses."}</p>
 </div>
 
 {/* Mode selector */}
@@ -1507,8 +1507,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
 {/* Input */}
 <div style={{display:"flex",gap:14,marginBottom:32}}>
-<input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a figure from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}/>
-  <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>{oracleMode==="thesis"?"Challenge":"Ask"}</button>
+<input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a voice from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}/>
+  <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#5e8ea6)`,"#0b1015")}>{oracleMode==="thesis"?"Review":"Ask"}</button>
 </div>
 
 {/* Philosopher grid when no results */}
@@ -1741,7 +1741,7 @@ if(!q)return(<div style={{maxWidth:820,margin:"0 auto"}}><div style={{...card,te
   <p style={{fontSize:"1rem",color:MU}}>{(practiceSc.c+practiceSc.w)>0?Math.round(practiceSc.c/(practiceSc.c+practiceSc.w)*100):0}% accuracy</p>
   <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:32}}>
     <button onClick={()=>go("courseware")} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Back to Courseware</button>
-    <button onClick={()=>go("home")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Home</button>
+    <button onClick={()=>go("home")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Overview</button>
   </div>
 </div></div>);
 

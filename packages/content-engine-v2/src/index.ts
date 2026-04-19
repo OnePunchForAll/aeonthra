@@ -1,4 +1,7 @@
 export { analyzeBundle, analyzeBundleWithProgress } from "./outputs/result.ts";
+export { buildCanonicalArtifact } from "./canonical/build.ts";
+export { classifyCanonicalChange } from "./canonical/diff.ts";
+export { canonicalHash, canonicalSerialize } from "./canonical/serialize.ts";
 export { projectToLegacy } from "./compatibility/legacy-projection.ts";
 export {
   buildLearningBundle,
@@ -26,4 +29,11 @@ export type {
   StructuralNode
 } from "./contracts/types.ts";
 export type { LearningBuildStage } from "./compatibility/learning-bundle.ts";
+export type {
+  CanonicalArtifactBuild,
+  CanonicalProvenanceUnit,
+  CanonicalSemanticUnit,
+  CanonicalStructuralUnit,
+  SyncHashProvider
+} from "./canonical/types.ts";
 export type { SourceQualityReport, SynthesisMode } from "./source-quality.ts";

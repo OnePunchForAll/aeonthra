@@ -77,6 +77,32 @@ export const captureTitleSources = [
   "inferred"
 ] as const;
 
+export const captureStrategies = [
+  "api-only",
+  "html-fetch",
+  "session-dom",
+  "manual-import",
+  "demo-seed",
+  "document-import"
+] as const;
+
+export const provenanceKinds = [
+  "FIRST_PARTY_API",
+  "HTML_FETCH",
+  "DOM_CAPTURE",
+  "DOCUMENT_INGEST",
+  "USER_GENERATED",
+  "DEMO_SEED"
+] as const;
+
+export const canonicalChangeKinds = [
+  "IDENTICAL",
+  "PROVENANCE_ONLY",
+  "COSMETIC_EDIT",
+  "SEMANTIC_EDIT",
+  "AMBIGUOUS"
+] as const;
+
 export const evidenceOrigins = [
   "source-block",
   "item-excerpt",
@@ -125,7 +151,12 @@ export const CaptureResourceSchema = z.object({
   title: z.string(),
   url: z.string().url(),
   kind: z.enum(resourceKinds),
-  sourceItemId: z.string()
+  sourceItemId: z.string(),
+  captureStrategy: z.enum(captureStrategies).optional(),
+  provenanceKind: z.enum(provenanceKinds).optional(),
+  sourceEndpoint: z.string().url().optional(),
+  sourceHost: z.string().optional(),
+  adapterVersion: z.string().optional()
 });
 
 export const CaptureItemSchema = z.object({
@@ -148,7 +179,12 @@ export const CaptureItemSchema = z.object({
   moduleName: z.string().optional(),
   moduleKey: z.string().optional(),
   capturedAt: z.string(),
-  contentHash: z.string()
+  contentHash: z.string(),
+  captureStrategy: z.enum(captureStrategies).optional(),
+  provenanceKind: z.enum(provenanceKinds).optional(),
+  sourceEndpoint: z.string().url().optional(),
+  sourceHost: z.string().optional(),
+  adapterVersion: z.string().optional()
 });
 
 export const CaptureBundleSchema = z.object({
@@ -645,6 +681,37 @@ export const RetentionModuleSchema = z.object({
   evidence: z.array(EvidenceFragmentSchema).min(1)
 });
 
+export const CanonicalArtifactItemSchema = z.object({
+  sourceItemId: z.string(),
+  title: z.string(),
+  canonicalUrl: z.string().url(),
+  contentHash: z.string(),
+  semanticHash: z.string(),
+  structuralHash: z.string(),
+  provenanceHash: z.string(),
+  semanticUnitCount: z.number().int().nonnegative(),
+  structuralUnitCount: z.number().int().nonnegative(),
+  captureStrategy: z.enum(captureStrategies).optional(),
+  provenanceKind: z.enum(provenanceKinds).optional(),
+  sourceHost: z.string().optional()
+});
+
+export const CanonicalArtifactSchema = z.object({
+  version: z.literal("osme-zero-hybrid-v1"),
+  semanticHash: z.string(),
+  structuralHash: z.string(),
+  provenanceHash: z.string(),
+  sourceItemCount: z.number().int().nonnegative(),
+  semanticUnitCount: z.number().int().nonnegative(),
+  structuralUnitCount: z.number().int().nonnegative(),
+  provenanceCoverage: z.object({
+    withExplicitProvenance: z.number().int().nonnegative(),
+    missingExplicitProvenance: z.number().int().nonnegative()
+  }),
+  preview: z.array(z.string()).default([]),
+  items: z.array(CanonicalArtifactItemSchema).default([])
+});
+
 export const LearningSynthesisSchema = z.object({
   pipelineStages: z.array(z.string()).min(1),
   sourceCoverage: SourceCoverageSchema,
@@ -655,6 +722,8 @@ export const LearningSynthesisSchema = z.object({
   assignmentReadiness: z.array(AssignmentReadinessSchema).default([]),
   retentionModules: z.array(RetentionModuleSchema).default([]),
   deterministicHash: z.string(),
+  synthesisHash: z.string().optional(),
+  canonicalArtifact: CanonicalArtifactSchema.optional(),
   qualityBanner: z.string().default(""),
   qualityWarnings: z.array(z.string()).default([]),
   synthesisMode: z.enum(["full", "degraded", "blocked-with-warning"]).default("full")
@@ -811,11 +880,16 @@ export type EngineId = (typeof engineIds)[number];
 export type RelationType = (typeof relationTypes)[number];
 export type NeuralForgePhaseId = (typeof neuralForgePhaseIds)[number];
 export type SourceFamily = (typeof sourceFamilies)[number];
+export type CaptureStrategy = (typeof captureStrategies)[number];
+export type ProvenanceKind = (typeof provenanceKinds)[number];
+export type CanonicalChangeKind = (typeof canonicalChangeKinds)[number];
 export type RetentionModuleKind = (typeof retentionModuleKinds)[number];
 export type CourseKnowledgePack = z.infer<typeof CourseKnowledgePackSchema>;
 export type BridgeHandoffEnvelope = z.infer<typeof BridgeHandoffEnvelopeSchema>;
 export type PendingBridgeHandoffQueue = z.infer<typeof PendingBridgeHandoffQueueSchema>;
 export type BridgeMessage = z.infer<typeof BridgeMessageSchema>;
+export type CanonicalArtifact = z.infer<typeof CanonicalArtifactSchema>;
+export type CanonicalArtifactItem = z.infer<typeof CanonicalArtifactItemSchema>;
 
 export function stableHash(input: string): string {
   let hash = 2166136261;
@@ -902,7 +976,12 @@ export function createManualCaptureBundle(input: {
     tags: [],
     submissionTypes: [],
     capturedAt,
-    contentHash: stableHash(trimmedText)
+    contentHash: stableHash(trimmedText),
+    captureStrategy: "manual-import",
+    provenanceKind: "USER_GENERATED",
+    sourceEndpoint: canonicalUrl,
+    sourceHost: normalizeSourceHostPart(canonicalUrl),
+    adapterVersion: "manual-import-v1"
   };
 
   return {

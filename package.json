@@ -13,12 +13,13 @@
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace @learning/web",
+    "test:schema": "npm run test --workspace @learning/schema",
     "test:web": "npm run test --workspace @learning/web",
     "test:extension": "npm run test --workspace @learning/extension",
     "build:web": "npm run build --workspace @learning/web",
     "build:extension": "npm run build --workspace @learning/extension",
     "build": "npm run build:web && npm run build:extension",
-    "test": "npm run test:web && npm run test:extension && npm run test --workspace @learning/content-engine && npm run test --workspace @learning/interactions-engine",
+    "test": "npm run test:schema && npm run test:web && npm run test:extension && npm run test --workspace @learning/content-engine && npm run test --workspace @learning/interactions-engine",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

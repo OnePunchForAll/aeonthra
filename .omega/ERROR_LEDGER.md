@@ -585,3 +585,11 @@
 **Symptom**: Post-fix v2 reached a perfect fixture score on the updated corpus, but `runBenchmarkRepeated(benchmarkCorpus, 3)` still reported `delta: 14.91`, then `14.99`, which kept `benchmark.test.ts` red despite no remaining fixture failures.
 **Fix**: `packages/content-engine-v2/src/benchmarks/score.ts` now treats zero expected assignments as a real zero-surface requirement and raises `consumerProjectionIntegrity` from `10` to `12`, matching the user-facing importance of shell/module/skill/checklist correctness.
 **Guard**: `packages/content-engine-v2/src/tests/benchmark.test.ts` now proves `runBenchmarkRepeated(benchmarkCorpus, 3)` returns `delta >= 15` with `repeatedRunStable: true` on the corrected corpus.
+
+### [CANONICAL TRUTH GAP] The engine hash described synthesis output, not canonical source truth
+
+**Status**: FIXED
+**Root cause**: `packages/content-engine-v2/src/outputs/result.ts` computed `deterministicHash` only from synthesized concepts, relations, assignments, and rejection records. That made the repo's primary identity hash depend on heuristic admissions rather than a canonicalized representation of captured source material.
+**Symptom**: equivalent source bundles could drift when heuristic admissions changed, provenance-only changes could not be classified cleanly, and there was no inspectable artifact separating semantic, structural, and provenance identity.
+**Fix**: added an additive canonical layer that builds `semanticHash`, `structuralHash`, and `provenanceHash` from canonicalized source/evidence structure, exposes a diff classifier, and forwards the artifact through the learning-synthesis compatibility boundary while preserving the legacy `deterministicHash` for storage compatibility.
+**Guard**: `packages/content-engine-v2/src/tests/canonical.test.ts` now covers undefined omission stability, Unicode/zero-width normalization, provenance-only changes, cosmetic edits, and semantic edits. Root `npm test`, `npm run typecheck`, and `npm run build` all pass with the new schema and engine paths active.

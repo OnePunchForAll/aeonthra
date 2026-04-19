@@ -800,3 +800,19 @@
 **Why**: Narrow tests proved the dirty diff was still green while `mixed-noise-and-real-concept`, `thin-discussion-salvage`, `orientation-salvage`, and `admin-heavy-orientation-clones` each leaked one fake page-derived assignment surface. Once the harness stopped rewarding those leaks, the benchmark delta dropped below threshold until shell-facing integrity carried the right weight.
 **Downstream effects**: `LearningBundle.synthesis.assignmentMappings`, `workspace.tasks`, and `shell.assignments` now stay empty for page-only concept captures, while `workspace.chapters`, `shell.modules`, and Atlas still preserve the real concept/module lane. Benchmark honesty now matches that downstream truth instead of masking it.
 **Skill refs**: `deterministic-study-truth-gate`, `regression-orchestrator`, `blast-radius-reasoning`
+
+### [OSME-ZERO HYBRID] Added canonical tri-channel artifacts and explicit provenance lanes without breaking legacy synthesis scope
+
+**Files changed**: `package.json`, `packages/schema/package.json`, `packages/schema/src/index.ts`, `packages/schema/src/index.test.ts`, `packages/content-engine-v2/src/canonical/build.ts`, `packages/content-engine-v2/src/canonical/diff.ts`, `packages/content-engine-v2/src/canonical/normalize.ts`, `packages/content-engine-v2/src/canonical/serialize.ts`, `packages/content-engine-v2/src/canonical/types.ts`, `packages/content-engine-v2/src/contracts/types.ts`, `packages/content-engine-v2/src/outputs/result.ts`, `packages/content-engine-v2/src/compatibility/legacy-projection.ts`, `packages/content-engine-v2/src/index.ts`, `packages/content-engine-v2/src/tests/canonical.test.ts`, `apps/extension/src/content-canvas.ts`, `apps/web/src/lib/textbook-import.ts`, `apps/web/src/lib/demo.ts`
+**What it does**: Introduces an additive canonical artifact ahead of the existing pedagogical compiler with `semanticHash`, `structuralHash`, `provenanceHash`, item-level canonical summaries, and a canonical diff classifier. Shared capture contracts now accept explicit provenance metadata, the extension/textbook/demo builders populate those fields, and schema tests now run in the normal repo test loop.
+**Why**: the previous engine hash only described synthesized concepts/relations/assignments, which meant local learner scope depended on heuristic output rather than canonical source truth. The repo needed a provenance firewall and inspectable canonical surface without silently invalidating existing note/progress/export state.
+**Downstream effects**: `LearningSynthesis` now carries both the legacy `deterministicHash` and an additive `canonicalArtifact` / `synthesisHash`. Root `npm test` now includes `@learning/schema`, and the engine has adversarial regression coverage for undefined omission stability, Unicode/zero-width normalization, provenance-only changes, cosmetic structural edits, and semantic edits.
+**Skill refs**: `deterministic-engine-replacement-forge`, `blast-radius-reasoning`, `regression-orchestrator`
+
+### [WEB TRUST TONE] Shifted the shell toward a calmer study-workspace presentation without a risky route rewrite
+
+**Files changed**: `apps/web/src/AeonthraShell.tsx`, `apps/web/src/styles/tokens.css`, `apps/web/src/styles/global.css`
+**What it does**: Replaces the remote neon font stack with local high-trust font stacks, calms the base palette/background system, removes the breathing-body effect, updates navigation labels toward study-workspace language, and softens key practice/viewpoint copy.
+**Why**: the shell still read as a game dashboard even after the deterministic engine tightened, which undermined trust precisely where the product is strongest.
+**Downstream effects**: the app now presents as a more serious local-first study instrument while deeper shell decomposition remains pending.
+**Skill refs**: `ui-systems-polish`, `respect-codebase-grain`

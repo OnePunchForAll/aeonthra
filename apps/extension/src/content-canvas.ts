@@ -705,12 +705,25 @@ function collectLinks(root: ParentNode, sourceItemId: string): CaptureResource[]
           title,
           url,
           kind: url.match(/\.(pdf|docx|pptx|xlsx)(\?|$)/i) ? "file" : "link",
-          sourceItemId
+          sourceItemId,
+          captureStrategy: "html-fetch",
+          provenanceKind: "HTML_FETCH",
+          sourceEndpoint: url,
+          sourceHost: safeHost(url),
+          adapterVersion: "canvas-html-v1"
         } satisfies CaptureResource];
       } catch {
         return [];
       }
     });
+}
+
+function safeHost(url: string): string | undefined {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 function parseHtml(html: string): Document {
@@ -796,14 +809,17 @@ function buildCaptureItem(input: {
   moduleKey?: string;
 }): CaptureItem {
   const capturedAt = new Date().toISOString();
+  const canonicalUrl = canonicalize(input.queueItem.url);
+  const plainText = normalizeWhitespace(input.plainText);
+  const captureStrategy = input.queueItem.strategy;
   return {
     id: stableHash(`${input.queueItem.type}:${input.queueItem.url}:${input.plainText}`),
     kind: input.queueItem.type === "page" ? "page" : input.queueItem.type,
     title: input.title,
     titleSource: input.titleSource,
-    canonicalUrl: canonicalize(input.queueItem.url),
-    plainText: normalizeWhitespace(input.plainText),
-    excerpt: normalizeWhitespace(input.plainText).slice(0, 240),
+    canonicalUrl,
+    plainText,
+    excerpt: plainText.slice(0, 240),
     html: input.html,
     headingTrail: titleTrail(input.title, input.queueItem),
     tags: Array.from(new Set([input.queueItem.type, ...(input.tags ?? [])])),
@@ -816,7 +832,12 @@ function buildCaptureItem(input: {
     moduleName: input.moduleName ?? input.queueItem.moduleName,
     moduleKey: input.moduleKey ?? (input.queueItem.moduleName ? normalizeModuleKey(input.queueItem.moduleName) : undefined),
     capturedAt,
-    contentHash: stableHash(normalizeWhitespace(input.plainText))
+    contentHash: stableHash(plainText),
+    captureStrategy,
+    provenanceKind: captureStrategy === "api-only" ? "FIRST_PARTY_API" : "HTML_FETCH",
+    sourceEndpoint: canonicalUrl,
+    sourceHost: safeHost(canonicalUrl),
+    adapterVersion: captureStrategy === "api-only" ? "canvas-api-v1" : "canvas-html-v1"
   };
 }
 
@@ -1089,7 +1110,12 @@ function buildApiOnlyPayload(queueItem: QueueItem, mode: CaptureMode): {
         title: queueItem.title,
         url: canonicalize(String(metadata["url"])),
         kind: queueItem.type === "file" ? "file" : "link",
-        sourceItemId: item.id
+        sourceItemId: item.id,
+        captureStrategy: "api-only",
+        provenanceKind: "FIRST_PARTY_API",
+        sourceEndpoint: canonicalize(String(metadata["url"])),
+        sourceHost: safeHost(canonicalize(String(metadata["url"]))),
+        adapterVersion: "canvas-api-v1"
       }]
     : [];
 
