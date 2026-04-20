@@ -8,6 +8,7 @@
 4. Open the side panel and confirm the `Build Identity` card is present.
 5. Confirm `build-info.json` is readable and `builtAt` reflects the latest rebuild.
 6. Open the popup on the target Canvas page and confirm `START DIAGNOSTICS` does not show `worker-sig missing`. If it does, use `RESTART EXTENSION RUNTIME`, reopen the popup, and confirm the worker signature now reads `sw-recovery-trace-v5`.
+7. Open the ATLAS app with the same imported workspace and use `#inspect` in the URL hash if you want the truth boundary to open directly on load.
 
 ## Exact page to retest
 
@@ -22,6 +23,9 @@
 4. If the bundle is importable, the run ends with `Capture Complete` and a saved capture appears under `Latest Capture`.
 5. `Open + Import` should queue/import the new capture without falling back to a stale queued handoff.
 6. If the popup initially shows `detect url-fallback`, the extension may open a fresh background Canvas modules tab before capture starts and wait there for the declarative Canvas receiver; that is now the intended reliability fallback, not a duplicate-launch bug.
+7. After import, open the app `Inspect` route and confirm the canonical hashes, provenance coverage, provenance lanes, and capture lanes render without any regeneration step.
+8. If the app does not open directly on the inspect surface, reload it with `#inspect` appended to the URL and confirm the same imported workspace still renders there without re-running synthesis.
+9. Save a replay bundle and verify the exported JSON still contains `learningBundle.synthesis.canonicalArtifact` and that its hashes match the `Inspect` route.
 
 ## Exact debug outputs to inspect if it still fails
 
@@ -50,6 +54,8 @@
 - every visible `itemVerdict` URL and message
 - the exact `builtAt` and `sourceHash`
 - the exact popup worker signature state before and after any runtime restart
+- the app `Inspect` status, semantic hash, structural hash, and provenance hash after import
+- whether the app needed `#inspect` to deep-link or whether the current shell state already opened the inspect surface
 
 ## Failure interpretation
 
@@ -72,6 +78,9 @@
 - Import request fails after a successful capture
   - Record the bridge error and confirm the queued handoff matches the just-finished capture, not an older pack.
 
+- Import succeeds but the app `Inspect` route is blank or missing hashes
+  - Record whether `learningBundle.synthesis.canonicalArtifact` exists in the replay bundle and whether the shell route rendered stale data or no data.
+
 ## Manual evidence to keep
 
 - Screenshot of the side panel `Build Identity` and `Live Capture Forensics` cards
@@ -79,3 +88,4 @@
 - Final error text
 - Whether `Latest Capture` appeared
 - Whether AEONTHRA imported the new capture and acknowledged it
+- Screenshot of the app `Inspect` route after import

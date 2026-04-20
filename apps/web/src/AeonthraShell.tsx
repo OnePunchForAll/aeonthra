@@ -10,6 +10,15 @@ import { buildConceptQuestionPool } from "./lib/concept-practice";
 import type { AppProgress } from "./lib/workspace";
 import { buildAtlasShellProjection } from "./lib/atlas-shell";
 import { AtlasJourneyPanel } from "./components/AtlasJourneyPanel";
+import { AssignmentWorkspacePanel } from "./components/AssignmentWorkspacePanel";
+import { CanonicalArtifactInspector } from "./components/CanonicalArtifactInspector";
+import { CompareConceptsPanel } from "./components/CompareConceptsPanel";
+import { HomeDashboardPanel } from "./components/HomeDashboardPanel";
+import { PracticeWorkspacePanel } from "./components/PracticeWorkspacePanel";
+import { ReaderWorkspacePanel } from "./components/ReaderWorkspacePanel";
+import { ShellSettingsPanel } from "./components/ShellSettingsPanel";
+import { ShellStatsPanel } from "./components/ShellStatsPanel";
+import { TranscriptWorkspacePanel } from "./components/TranscriptWorkspacePanel";
 import { loadNotes, storeNotes } from "./lib/storage";
 
 type AeonthraShellProps = {
@@ -17,9 +26,12 @@ type AeonthraShellProps = {
   progress: AppProgress;
   onProgressUpdate: (update: Partial<AppProgress>) => void;
   onReset: () => void;
+  onDownloadCanonicalArtifact: () => void;
+  onDownloadDiagnostics: () => void;
   onDownloadOfflineSite: () => void;
   onSaveReplayBundle: () => void;
   isDemoMode: boolean;
+  initialView?: string;
 };
 
 const mc2=m=>m>=.8?"#ffd700":m>=.5?"#06d6a0":m>=.2?"#00f0ff":m>0?"#4a5a8a":"#2a2a48";
@@ -84,10 +96,10 @@ const MARGIN_TYPES={
   memory:{icon:"🔗",label:"Memory Hook"},
 };
 
-export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,onDownloadOfflineSite,onSaveReplayBundle,isDemoMode}:AeonthraShellProps){
-const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE,synthesis:SYNTHESIS}=data;
+export function AeonthraShell({data,progress:initialProgress,onProgressUpdate,onReset,onDownloadCanonicalArtifact,onDownloadDiagnostics,onDownloadOfflineSite,onSaveReplayBundle,isDemoMode,initialView}:AeonthraShellProps){
+const{concepts:CD,assignments:ASSIGNMENTS,reading:READING,margins:MARGINS,transcripts:TRANSCRIPTS,dists:DISTS,philosophers:PH,course:COURSE,synthesis:SYNTHESIS,diagnostics:DIAGNOSTICS}=data;
 const[cc,setCC]=useState(()=>CD.map(c=>({...c,mastery:initialProgress.conceptMastery[c.id]??0})));
-const[v,setV]=useState("journey");
+const[v,setV]=useState(initialView??"journey");
 const[selC,setSC]=useState(null);
 const[selA,setSA]=useState(null);
 const[fc,setFC]=useState(null);
@@ -182,7 +194,7 @@ const getGhost=(conceptId)=>{
   if(g){setGhosts(p=>p.map(x=>x===g?{...x,resurfaced:true}:x));}
   return g;
 };
-const[launched,setLaunched]=useState(false);
+const[launched,setLaunched]=useState(Boolean(initialView));
 const sessionTimeRef=useRef(0);
 const sessionTimerElRef=useRef(null);
 const[draft,setDraft]=useState({});
@@ -562,18 +574,6 @@ const formatTime=(s)=>{const m=Math.floor(s/60);const sec=Math.floor(s%60);retur
 
 // Simulated playback timer
 useEffect(()=>{if(!txPlaying||!transcript)return;const t=setInterval(()=>{setTxTime(p=>{if(p>=transcript.duration){setTxPlaying(false);return transcript.duration;}return p+1;});},1000);return()=>clearInterval(t);},[txPlaying,transcript]);
-const mastered=cc.filter(c=>c.mastery>=.8).length;
-const avg=cc.length>0?cc.reduce((s,c)=>s+c.mastery,0)/cc.length:0;
-const nextA=[...ASSIGNMENTS].sort((a,b)=>a.due-b.due)[0];
-const nextAReadiness=nextA?assignmentReadiness(nextA):null;
-const nextAReadinessHasSupport=Boolean(nextAReadiness&&(nextAReadiness.requiredSkills.length>0||nextAReadiness.missingSkills.length>0||nextAReadiness.requirement?.checklist?.length>0));
-const nextAHeader=nextA?((isSamePanelText(nextA.title,nextA.sub)||!normalizePanelText(nextA.sub))?nextA.title:`${nextA.title}: ${nextA.sub}`):"";
-const nextAVisibleConcepts=nextA?nextA.con.map((id)=>visibleConceptById.get(id)).filter((concept)=>Boolean(concept)):[];
-const nextAVisibleReady=nextAVisibleConcepts.filter((concept)=>concept.mastery>=.6);
-const nextAVisibleNotReady=nextAVisibleConcepts.filter((concept)=>concept.mastery<.6);
-const nextAVisibleSupportText=nextAReadinessHasSupport
-  ? assignmentReadinessSupportLabel(nextAReadiness)
-  : "No readiness support has been derived yet.";
 const assignmentDueCounter=(assignment)=>{
   if(assignment.dueState==="unknown")return "Date not captured";
   if(assignment.dueState==="today")return "Due today";
@@ -587,6 +587,18 @@ const assignmentDueLine=(assignment,urgent)=>{
 const assignmentReadinessLabel=(state)=>state.status==="unmapped"?"Needs mapping":state.status==="concept-prep"?"Concept prep":state.label;
 const assignmentReadinessStateLabel=(state)=>state.status==="unmapped"?"Needs mapping":state.status==="concept-prep"?"Concept prep":"Ready";
 const assignmentReadinessSupportLabel=(state)=>state.status==="ready"?"Skill chain earned":state.status==="concept-prep"?"Concept grounding exists, but the checklist-backed skill chain is not complete yet.":"No readiness support has been derived yet.";
+const mastered=cc.filter(c=>c.mastery>=.8).length;
+const avg=cc.length>0?cc.reduce((s,c)=>s+c.mastery,0)/cc.length:0;
+const nextA=[...ASSIGNMENTS].sort((a,b)=>a.due-b.due)[0];
+const nextAReadiness=nextA?assignmentReadiness(nextA):null;
+const nextAReadinessHasSupport=Boolean(nextAReadiness&&(nextAReadiness.requiredSkills.length>0||nextAReadiness.missingSkills.length>0||nextAReadiness.requirement?.checklist?.length>0));
+const nextAHeader=nextA?((isSamePanelText(nextA.title,nextA.sub)||!normalizePanelText(nextA.sub))?nextA.title:`${nextA.title}: ${nextA.sub}`):"";
+const nextAVisibleConcepts=nextA?nextA.con.map((id)=>visibleConceptById.get(id)).filter((concept)=>Boolean(concept)):[];
+const nextAVisibleReady=nextAVisibleConcepts.filter((concept)=>concept.mastery>=.6);
+const nextAVisibleNotReady=nextAVisibleConcepts.filter((concept)=>concept.mastery<.6);
+const nextAVisibleSupportText=nextAReadinessHasSupport
+  ? assignmentReadinessSupportLabel(nextAReadiness)
+  : "No readiness support has been derived yet.";
 const selAHeader=selA?((isSamePanelText(selA.title,selA.sub)||!normalizePanelText(selA.sub))?selA.title:`${selA.title}: ${selA.sub}`):"";
 const selAVisibleConcepts=selA?selA.con.map((id)=>visibleConceptById.get(id)).filter((concept)=>Boolean(concept)):[];
 const selAVisibleReady=selAVisibleConcepts.filter((concept)=>concept.mastery>=.6);
@@ -601,7 +613,7 @@ const askO=()=>{if(!oq.trim())return;const w=oq.toLowerCase().split(/\s+/).filte
   setOR(PH.map((p,pi)=>{let b=null,bs=0;p.q.forEach(q=>{let s=0;w.forEach(x=>{if(q.tg.some(t=>t.includes(x)||x.includes(t)))s+=3;if(q.x.toLowerCase().includes(x))s+=1;});if(s>bs){bs=s;b=q;}});if(!b&&p.q.length)b=p.q[stableHash(`${p.n}:${pi}:${oq}`)%p.q.length];return{...p,sq:b,r:bs};}).sort((a,b)=>b.r-a.r||a.n.localeCompare(b.n)));};
 
 // STYLES
-const B="#0b1015",CD2="rgba(24,33,44,0.94)",BD="rgba(80,95,118,0.45)",CY="#7dd3c7",TL="#d5b06b",GD="#d5b06b",RD="#c57474",TX="#eef3f8",T2="#cad4df",MU="#93a1b2",DM="#2f3b4c";
+const B="#020208",CD2="rgba(16,16,36,0.94)",BD="rgba(50,50,100,0.55)",CY="#00f0ff",TL="#06d6a0",GD="#ffd700",RD="#ff4466",TX="#e0e0ff",T2="#b8b8d8",MU="#6a6a9a",DM="#2a2a4a";
 const card={background:CD2,border:`1px solid ${BD}`,borderRadius:24,padding:"44px 50px",boxShadow:"0 8px 40px rgba(0,0,0,0.5)"};
 const ey={fontSize:".84rem",fontWeight:800,letterSpacing:".2em",textTransform:"uppercase",color:MU,marginBottom:20,fontFamily:"'Space Grotesk',sans-serif"};
 const hd=s=>({fontSize:s+"rem",fontWeight:700,margin:0,lineHeight:1.3,color:TX,fontFamily:"'Space Grotesk','Inter',sans-serif"});
@@ -678,7 +690,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
   <div style={{position:"absolute",inset:0,zIndex:5,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
     <div style={{pointerEvents:"auto",textAlign:"center",padding:"44px 56px",borderRadius:28,background:"rgba(4,4,12,.9)",backdropFilter:"blur(40px)",border:`1px solid ${BD}`,boxShadow:"0 20px 100px rgba(0,0,0,.7)",maxWidth:520,animation:"fadeUp .6s ease"}}>
       <div style={{fontSize:"2.6rem",fontWeight:900,letterSpacing:".22em",color:CY,textShadow:`0 0 40px rgba(0,240,255,.4)`,marginBottom:6,fontFamily:"'Space Grotesk',sans-serif"}}>AEONTHRA</div>
-      <div style={{fontSize:".78rem",letterSpacing:".3em",color:MU,textTransform:"uppercase",marginBottom:28}}>Evidence-Led Study Workspace</div>
+      <div style={{fontSize:".78rem",letterSpacing:".3em",color:MU,textTransform:"uppercase",marginBottom:28}}>Neural Learning System</div>
       <h1 style={{fontSize:"1.4rem",fontWeight:600,color:TX,lineHeight:1.5,marginBottom:6}}>{COURSE.title}</h1>
       <p style={{fontSize:".9rem",color:MU,marginBottom:24}}>{COURSE.code} · {COURSE.term}</p>
       <div style={{padding:"14px 20px",borderRadius:14,background:`${TL}08`,border:`1px solid ${TL}15`,marginBottom:24}}>
@@ -698,7 +710,7 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
     {launched&&<span ref={sessionTimerElRef} style={{fontSize:".75rem",color:MU,marginLeft:8}}>⏱ 0m 0s</span>}
   </div>
   <div style={{display:"flex",gap:4,flexWrap:"wrap",width:mobileLayout?"100%":"auto",overflowX:mobileLayout?"auto":"visible",paddingBottom:mobileLayout?2:0}}>
-    {[["home","Overview"],["journey","Skill Map"],["explore","Concept Library"],["forge","Practice"],["reader","Reading"],["gym","Compare"],["oracle","Viewpoints"]].map(([id,lb])=>(
+    {[["home","Home"],["journey","Atlas"],["explore","Concepts"],["forge","Learn"],["reader","Read"],["gym","Gym"],["oracle","Oracle"]].map(([id,lb])=>(
       <button key={id} onClick={()=>go(id)} aria-current={v===id?"page":undefined} style={{background:v===id?"rgba(0,240,255,.1)":"transparent",border:"none",color:v===id?CY:MU,padding:"12px 18px",borderRadius:14,cursor:"pointer",fontSize:".85rem",fontWeight:600,transition:"all 200ms"}}>{lb}</button>
     ))}
     <button onClick={()=>go("settings")} aria-current={v==="settings"?"page":undefined} aria-label="Settings" title="Settings" style={{background:v==="settings"?"rgba(0,240,255,.1)":"transparent",border:"none",color:v==="settings"?CY:MU,padding:"12px 14px",borderRadius:14,cursor:"pointer",fontSize:".88rem",opacity:.65,transition:"all 200ms"}}>⚙</button>
@@ -730,164 +742,43 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 <main style={{maxWidth:1440,margin:"0 auto",padding:mobileLayout?"28px 16px 120px":"44px 48px 140px",opacity:fade?1:0,transition:"opacity 180ms ease"}}>
 
 {/* HOME */}
-{v==="home"&&<>
-
-{/* Source quality banner — only shown when synthesis quality is degraded */}
-{SYNTHESIS?.qualityBanner&&<div style={{background:"rgba(251,146,60,.12)",border:"1px solid rgba(251,146,60,.35)",borderRadius:10,padding:"12px 18px",marginBottom:24,fontSize:".9rem",color:"#fb923c",lineHeight:1.6}}>
-  {SYNTHESIS.qualityBanner}
-</div>}
-
-{/* Supportive greeting */}
-<div style={{textAlign:"center",marginBottom:36,animation:"fadeUp .4s ease"}}>
-  <h1 style={{...hd(1.8),marginBottom:10}}>{avg>0?"Welcome back.":"Let's get started."}</h1>
-  <p style={{color:T2,fontSize:"1.1rem",lineHeight:1.7,maxWidth:600,margin:"0 auto"}}>
-    {avg===0?"Every expert started at zero. Pick one concept, answer one question, and the rest follows.":
-     avg<.3?"You've started building your foundation. Keep going — every answer strengthens it.":
-     avg<.6?"You're making real progress. The concepts are starting to connect.":
-     avg<.8?"You're in strong shape. A few more sessions and you'll be fully prepared.":
-     "You've mastered the core material. Time to apply it with confidence."}
-  </p>
-</div>
-
-{/* Progress ring + stats */}
-<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:56,marginBottom:40,animation:"fadeUp .5s ease"}}>
-  <div style={{position:"relative",width:110,height:110}}>
-    <svg viewBox="0 0 110 110" style={{width:110,height:110}}>
-      <circle cx="55" cy="55" r="48" fill="none" stroke={DM} strokeWidth="5"/>
-      <circle cx="55" cy="55" r="48" fill="none" stroke={avg>=.8?GD:avg>=.5?TL:CY} strokeWidth="5" strokeDasharray={`${avg*301} 301`} strokeLinecap="round" transform="rotate(-90 55 55)" style={{transition:"stroke-dasharray 1.2s ease",filter:`drop-shadow(0 0 8px ${avg>=.8?GD:avg>=.5?TL:CY}55)`}}/>
-    </svg>
-    <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
-      <div style={{fontSize:"1.6rem",fontWeight:800,color:TX,fontFamily:"'Space Grotesk',sans-serif"}}>{P(avg)}</div>
-      <div style={{fontSize:".62rem",color:MU,letterSpacing:".1em"}}>OVERALL</div>
-    </div>
-  </div>
-  <div style={{display:"flex",gap:36}}>
-    {[[visibleMastered+"/"+visibleConceptCount,"Mastered","🏆"],[visibleDone.size+"/"+visibleConceptCount,"Learned","🧠"],[bestStreak>0?bestStreak+"x":"—","Streak","🔥"],[totalAnswered>0?Math.round(totalCorrect/totalAnswered*100)+"%":"—","Accuracy","🎯"]].map(([val,lb,ic],i)=>(
-      <div key={i} style={{textAlign:"center"}}>
-        <div style={{fontSize:".95rem",marginBottom:4}}>{ic}</div>
-        <div style={{fontSize:"1.5rem",fontWeight:700,fontVariantNumeric:"tabular-nums",fontFamily:"'Space Grotesk',sans-serif"}}>{val}</div>
-        <div style={{fontSize:".68rem",color:MU,letterSpacing:".1em",textTransform:"uppercase",marginTop:3}}>{lb}</div>
-      </div>
-    ))}
-  </div>
-</div>
-
-{/* Quick paths strip */}
-<div style={{display:"flex",gap:12,marginBottom:32,animation:"fadeUp .55s ease",justifyContent:"center"}}>
-  {[
-    ["⚡","Quick 5-min review",()=>go("forge")],
-    ["📝","Assignment prep",()=>{if(nextA)go("assignment",{a:nextA});}],
-    ["🗺","Journey map",()=>go("journey")],
-    ["🧠","Explore concepts",()=>go("explore")],
-    ["📚","Library",()=>go("courseware")],
-    ["📊","My stats",()=>go("stats")],
-  ].map(([ic,lb,fn])=>(
-    <button key={lb} onClick={fn} style={{padding:"14px 22px",borderRadius:16,border:`1px solid ${BD}`,background:CD2,cursor:"pointer",color:TX,fontSize:".88rem",fontWeight:500,transition:"all 250ms",display:"flex",alignItems:"center",gap:8}}>
-      <span style={{fontSize:"1.1rem"}}>{ic}</span>{lb}
-    </button>
-  ))}
-</div>
-
-{/* YOUR NEXT WIN — the single most important card */}
-{nextA&&<div style={{...card,marginBottom:28,borderLeft:`5px solid ${CY}`,background:`linear-gradient(90deg,rgba(0,240,255,.05),${CD2})`,boxShadow:`0 8px 48px rgba(0,240,255,.06)`,animation:"fadeUp .6s ease"}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:24,flexWrap:"wrap"}}>
-    <div style={{flex:1,minWidth:320}}>
-      <div style={{...ey,color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>🎯 YOUR NEXT WIN</div>
-      <h2 style={hd(1.35)}>{nextAHeader}</h2>
-      <p style={{color:MU,fontSize:".9rem",marginTop:8}}>{nextA.type} {nextA.pts}pts · {assignmentDueLine(nextA,false)}</p>
-
-      {/* Why this matters */}
-      <div style={{marginTop:16,padding:"16px 20px",borderRadius:14,background:"rgba(255,255,255,.02)",border:`1px solid ${BD}`}}>
-        <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:TL,marginBottom:6,fontFamily:"'Space Grotesk',sans-serif"}}>WHY THIS MATTERS</div>
-        <p style={{color:T2,fontSize:".92rem",lineHeight:1.65,margin:0}}>{nextA.tip||"Completing this strengthens your foundation for everything that comes after."}</p>
-      </div>
-
-      {/* What you need — supportive framing */}
-      {(()=>{const ready=nextAVisibleReady;const notReady=nextAVisibleNotReady;
-        return(<div style={{marginTop:16}}>
-          {ready.length>0&&<p style={{color:TL,fontSize:".88rem",marginBottom:6}}>✓ You already know {ready.map(c=>c.name).join(", ")}</p>}
-          {notReady.length>0
-            ? <p style={{color:CY,fontSize:".88rem"}}>→ {notReady.length===1?"One concept still needs attention":"Concept groundwork still needs attention"}: {notReady.map(c=>c.name).join(", ")}.</p>
-            : nextAVisibleConcepts.length>0
-              ? <p style={{color:nextAReadiness?.status==="ready"?TL:CY,fontSize:".92rem",fontWeight:600}}>{nextAReadiness?.status==="ready"?"✓ Skill chain earned. You can move into the assignment.":"→ Concept grounding exists, but it is not a readiness claim yet."}</p>
-              : <p style={{color:MU,fontSize:".88rem"}}>{nextAVisibleSupportText}</p>}
-          {nextAReadiness?.status&&nextAReadiness.status!=="ready"&&<p style={{color:MU,fontSize:".82rem",marginTop:8}}>{nextAVisibleSupportText}</p>}
-        </div>);
-      })()}
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"}}>
-      {(()=>{const notReady=nextAVisibleNotReady;
-        return notReady.length>0||nextAReadiness?.status!=="ready"?
-          <button onClick={()=>go("forge")} style={{...bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000"),animation:"glow 3s ease infinite"}}>⚡ Strengthen groundwork</button>:
-          <button onClick={()=>go("assignment",{a:nextA})} style={bt(`linear-gradient(135deg,${TL},#00b088)`,"#000")}>✓ Open Assignment</button>;
-      })()}
-      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`,padding:"10px 22px",fontSize:".82rem"}}>See full path →</button>
-    </div>
-  </div>
-</div>}
-
-{/* "You're closer than you think" readiness strip */}
-<div style={{...card,marginBottom:28,padding:"28px 36px",animation:"fadeUp .65s ease"}}>
-  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-    <div style={{...ey,color:TL,margin:0,fontFamily:"'Space Grotesk',sans-serif"}}>📊 ASSIGNMENT READINESS</div>
-    <span style={{fontSize:".82rem",color:MU}}>How prepared you are for each task</span>
-  </div>
-  {ASSIGNMENTS.map(a=>{const readinessState=assignmentReadiness(a);const readiness=readinessState.progressPercent;const readinessLabel=assignmentReadinessLabel(readinessState);const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";const urgent=a.dueState==="today"||a.dueState==="overdue"||(a.dueState==="upcoming"&&a.due<=3);
-    return(<button key={a.id} onClick={()=>go("assignment",{a})} style={{display:"flex",alignItems:"center",gap:16,padding:"14px 18px",background:innr,border:`1px solid ${urgent?`${RD}33`:BD}`,borderRadius:16,cursor:"pointer",width:"100%",color:TX,transition:"all 250ms",marginBottom:8}}>
-      <span style={{fontSize:"1.3rem",width:36}}>{a.type}</span>
-      <div style={{flex:1,textAlign:"left"}}>
-        <div style={{fontSize:".92rem",fontWeight:600}}>{a.title}</div>
-        {readinessState.status==="unmapped"
-          ? <div style={{marginTop:6,height:4,borderRadius:2,background:DM,opacity:.55}} />
-          : <div style={{width:"100%",height:4,borderRadius:2,background:DM,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:readinessColor,width:readiness+"%",transition:"width 500ms ease"}}/></div>}
-      </div>
-      <div style={{textAlign:"right",minWidth:70,position:"relative"}}>
-        <div style={{fontSize:"1.1rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{assignmentReadinessLabel(readinessState)}</div>
-        <div style={{fontSize:".65rem",color:urgent?RD:MU,position:"absolute",right:0,top:24,background:innr,paddingLeft:6}}>{assignmentDueLine(a,urgent)}</div>
-        {a.dueState!=="unknown"&&<div style={{fontSize:".65rem",color:urgent?RD:MU}}>{assignmentDueCounter(a)}</div>}
-      </div>
-    </button>);
-  })}
-</div>
-
-<div style={{animation:"fadeUp .7s ease"}}>
-  {/* Module Progress Strip */}
-  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28}}>
-    {MODULES.map(m=>{
-      const mConcepts=m.concepts.map(id=>visibleConceptById.get(id)).filter(Boolean);
-      const mAvg=mConcepts.length?mConcepts.reduce((s,c)=>s+c.mastery,0)/mConcepts.length:0;
-      const allDone=mConcepts.every(c=>visibleDone.has(c.id));
-      return(
-        <button key={m.id} onClick={()=>go("courseware")} style={{...card,padding:"22px 18px",textAlign:"center",cursor:"pointer",borderTop:`3px solid ${allDone?GD:mAvg>.5?TL:mAvg>0?CY:BD}`,transition:"all 250ms"}}>
-          <div style={{fontSize:allDone?"1.3rem":".9rem",marginBottom:8}}>{allDone?"🔥":mAvg>.5?"⚡":"📖"}</div>
-          <div style={{fontSize:".72rem",fontWeight:700,color:allDone?GD:mAvg>.5?TL:CY,letterSpacing:".08em",fontFamily:"'Space Grotesk',sans-serif"}}>{m.ch.replace("Chapters ","Ch ").replace("Chapter ","Ch ")}</div>
-          <div style={{fontSize:"1.3rem",fontWeight:800,color:TX,margin:"6px 0",fontFamily:"'Space Grotesk',sans-serif"}}>{P(mAvg)}</div>
-          <div style={{height:4,borderRadius:2,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:allDone?GD:mc2(mAvg),width:P(mAvg),transition:"width 600ms cubic-bezier(.22,1,.36,1)"}}/></div>
-        </button>
-      );
-    })}
-  </div>
-
-  {/* Concept Mastery Grid */}
-  <div style={{...card,padding:"32px 36px"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <div style={{...ey,margin:0,fontFamily:"'Space Grotesk',sans-serif"}}>CONCEPT MASTERY</div>
-      <span style={{fontSize:".82rem",color:MU}}>{visibleDone.size} completed · {visibleMastered} mastered</span>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-      {visibleConcepts.map(c=>(
-        <button key={c.id} onClick={()=>go("explore",{c})} style={{display:"flex",alignItems:"center",gap:12,background:innr,border:`1px solid ${BD}`,borderRadius:14,padding:"14px 18px",cursor:"pointer",color:TX,fontSize:".92rem",textAlign:"left",width:"100%",transition:"all 250ms"}}>
-          <span style={{fontSize:".72rem",width:16,textAlign:"center"}}>{memoryStageIcon(getMemoryStage(c.id))}</span>
-          <span style={{flex:1,fontWeight:500}}>{c.name}</span>
-          {visibleDone.has(c.id)&&<span style={{fontSize:".85rem"}}>🔥</span>}
-          <div style={{width:80,height:5,borderRadius:3,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:mc2(c.mastery),width:P(c.mastery),transition:"width 600ms cubic-bezier(.22,1,.36,1)"}}/></div>
-          <span style={{color:mc2(c.mastery),fontSize:".82rem",fontWeight:700,width:40,textAlign:"right"}}>{c.mastery>0?P(c.mastery):"—"}</span>
-        </button>
-      ))}
-    </div>
-  </div>
-</div>
-</>}
+{v==="home"&&<HomeDashboardPanel
+  synthesisQualityBanner={SYNTHESIS?.qualityBanner}
+  averageMastery={avg}
+  visibleMastered={visibleMastered}
+  visibleConceptCount={visibleConceptCount}
+  visibleDoneCount={visibleDone.size}
+  bestStreak={bestStreak}
+  totalAnswered={totalAnswered}
+  totalCorrect={totalCorrect}
+  nextAssignment={nextA}
+  nextAssignmentHeader={nextAHeader}
+  nextAssignmentVisibleReady={nextAVisibleReady}
+  nextAssignmentVisibleNotReady={nextAVisibleNotReady}
+  nextAssignmentVisibleConcepts={nextAVisibleConcepts}
+  nextAssignmentVisibleSupportText={nextAVisibleSupportText}
+  nextAssignmentReadiness={nextAReadiness}
+  assignments={ASSIGNMENTS}
+  modules={MODULES}
+  visibleConcepts={visibleConcepts}
+  visibleConceptById={visibleConceptById}
+  visibleDone={visibleDone}
+  theme={{BD,CD2,CY,DM,GD,MU,RD,T2,TL,TX,card,ey,heading:hd,button:bt,masteryColor:mc2,percent:P}}
+  memoryStageIcon={memoryStageIcon}
+  getMemoryStage={getMemoryStage}
+  assignmentReadiness={assignmentReadiness}
+  assignmentReadinessLabel={assignmentReadinessLabel}
+  assignmentDueLine={assignmentDueLine}
+  assignmentDueCounter={assignmentDueCounter}
+  onOpenQuickReview={()=>go("forge")}
+  onOpenNextAssignment={()=>{if(nextA)go("assignment",{a:nextA});}}
+  onOpenJourney={()=>go("journey")}
+  onOpenExplore={()=>go("explore")}
+  onOpenCourseware={()=>go("courseware")}
+  onOpenStats={()=>go("stats")}
+  onOpenAssignment={(assignment)=>go("assignment",{a:assignment})}
+  onOpenConcept={(concept)=>go("explore",{c:concept})}
+/>}
 
 {/* COURSE ATLAS */}
 {v==="journey"&&<AtlasJourneyPanel
@@ -985,238 +876,34 @@ return(<div style={{minHeight:"100dvh",background:B,backgroundImage:"radial-grad
 </div>}
 
 {/* ASSIGNMENT */}
-{v==="assignment"&&selA&&(()=>{ 
-const readinessState=selAReadiness;
-const requiredSkills=readinessState.requiredSkills;
-const needed=selAVisibleConcepts;
-const ready=selAVisibleReady;
-const weak=selAVisibleNotReady;
-const readiness=readinessState.progressPercent;
-const readinessLabel=assignmentReadinessLabel(readinessState);
-const readinessColor=readinessState.status==="unmapped"?MU:readinessState.status==="concept-prep"?CY:readiness>=100?TL:readiness>50?CY:"#ff8800";
-const readinessBorder=readinessState.status==="unmapped"?BD:readinessState.status==="concept-prep"?CY:readiness>=100?TL:urgent?RD:CY;
-const readinessFill=readinessState.status==="unmapped"?"rgba(125,148,178,.06)":readinessState.status==="concept-prep"?"rgba(61,149,255,.08)":readiness>=100?`${TL}06`:urgent?`${RD}04`:`${CY}04`;
-const urgent=selA.dueState==="today"||selA.dueState==="overdue"||(selA.dueState==="upcoming"&&selA.due<=3);
-
-return(<div style={{maxWidth:880}}>
-<button onClick={()=>go("home")} style={{background:"transparent",border:"none",color:MU,cursor:"pointer",fontSize:".92rem",marginBottom:20}}>← Back</button>
-
-{/* Header */}
-<div style={{...card,marginBottom:24,borderTop:`4px solid ${readinessBorder}`,background:`linear-gradient(135deg,${readinessFill},${CD2})`}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:20}}>
-    <div style={{flex:1}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-        <span style={{fontSize:"2rem"}}>{selA.type}</span>
-        <div>
-          <h2 style={hd(1.4)}>{selAHeader}</h2>
-          <p style={{color:MU,fontSize:".88rem",margin:"4px 0 0"}}>{[normalizePanelText(selA.sub)&&!isSamePanelText(selA.title,selA.sub)?selA.sub:null,`${selA.pts}pts`,assignmentDueLine(selA,urgent)].filter(Boolean).join(" · ")}</p>
-        </div>
-      </div>
-      {selA.demandIcon&&<div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"8px 16px",borderRadius:12,background:innr,border:`1px solid ${BD}`,marginTop:4}}>
-        <span style={{fontSize:"1rem"}}>{selA.demandIcon}</span>
-        <span style={{fontSize:".82rem",fontWeight:700,color:CY,fontFamily:"'Space Grotesk',sans-serif",letterSpacing:".06em"}}>{selA.demand}</span>
-      </div>}
-    </div>
-    <div style={{textAlign:"center",minWidth:100}}>
-      <div style={{position:"relative",width:80,height:80,margin:"0 auto"}}>
-        <svg viewBox="0 0 80 80" style={{width:80,height:80}}><circle cx="40" cy="40" r="36" fill="none" stroke={DM} strokeWidth="4"/><circle cx="40" cy="40" r="36" fill="none" stroke={readinessColor} strokeWidth="4" strokeDasharray={`${readiness/100*226} 226`} strokeLinecap="round" transform="rotate(-90 40 40)" style={{transition:"stroke-dasharray 800ms ease"}}/></svg>
-        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"1.3rem",fontWeight:800,color:readinessColor,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessLabel}</span></div>
-      </div>
-      <div style={{fontSize:".68rem",color:MU,marginTop:6}}>{assignmentReadinessStateLabel(readinessState)}</div>
-    </div>
-  </div>
-</div>
-
-{["unmapped","concept-prep"].includes(readinessState.status)&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${readinessState.status==="concept-prep"?CY:MU}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:readinessState.status==="concept-prep"?CY:MU,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readinessState.status==="concept-prep"?"Concept prep":"Needs mapping"}</div>
-  <p style={{color:T2,fontSize:".9rem",lineHeight:1.6,margin:0}}>{readinessState.status==="concept-prep"?"Concept grounding exists, but the checklist-backed skill chain is not complete yet.":selAVisibleSupportText}</p>
-  {readinessState.requirement?.checklist?.length>0&&<div style={{marginTop:14,display:"grid",gap:8}}>{readinessState.requirement.checklist.slice(0,3).map((line,index)=><div key={`${selA.id}-check-${index}`} style={{padding:"10px 12px",borderRadius:12,background:innr,border:`1px solid ${BD}`,color:T2,fontSize:".82rem"}}>{line}</div>)}</div>}
-  {readinessState.requirement?.pitfalls?.length>0&&<p style={{color:MU,fontSize:".78rem",lineHeight:1.5,margin:"12px 0 0"}}>Watch for: {readinessState.requirement.pitfalls.slice(0,2).join(" · ")}</p>}
-</div>}
-
-{requiredSkills.length>0&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${CY}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:CY,marginBottom:16,fontFamily:"'Space Grotesk',sans-serif"}}>⬢ SKILL CHAIN</div>
-  <div style={{display:"grid",gap:10}}>
-    {requiredSkills.map((skill)=><div key={skill.id} style={{padding:"14px 16px",borderRadius:14,background:innr,border:`1px solid ${skill.state==="mastered"?`${GD}22`:skill.state==="earned"?`${TL}22`:skill.state==="recovery"?"rgba(251,146,60,.24)":BD}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
-        <div style={{position:"relative",minHeight:50}}>
-          <div style={{fontSize:".86rem",fontWeight:700,color:TX}}>{skill.label}</div>
-          <div style={{fontSize:".76rem",color:MU,marginTop:4}}>{skill.summary}</div>
-        </div>
-        <div style={{textAlign:"right"}}><div style={{fontSize:".88rem",fontWeight:800,color:skill.state==="mastered"?GD:skill.state==="earned"?TL:skill.state==="recovery"?"#fb923c":CY,fontFamily:"'Space Grotesk',sans-serif"}}>{Math.round(skill.progress*100)}%</div><div style={{fontSize:".68rem",color:MU,marginTop:2}}>{skill.state}</div></div>
-      </div>
-    </div>)}
-  </div>
-</div>}
-
-{/* What it's really asking */}
-{selA.reallyAsking&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${CY}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:CY,marginBottom:10,fontFamily:"'Space Grotesk',sans-serif"}}>🎯 WHAT IT'S REALLY ASKING</div>
-  <p style={{fontSize:"1.08rem",lineHeight:1.85,color:TX,margin:0}}>{selA.reallyAsking}</p>
-</div>}
-
-{/* What instructors care about */}
-{selA.secretCare&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${GD}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:GD,marginBottom:10,fontFamily:"'Space Grotesk',sans-serif"}}>🔑 WHAT INSTRUCTORS SECRETLY CARE ABOUT</div>
-  <p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:0}}>{selA.secretCare}</p>
-</div>}
-
-{/* Concept readiness */}
-<div style={{...card,marginBottom:20}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:TL,marginBottom:16,fontFamily:"'Space Grotesk',sans-serif"}}>🧠 CONCEPT READINESS</div>
-  {needed.length===0
-    ? <p style={{color:MU,fontSize:".92rem",marginBottom:12}}>{selAVisibleSupportText}</p>
-    : <>
-      {ready.length>0&&<p style={{color:TL,fontSize:".92rem",marginBottom:12}}>✓ You're prepared in: {ready.map(c=>c.name).join(", ")}</p>}
-      {weak.length>0&&<p style={{color:"#ff8800",fontSize:".92rem",marginBottom:16}}>→ Needs work: {weak.map(c=>c.name).join(", ")}</p>}
-    </>}
-  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-    {needed.map((c,i)=>{const r=c.mastery>=.6;const stage=getMemoryStage(c.id);
-      return(<div key={c.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderRadius:14,background:innr,border:`1px solid ${r?`${TL}22`:BD}`}}>
-        <span style={{fontSize:".82rem"}}>{memoryStageIcon(stage)}</span>
-        <button onClick={()=>go("explore",{c})} style={{flex:1,background:"none",border:"none",color:TX,cursor:"pointer",textAlign:"left",fontSize:".95rem",fontWeight:500}}>{c.name}</button>
-        <div style={{width:80,height:4,borderRadius:2,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:mc2(c.mastery),width:P(c.mastery),transition:"width 500ms cubic-bezier(.22,1,.36,1)"}}/></div>
-        <span style={{color:mc2(c.mastery),fontSize:".82rem",fontWeight:700,width:36,textAlign:"right"}}>{P(c.mastery)}</span>
-        {!r&&<button onClick={()=>go("forge",{c})} style={{padding:"6px 14px",borderRadius:10,border:`1px solid ${CY}33`,background:`${CY}0d`,color:CY,fontSize:".75rem",fontWeight:700,cursor:"pointer"}}>Learn →</button>}
-      </div>);
-    })}
-  </div>
-  {weak.length>0&&<div style={{marginTop:20,padding:"16px 20px",borderRadius:14,background:`${CY}06`,border:`1px solid ${CY}15`}}>
-    <div style={{fontSize:".72rem",fontWeight:700,color:CY,marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>⚡ FASTEST PATH TO READY</div>
-    <p style={{fontSize:".92rem",color:T2,margin:"0 0 12px"}}>{selA.quickPrep||`Learn ${weak.map(c=>c.name).join(", ")}. About ${weak.length*5} minutes.`}</p>
-    <button onClick={()=>go("forge",{c:weak[0]})} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Start prep: {weak[0].name}</button>
-  </div>}
-</div>
-
-{/* Common failure modes */}
-{selA.failModes&&<div style={{...card,marginBottom:20,borderLeft:`4px solid ${RD}`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:RD,marginBottom:14,fontFamily:"'Space Grotesk',sans-serif"}}>⚠ COMMON MISTAKES TO AVOID</div>
-  <div style={{display:"flex",flexDirection:"column",gap:10}}>
-    {selA.failModes.map((fm,i)=>(
-      <div key={i} style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-        <span style={{color:RD,fontSize:".88rem",fontWeight:700,flexShrink:0}}>✗</span>
-        <p style={{fontSize:".95rem",color:T2,lineHeight:1.65,margin:0}}>{fm}</p>
-      </div>
-    ))}
-  </div>
-</div>}
-
-{/* What you'll need to show */}
-{selA.evidence&&<div style={{...card,marginBottom:20,borderLeft:`4px solid #a78bfa`}}>
-  <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:"#a78bfa",marginBottom:10,fontFamily:"'Space Grotesk',sans-serif"}}>📋 WHAT YOUR RESPONSE NEEDS</div>
-  <p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:0}}>{selA.evidence}</p>
-</div>}
-
-{/* ═══ ARGUMENT FORGE ═══ */}
-<div style={{...card}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-    <div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".12em",color:TL,fontFamily:"'Space Grotesk',sans-serif"}}>✍ ARGUMENT FORGE</div>
-    <div style={{display:"flex",gap:4}}>
-      {[["thesis","1. Thesis"],["outline","2. Outline"],["draft","3. Draft"]].map(([id,lb])=>(
-        <button key={id} onClick={()=>setArgStage(id)} style={{padding:"8px 18px",borderRadius:12,border:argStage===id?`2px solid ${TL}`:`1px solid ${BD}`,background:argStage===id?`${TL}0d`:"transparent",color:argStage===id?TL:MU,fontSize:".78rem",fontWeight:700,cursor:"pointer"}}>{lb}</button>
-      ))}
-    </div>
-  </div>
-
-  {/* STAGE 1: THESIS */}
-  {argStage==="thesis"&&<div style={{animation:"fadeUp .3s ease"}}>
-    <p style={{fontSize:".92rem",color:T2,marginBottom:20,lineHeight:1.6}}>Your thesis is the single claim your entire response defends. Start here — everything else flows from this.</p>
-
-    {/* Concept chips — promote to claims */}
-    <div style={{marginBottom:20}}>
-      <div style={{fontSize:".68rem",fontWeight:700,color:CY,marginBottom:10,letterSpacing:".1em"}}>AVAILABLE CONCEPTS</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {needed.map(c=>(
-          <span key={c.id} style={{padding:"8px 16px",borderRadius:20,background:`${CY}0a`,border:`1px solid ${CY}22`,fontSize:".85rem",color:CY}}>{c.name}</span>
-        ))}
-      </div>
-    </div>
-
-    {/* Thesis templates */}
-    {(()=>{const demandKey=selA.demand?.split(" ")[0]||"Apply";const templates=thesisTemplates[demandKey]||thesisTemplates["Apply"];
-    return(<div style={{marginBottom:20}}>
-      <div style={{fontSize:".68rem",fontWeight:700,color:GD,marginBottom:10,letterSpacing:".1em"}}>THESIS STARTERS FOR "{selA.demand}"</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {templates.map((t,i)=>(
-          <button key={i} onClick={()=>setThesis(p=>({...p,[selA.id]:t}))} style={{padding:"14px 18px",borderRadius:14,border:thesis[selA.id]===t?`2px solid ${GD}`:`1px solid ${BD}`,background:thesis[selA.id]===t?`${GD}08`:innr,cursor:"pointer",color:T2,fontSize:".92rem",lineHeight:1.6,textAlign:"left",fontStyle:"italic",transition:"all 250ms"}}>{t}</button>
-        ))}
-      </div>
-    </div>);})()}
-
-    {/* Custom thesis */}
-    <div>
-      <div style={{fontSize:".68rem",fontWeight:700,color:TL,marginBottom:10,letterSpacing:".1em"}}>YOUR THESIS</div>
-<textarea value={thesis[selA.id]||""} onChange={e=>setThesis(p=>({...p,[selA.id]:e.target.value}))} placeholder="State your central claim in one sentence..." style={{width:"100%",minHeight:80,padding:"18px 22px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1.05rem",lineHeight:1.8,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
-    </div>
-    {thesis[selA.id]&&<button onClick={()=>setArgStage("outline")} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:20}}>Build outline →</button>}
-  </div>}
-
-  {/* STAGE 2: OUTLINE */}
-  {argStage==="outline"&&<div style={{animation:"fadeUp .3s ease"}}>
-    {thesis[selA.id]&&<div style={{padding:"14px 18px",borderRadius:14,background:`${TL}06`,border:`1px solid ${TL}15`,marginBottom:20}}>
-      <div style={{fontSize:".68rem",fontWeight:700,color:TL,marginBottom:6}}>YOUR THESIS</div>
-      <p style={{fontSize:".92rem",color:TX,margin:0,fontStyle:"italic"}}>{thesis[selA.id]}</p>
-    </div>}
-    <p style={{fontSize:".92rem",color:T2,marginBottom:20}}>Build your argument by adding paragraph blocks. Each block has a purpose — click to add it to your structure.</p>
-    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
-      {paraTypes.map(pt=>(
-        <button key={pt.id} onClick={()=>setOutline(p=>{const cur=p[selA.id]||[];return{...p,[selA.id]:[...cur,{type:pt.id,content:""}]};})} style={{padding:"10px 16px",borderRadius:14,border:`1px solid ${pt.color}33`,background:`${pt.color}08`,cursor:"pointer",color:pt.color,fontSize:".82rem",fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-          <span>{pt.icon}</span>{pt.label}
-        </button>
-      ))}
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {(outline[selA.id]||[]).map((block,i)=>{const pt=paraTypes.find(p=>p.id===block.type)||paraTypes[0];
-        return(<div key={i} style={{padding:"18px 22px",borderRadius:16,background:innr,border:`1px solid ${BD}`,borderLeft:`4px solid ${pt.color}`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:".9rem"}}>{pt.icon}</span>
-              <span style={{fontSize:".72rem",fontWeight:700,color:pt.color,letterSpacing:".08em",fontFamily:"'Space Grotesk',sans-serif"}}>{pt.label.toUpperCase()}</span>
-              <span style={{fontSize:".75rem",color:MU}}>— {pt.desc}</span>
-            </div>
-            <button onClick={()=>setOutline(p=>{const cur=[...(p[selA.id]||[])];cur.splice(i,1);return{...p,[selA.id]:cur};})} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem"}}>✕</button>
-          </div>
-<textarea value={block.content} onChange={e=>{const v2=e.target.value;setOutline(p=>{const cur=[...(p[selA.id]||[])];cur[i]={...cur[i],content:v2};return{...p,[selA.id]:cur};});}} placeholder={`What will this ${pt.label.toLowerCase()} paragraph say?`} style={{width:"100%",minHeight:60,padding:"12px 16px",borderRadius:12,border:`1px solid ${BD}`,background:"rgba(0,0,0,.15)",color:TX,fontSize:".95rem",lineHeight:1.7,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
-        </div>);
-      })}
-    </div>
-    {(outline[selA.id]||[]).length===0&&<div style={{padding:"32px",borderRadius:16,background:innr,border:`1px dashed ${BD}`,textAlign:"center"}}><p style={{color:MU,margin:0}}>Click paragraph types above to build your outline</p></div>}
-    {(outline[selA.id]||[]).length>=2&&<button onClick={()=>setArgStage("draft")} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:20}}>Start drafting →</button>}
-  </div>}
-
-  {/* STAGE 3: DRAFT */}
-  {argStage==="draft"&&<div style={{animation:"fadeUp .3s ease"}}>
-    {/* Thesis reminder */}
-    {thesis[selA.id]&&<div style={{padding:"12px 16px",borderRadius:12,background:`${TL}06`,border:`1px solid ${TL}12`,marginBottom:16}}>
-      <span style={{fontSize:".72rem",fontWeight:700,color:TL}}>THESIS: </span><span style={{fontSize:".88rem",color:TX,fontStyle:"italic"}}>{thesis[selA.id]}</span>
-    </div>}
-    {/* Outline sidebar + draft */}
-    <div style={{display:"grid",gridTemplateColumns:"200px 1fr",gap:16}}>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        <div style={{fontSize:".68rem",fontWeight:700,color:MU,marginBottom:4,letterSpacing:".1em"}}>STRUCTURE</div>
-        {(outline[selA.id]||[]).map((block,i)=>{const pt=paraTypes.find(p=>p.id===block.type)||paraTypes[0];
-          return(<div key={i} style={{padding:"10px 12px",borderRadius:10,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${pt.color}`}}>
-            <div style={{fontSize:".72rem",fontWeight:700,color:pt.color}}>{pt.icon} {pt.label}</div>
-            {block.content&&<div style={{fontSize:".72rem",color:MU,marginTop:4,lineHeight:1.4}}>{block.content.slice(0,60)}{block.content.length>60?"...":""}</div>}
-          </div>);
-        })}
-        {(outline[selA.id]||[]).length===0&&<p style={{fontSize:".78rem",color:MU}}>No outline yet</p>}
-      </div>
-      <div>
-<textarea value={draft[selA.id]||""} onChange={e=>setDraft(d=>({...d,[selA.id]:e.target.value}))} placeholder="Write your full response here. Your outline is on the left for reference." style={{width:"100%",minHeight:320,padding:"22px 26px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem",lineHeight:1.9,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-          <span style={{fontSize:".78rem",color:MU}}>{(draft[selA.id]||"").split(/\s+/).filter(Boolean).length} words</span>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setArgStage("outline")} style={{fontSize:".78rem",color:MU,background:"none",border:`1px solid ${BD}`,padding:"6px 14px",borderRadius:10,cursor:"pointer"}}>← Edit outline</button>
-            <button onClick={()=>setArgStage("thesis")} style={{fontSize:".78rem",color:MU,background:"none",border:`1px solid ${BD}`,padding:"6px 14px",borderRadius:10,cursor:"pointer"}}>← Edit thesis</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>}
-</div>
-</div>);
-})()}
+{v==="assignment"&&selA&&<AssignmentWorkspacePanel
+  assignment={selA}
+  assignmentHeader={selAHeader}
+  readinessState={selAReadiness}
+  visibleConcepts={selAVisibleConcepts}
+  visibleReady={selAVisibleReady}
+  visibleNotReady={selAVisibleNotReady}
+  visibleSupportText={selAVisibleSupportText}
+  thesisTemplates={thesisTemplates}
+  paragraphTypes={paraTypes}
+  argumentStage={argStage}
+  setArgumentStage={setArgStage}
+  thesis={thesis}
+  setThesis={setThesis}
+  outline={outline}
+  setOutline={setOutline}
+  draft={draft}
+  setDraft={setDraft}
+  theme={{BD,CY,GD,MU,RD,T2,TL,TX,DM,CD2,innr,card,heading:hd,button:bt,masteryColor:mc2,percent:P}}
+  assignmentDueLine={assignmentDueLine}
+  assignmentReadinessLabel={assignmentReadinessLabel}
+  assignmentReadinessStateLabel={assignmentReadinessStateLabel}
+  memoryStageIcon={memoryStageIcon}
+  getMemoryStage={getMemoryStage}
+  onBack={()=>go("home")}
+  onOpenConcept={(concept)=>go("explore",{c:concept})}
+  onStartPractice={(concept)=>go("forge",{c:concept})}
+/>}
 
 {/* ═══ NEURAL FORGE ═══ */}
 {v==="forge"&&fc&&(!isDemoMode&&fc.practiceReady===false?(
@@ -1225,10 +912,10 @@ return(<div style={{maxWidth:880}}>
     <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:RD,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE UNAVAILABLE</div>
     <h2 style={{...hd(1.5),marginBottom:10}}>{fc.name}</h2>
     <p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:"0 0 18px"}}>{fc.practiceSupportLabel||"Practice unlocks after transfer or assignment evidence is captured."}</p>
-    <p style={{fontSize:".88rem",lineHeight:1.7,color:MU,margin:"0 0 24px"}}>AEONTHRA will not open practice sessions from mapper-authored prose alone. This concept needs real transfer evidence or assignment evidence before practice begins.</p>
+    <p style={{fontSize:".88rem",lineHeight:1.7,color:MU,margin:"0 0 24px"}}>AEONTHRA will not synthesize Neural Forge drills from mapper-authored prose alone. This concept needs real transfer evidence or assignment evidence before practice opens.</p>
     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
       <button onClick={()=>go("explore",{c:fc})} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>Review concept →</button>
-      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Open Skill Map</button>
+      <button onClick={()=>go("journey")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Open Atlas</button>
       <button onClick={()=>go("courseware")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Back to library</button>
     </div>
   </div>
@@ -1469,33 +1156,21 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 })())}
 
 {/* COMPARE */}
-{v==="compare"&&<div style={{maxWidth:1020,margin:"0 auto"}}>
-<h2 style={hd(1.5)}>Compare Concepts</h2>
-<p style={{color:T2,fontSize:"1rem",margin:"10px 0 32px"}}>See two concepts side by side — where they agree and clash.</p>
-<div style={{display:"flex",gap:18,marginBottom:36}}>
-  <select value={cA?.id||""} onChange={e=>setCA(visibleConceptById.get(e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept A</option>{visibleConcepts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-  <select value={cB?.id||""} onChange={e=>setCB(visibleConceptById.get(e.target.value)||null)} style={{flex:1,padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}><option value="">Concept B</option>{visibleConcepts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-</div>
-{cA&&cB&&cA.id!==cB.id&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
-  {[cA,cB].map(c=>(<div key={c.id} style={{...card,borderTop:`5px solid ${mc2(c.mastery)}`}}>
-    <div style={{...ey,color:mc2(c.mastery)}}>{c.cat}</div>
-    <h3 style={hd(1.25)}>{c.name}</h3>
-    <div style={{marginTop:26}}>
-      {[["Core",c.core],["Distinction",c.dist]].map(([lb,txt])=>(<div key={lb} style={{marginBottom:24}}><div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:8}}>{lb}</div><p style={{fontSize:"1rem",lineHeight:1.8,color:T2,margin:0}}>{txt}</p></div>))}
-      <div style={{fontSize:".78rem",fontWeight:700,letterSpacing:".14em",color:TL,marginBottom:8}}>Memory Hook</div>
-      <p style={{fontSize:".95rem",color:TL,fontStyle:"italic",margin:0}}>{c.hook}</p>
-    </div>
-  </div>))}
-</div>}
-</div>}
+{v==="compare"&&<CompareConceptsPanel
+  concepts={visibleConcepts}
+  selectedA={cA}
+  selectedB={cB}
+  onSelectA={setCA}
+  onSelectB={setCB}
+/>}
 
 {/* ORACLE */}
 {v==="oracle"&&<div style={{maxWidth:960,margin:"0 auto"}}>
 {/* Chamber header */}
 <div style={{textAlign:"center",marginBottom:32}}>
   <div style={{fontSize:"2rem",marginBottom:12}}>🏛</div>
-  <h2 style={{...hd(1.6),marginBottom:8}}>Viewpoints</h2>
-  <p style={{color:T2,fontSize:"1rem"}}>{PH.length>0?`Bring a question, thesis, or confusion. ${PH.length} source-grounded voice${PH.length!==1?"s":""} can respond.`:"Bring a question or confusion. Upload your textbook to unlock course-specific responses."}</p>
+  <h2 style={{...hd(1.6),marginBottom:8}}>The Oracle</h2>
+  <p style={{color:T2,fontSize:"1rem"}}>{PH.length>0?`Bring a question, thesis, or confusion. ${PH.length} course figure${PH.length!==1?"s":""} will respond.`:"Bring a question or confusion. Upload your textbook to unlock course-specific responses."}</p>
 </div>
 
 {/* Mode selector */}
@@ -1507,8 +1182,8 @@ return(<div style={{maxWidth:860,margin:"0 auto"}}>
 
 {/* Input */}
 <div style={{display:"flex",gap:14,marginBottom:32}}>
-<input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a voice from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}/>
-  <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#5e8ea6)`,"#0b1015")}>{oracleMode==="thesis"?"Review":"Ask"}</button>
+<input value={oq} onChange={e=>setOQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")askO();}} placeholder={oracleMode==="thesis"?"Enter your thesis to challenge...":oracleMode==="single"?"Select a figure from the grid below...":"Ask a question about the course..."} style={{flex:1,padding:"18px 24px",borderRadius:18,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:"1rem"}}/>
+  <button onClick={askO} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>{oracleMode==="thesis"?"Challenge":"Ask"}</button>
 </div>
 
 {/* Philosopher grid when no results */}
@@ -1732,114 +1407,102 @@ return(<div style={{...card,position:"sticky",top:88,padding:"28px 24px",animati
 </div>}
 
 {/* ═══ PRACTICE MODE ═══ */}
-{v==="practice"&&practiceQ.length>0&&(()=>{
-const q=practiceQ[practiceI];
-if(!q)return(<div style={{maxWidth:820,margin:"0 auto"}}><div style={{...card,textAlign:"center",padding:68}}>
-  <div style={{fontSize:"2.5rem",marginBottom:20}}>🏆</div>
-  <h3 style={{...hd(1.4),background:`linear-gradient(135deg,${CY},${TL},${GD})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Practice Complete!</h3>
-  <p style={{fontSize:"1.2rem",color:TX,margin:"16px 0 6px"}}>{practiceSc.c} correct out of {practiceSc.c+practiceSc.w}</p>
-  <p style={{fontSize:"1rem",color:MU}}>{(practiceSc.c+practiceSc.w)>0?Math.round(practiceSc.c/(practiceSc.c+practiceSc.w)*100):0}% accuracy</p>
-  <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:32}}>
-    <button onClick={()=>go("courseware")} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Back to Courseware</button>
-    <button onClick={()=>go("home")} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Overview</button>
-  </div>
-</div></div>);
+{v==="practice"&&practiceQ.length>0&&<PracticeWorkspacePanel
+  questions={practiceQ}
+  index={practiceI}
+  answer={practiceA}
+  score={practiceSc}
+  mode={practiceMode}
+  showExplanations={prefs.showExplanations}
+  theme={{BD,CY,GD,MU,RD,T2,TL,TX,DM,card,heading:hd,button:bt}}
+  onBackToCourseware={()=>go("courseware")}
+  onBackHome={()=>go("home")}
+  onAnswerTrue={()=>{
+    const q=practiceQ[practiceI];
+    if(!q||practiceMode!=="tf"||practiceA!==null||!("answer" in q))return;
+    const ok=q.answer;
+    setPracticeA(true);
+    setPracticeSc((s)=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));
+    if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}
+  }}
+  onAnswerFalse={()=>{
+    const q=practiceQ[practiceI];
+    if(!q||practiceMode!=="tf"||practiceA!==null||!("answer" in q))return;
+    const ok=!q.answer;
+    setPracticeA(false);
+    setPracticeSc((s)=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));
+    if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}
+  }}
+  onSelectOption={(optionIndex)=>{
+    const q=practiceQ[practiceI];
+    if(!q||practiceMode!=="mc"||practiceA!==null||!("correctIndex" in q))return;
+    const ok=optionIndex===q.correctIndex;
+    setPracticeA(optionIndex);
+    setPracticeSc((s)=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));
+    if(ok){bump(q.cid,.04);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}
+  }}
+  onNext={()=>{setPracticeI((p)=>p+1);setPracticeA(null);}}
+/>}
 
-return(<div style={{maxWidth:820,margin:"0 auto"}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
-    <div style={{fontSize:".88rem",fontWeight:700,color:CY,fontFamily:"'Space Grotesk',sans-serif"}}>PRACTICE · {practiceI+1}/{practiceQ.length}</div>
-    <div style={{display:"flex",gap:16,fontSize:".95rem",fontWeight:700}}><span style={{color:TL}}>✓{practiceSc.c}</span><span style={{color:RD}}>✗{practiceSc.w}</span></div>
-  </div>
-  <div style={{width:"100%",height:6,borderRadius:3,background:DM,marginBottom:28,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:`linear-gradient(90deg,${CY},${TL})`,width:`${practiceQ.length>0?(practiceI/practiceQ.length)*100:0}%`,transition:"width 400ms ease"}}/></div>
+{/* ??? READER OS ??? */}
+{v==="reader"&&<ReaderWorkspacePanel
+  mobileLayout={mobileLayout}
+  prefersReducedMotion={prefersReducedMotion}
+  readerContent={readerContent}
+  readerSection={readerSection}
+  readingPositions={readingPositions}
+  readings={READING}
+  readerUtilOpen={readerUtilOpen}
+  readerScrollRef={readerScrollRef}
+  readerPrimaryConceptId={readerPrimaryConceptId}
+  visibleConceptById={visibleConceptById}
+  highlights={highlights}
+  hlPopover={hlPopover}
+  margins={MARGINS}
+  marginTypes={MARGIN_TYPES}
+  marginDismissed={marginDismissed}
+  theme={{bd:BD,cy:CY,tl:TL,mu:MU,tx:TX,t2:T2,dm:DM,inner:innr,surface:CD2}}
+  buttonStyle={bt}
+  headingStyle={hd}
+  getReadingProgress={getReadingProgress}
+  getSectionMark={getSectionMark}
+  isSectionRead={isSectionRead}
+  sectionMarkColor={sectionMarkColor}
+  sectionMarkIcon={sectionMarkIcon}
+  memoryStageIcon={memoryStageIcon}
+  getMemoryStage={getMemoryStage}
+  highlightTagColor={hlTagColor}
+  highlightTagIcon={hlTagIcon}
+  onOpenReader={openReader}
+  onCloseReader={()=>{if(readerContent){setReadingPositions((p)=>({...p,[readerContent.id]:readerSection}));}setReaderContent(null);}}
+  onSelectSection={(readingId,sectionIndex)=>{setReaderSection(sectionIndex);setReadingPositions((p)=>({...p,[readingId]:sectionIndex}));markSectionRead(readingId,sectionIndex);}}
+  onMarkSection={markSection}
+  onDismissMargin={(key)=>setMarginDismissed((p)=>new Set([...p,key]))}
+  onSaveSection={(section)=>setReaderSaved((p)=>[...p,section])}
+  onFlashSaved={()=>flash("Saved",true)}
+  onPracticeConcept={(concept)=>go("forge",{c:concept})}
+  onOpenViewpoints={()=>go("oracle")}
+  onToggleReaderTools={()=>setReaderUtilOpen(!readerUtilOpen)}
+  onAddHighlight={addHighlight}
+  onClearHighlightPopover={()=>{setHlPopover(null);window.getSelection()?.removeAllRanges();}}
+/>}
 
-  {practiceMode==="tf"&&<div style={{...card,borderTop:`3px solid ${TL}`}}>
-    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 32px"}}>{q.statement}</p>
-    {practiceA===null?<div style={{display:"flex",gap:18}}>
-      <button onClick={()=>{const ok=q.answer;setPracticeA(true);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${TL}12`,color:TL,border:`2px solid ${TL}44`}}>TRUE</button>
-      <button onClick={()=>{const ok=!q.answer;setPracticeA(false);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.02);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{flex:1,padding:"22px",borderRadius:18,fontWeight:700,fontSize:"1.1rem",cursor:"pointer",background:`${RD}12`,color:RD,border:`2px solid ${RD}44`}}>FALSE</button>
-    </div>:<>
-      <div style={{padding:"18px 22px",borderRadius:16,background:practiceA===q.answer?`${TL}12`:`${RD}12`,border:`2px solid ${practiceA===q.answer?TL:RD}`,marginBottom:18,fontSize:"1.02rem",animation:"fadeUp .3s ease"}}><strong>{practiceA===q.answer?"✓ Correct":"✗ Incorrect"}</strong></div>
-      {prefs.showExplanations&&<p style={{fontSize:"1rem",lineHeight:1.8,color:T2}}>{q.explanation}</p>}
-      <button onClick={()=>{setPracticeI(p=>p+1);setPracticeA(null);}} style={{...bt(`linear-gradient(135deg,${TL},#00b088)`,"#000"),marginTop:22}}>Next →</button>
-    </>}
-  </div>}
-
-  {practiceMode==="mc"&&<div style={{...card,borderTop:`3px solid ${GD}`}}>
-    <p style={{fontSize:"1.15rem",lineHeight:1.9,color:T2,margin:"0 0 28px"}}>{q.question}</p>
-    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {q.options.map((o,i)=>(<button key={i} onClick={()=>{if(practiceA!==null)return;const ok=i===q.correctIndex;setPracticeA(i);setPracticeSc(s=>({c:s.c+(ok?1:0),w:s.w+(ok?0:1)}));if(ok){bump(q.cid,.04);recordAnswerFlow(true,q.cid,q);flash("✓",true);}else{recordAnswerFlow(false,q.cid,q);flash("✗",false);}}} style={{textAlign:"left",padding:"20px 24px",borderRadius:16,border:`2px solid ${practiceA!==null&&i===q.correctIndex?TL:practiceA===i&&i!==q.correctIndex?RD:BD}`,background:practiceA!==null&&i===q.correctIndex?`${TL}0a`:practiceA===i&&i!==q.correctIndex?`${RD}0a`:innr,cursor:practiceA!==null?"default":"pointer",color:TX,fontSize:"1rem",width:"100%",opacity:practiceA!==null&&practiceA!==i&&i!==q.correctIndex?.2:1,transition:"all 300ms"}}>{o}</button>))}
-    </div>
-    {practiceA!==null&&<><p style={{fontSize:"1rem",lineHeight:1.8,color:T2,marginTop:22,animation:"fadeUp .3s ease"}}>{q.explanation}</p>
-      <button onClick={()=>{setPracticeI(p=>p+1);setPracticeA(null);}} style={{...bt(`linear-gradient(135deg,${GD},#cc8800)`,"#000"),marginTop:22}}>Next →</button></>}
-  </div>}
-</div>);
-})()}
-
-{/* ═══ READER OS ═══ */}
-{v==="reader"&&<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510",flexDirection:mobileLayout?"column":"row"}}>
-  <div style={{width:readerContent?(mobileLayout?"100%":280):0,flexShrink:0,borderRight:`1px solid ${BD}`,padding:readerContent?(mobileLayout?"20px 16px":"28px 20px"):"0",overflowY:"auto",background:"rgba(6,6,16,.6)",transition:"width 300ms ease"}}>
-    {readerContent&&<>
-      <button onClick={()=>{setReadingPositions(p=>({...p,[readerContent.id]:readerSection}));setReaderContent(null);}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Library</button>
-      <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📖 CHAPTER</div>
-      <h3 style={{fontSize:"1rem",fontWeight:700,color:TX,lineHeight:1.4,marginBottom:4}}>{readerContent.title}</h3>
-      <p style={{fontSize:".78rem",color:MU,marginBottom:4}}>{readerContent.subtitle}</p>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}><div style={{flex:1,height:4,borderRadius:2,background:DM,overflow:"hidden"}}><div style={{height:"100%",borderRadius:2,background:`linear-gradient(90deg,${CY},${TL})`,width:`${getReadingProgress(readerContent.id,readerContent.sections.length)}%`,transition:"width 500ms ease"}}/></div><span style={{fontSize:".72rem",color:CY,fontWeight:700}}>{getReadingProgress(readerContent.id,readerContent.sections.length)}%</span></div>
-      <div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".12em",color:MU,marginBottom:10}}>SECTIONS</div>
-      {readerContent.sections.map((s,i)=>{const mark=getSectionMark(readerContent.id,i);const read=isSectionRead(readerContent.id,i);const active=readerSection===i;
-return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setReadingPositions(p=>({...p,[readerContent.id]:i}));markSectionRead(readerContent.id,i);const el=document.getElementById("rs-"+i);if(el)el.scrollIntoView({behavior:prefersReducedMotion?"auto":"smooth",block:"start"});}} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"10px 14px",borderRadius:12,marginBottom:3,background:active?`${CY}0c`:"transparent",border:active?`1px solid ${CY}1a`:"1px solid transparent",cursor:"pointer",transition:"all 250ms"}}>
-          <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:mark?sectionMarkColor(mark):read?`${TL}66`:active?CY:`${MU}44`,transition:"all 300ms"}}/>
-          <span style={{flex:1,fontSize:".84rem",fontWeight:active?600:400,color:active?CY:read?TX:T2,lineHeight:1.35}}>{s.heading}</span>
-          {mark&&<span style={{fontSize:".7rem",color:sectionMarkColor(mark),fontWeight:700}}>{sectionMarkIcon(mark)}</span>}
-        </button>);
-      })}
-      {readerContent.concepts&&readerContent.concepts.length>0&&<><div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".12em",color:TL,marginTop:24,marginBottom:10}}>CONCEPTS</div>
-        {readerContent.concepts.map(id=>{const c=visibleConceptById.get(id);if(!c)return null;return(<button key={id} onClick={()=>go("forge",{c})} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:innr,border:`1px solid ${BD}`,cursor:"pointer",width:"100%",color:TX,fontSize:".82rem",marginBottom:4}}><span style={{fontSize:".7rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1}}>{c.name}</span><span style={{color:mc2(c.mastery),fontSize:".72rem",fontWeight:600}}>{c.mastery>0?P(c.mastery):""}</span></button>);})}</>}
-    </>}
-  </div>
-  {hlPopover&&<div style={{position:"fixed",left:Math.max(60,Math.min(hlPopover.x-140,window.innerWidth-340)),top:Math.max(10,hlPopover.y-52),zIndex:200,animation:"fadeUp .15s ease"}}><div style={{display:"flex",gap:4,padding:"8px 10px",borderRadius:14,background:"rgba(8,8,20,.95)",border:`1px solid ${BD}`,boxShadow:"0 8px 32px rgba(0,0,0,.6)"}}>
-    {[["key idea","★"],["evidence","📌"],["quote","❝"],["thesis fuel","✦"],["confusing","?"],["revisit","↻"]].map(([tag,icon])=>(<button key={tag} onClick={()=>addHighlight(tag)} style={{padding:"6px 10px",borderRadius:10,border:`1px solid ${BD}`,background:"transparent",color:hlTagColor(tag),fontSize:".7rem",fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>{icon} {tag}</button>))}
-    <button onClick={()=>{setHlPopover(null);window.getSelection()?.removeAllRanges();}} style={{padding:"4px 8px",borderRadius:8,border:"none",background:"transparent",color:MU,cursor:"pointer"}}>✕</button>
-  </div></div>}
-  <div ref={readerScrollRef} style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center"}}>
-    {readerContent?<div style={{maxWidth:680,padding:mobileLayout?"32px 18px 88px":"56px 48px 120px",animation:"fadeUp .4s ease"}}>
-      {readingPositions[readerContent.id]>0&&readerSection===readingPositions[readerContent.id]&&<div style={{padding:"14px 20px",borderRadius:14,background:`${CY}06`,border:`1px solid ${CY}15`,marginBottom:32}}><span style={{fontSize:".85rem",color:CY}}>↻ Resumed from "{readerContent.sections[readerSection]?.heading}"</span></div>}
-      <div style={{marginBottom:48,paddingBottom:32,borderBottom:`1px solid ${BD}`}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".2em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.subtitle}</div><h1 style={{fontSize:"2.2rem",fontWeight:700,color:TX,lineHeight:1.35,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>{readerContent.title}</h1></div>
-      {readerContent.sections.map((s,i)=>{const mark=getSectionMark(readerContent.id,i);const active=readerSection===i;return(<div key={i} id={"rs-"+i} data-section-idx={i} style={{marginBottom:48,scrollMarginTop:80,padding:"24px 28px",marginLeft:-28,marginRight:-28,borderRadius:18,background:mark==="understood"?"rgba(6,214,160,.03)":mark==="confusing"?"rgba(255,68,102,.02)":"transparent",border:mark==="understood"?"1px solid rgba(6,214,160,.08)":mark==="confusing"?"1px solid rgba(255,68,102,.06)":"1px solid transparent",transition:"all 500ms ease"}}>
-        {readerPrimaryConceptId&&active&&(()=>{const c=visibleConceptById.get(readerPrimaryConceptId);if(!c)return null;return(<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:"10px 14px",borderRadius:12,background:`${CY}04`,border:`1px solid ${CY}0a`}}><span style={{fontSize:".72rem"}}>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{fontSize:".78rem",color:CY,fontWeight:600}}>{c.name}</span></div>);})()}
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}><div style={{width:4,height:32,borderRadius:2,background:active?CY:mark?sectionMarkColor(mark):"transparent",transition:"all 400ms ease",flexShrink:0}}/><h2 style={{fontSize:"1.4rem",fontWeight:700,color:active?TX:T2,lineHeight:1.4,fontFamily:"'Space Grotesk',sans-serif",margin:0,flex:1}}>{s.heading}</h2>{mark&&<span style={{fontSize:".72rem",fontWeight:700,color:sectionMarkColor(mark),padding:"4px 10px",borderRadius:8,background:sectionMarkColor(mark)+"12"}}>{sectionMarkIcon(mark)} {mark}</span>}</div>
-        {s.body.split("\n\n").map((para,j)=>(<p key={j} style={{fontSize:"1.08rem",lineHeight:2.05,color:T2,marginBottom:20,letterSpacing:".01em"}}>{para}</p>))}
-        {(()=>{const key=readerContent.id+":"+i;const notes=MARGINS[key];if(!notes||!notes.length)return null;const visible=active?notes:notes.filter(n=>n.type==="confusion");if(!visible.length)return null;return(<div style={{marginTop:8,marginBottom:16,display:"flex",flexDirection:"column",gap:8,animation:active?"fadeUp .4s ease":"none"}}>{visible.map((note,ni)=>{const dismissed=marginDismissed.has(key+":"+ni);if(dismissed)return null;const mt=MARGIN_TYPES[note.type]||{icon:"•",label:"Note"};return(<div key={ni} style={{display:"flex",gap:12,padding:"12px 16px",borderRadius:14,background:note.color+"06",borderLeft:`3px solid ${note.color}44`}}><span style={{fontSize:".82rem",flexShrink:0}}>{mt.icon}</span><div style={{flex:1}}><div style={{fontSize:".64rem",fontWeight:700,letterSpacing:".1em",color:note.color,marginBottom:4}}>{mt.label.toUpperCase()}</div><p style={{fontSize:".85rem",lineHeight:1.6,color:T2,margin:0}}>{note.text}</p></div><button onClick={()=>setMarginDismissed(p=>new Set([...p,key+":"+ni]))} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".72rem",opacity:.5}}>✕</button></div>);})}</div>);})()}
-        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:12,paddingTop:12,borderTop:"1px solid rgba(50,50,100,.25)",flexWrap:"wrap"}}>{["understood","important","revisit","confusing"].map(m=>(<button key={m} onClick={()=>markSection(readerContent.id,i,m)} style={{padding:"5px 12px",borderRadius:10,border:`1px solid ${mark===m?sectionMarkColor(m)+"44":BD}`,background:mark===m?sectionMarkColor(m)+"12":"transparent",color:mark===m?sectionMarkColor(m):MU,fontSize:".72rem",fontWeight:600,cursor:"pointer"}}>{sectionMarkIcon(m)} {m}</button>))}<div style={{flex:1}}/><button onClick={()=>{setReaderSaved(p=>[...p,{heading:s.heading,body:s.body.slice(0,120),from:readerContent.title}]);flash("Saved",true);}} style={{padding:"5px 12px",borderRadius:10,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".72rem",cursor:"pointer"}}>💾</button></div>
-      </div>);})}
-      <div style={{textAlign:"center",padding:"40px 0",borderTop:`1px solid ${BD}`}}><p style={{color:TX,fontSize:"1.05rem",fontWeight:600,marginBottom:16}}>Chapter complete</p><div style={{display:"flex",gap:12,justifyContent:"center"}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=visibleConceptById.get(readerPrimaryConceptId);if(c)go("forge",{c});}} style={bt(`linear-gradient(135deg,${CY},#0066ff)`,"#000")}>⚡ Practice</button>}<button onClick={()=>setReaderContent(null)} style={{...bt("transparent",MU),border:`1px solid ${BD}`}}>Library</button></div></div>
-    </div>:
-    <div style={{maxWidth:720,padding:mobileLayout?"32px 18px":"56px 48px",width:"100%"}}><div style={{textAlign:"center",marginBottom:40}}><div style={{fontSize:"2rem",marginBottom:12}}>📖</div><h2 style={{...hd(1.5),marginBottom:8}}>Reader</h2><p style={{color:T2,fontSize:"1rem"}}>Focused, distraction-free reading.</p></div>
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>{READING.map(r=>{const prog=getReadingProgress(r.id,r.sections.length);const lastPos=readingPositions[r.id];return(<button key={r.id} onClick={()=>openReader(r.id)} style={{display:"flex",alignItems:"center",gap:16,padding:"22px 26px",borderRadius:18,background:CD2,border:`1px solid ${BD}`,cursor:"pointer",color:TX,textAlign:"left",width:"100%"}}><div style={{position:"relative",width:44,height:44,flexShrink:0}}><svg viewBox="0 0 44 44" style={{width:44,height:44}}><circle cx="22" cy="22" r="19" fill="none" stroke={DM} strokeWidth="3"/><circle cx="22" cy="22" r="19" fill="none" stroke={prog>=100?TL:prog>0?CY:DM} strokeWidth="3" strokeDasharray={`${prog/100*119} 119`} strokeLinecap="round" transform="rotate(-90 22 22)"/></svg><div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:".7rem"}}>{prog>=100?"✓":"📖"}</div></div><div style={{flex:1}}><div style={{fontSize:"1.02rem",fontWeight:600,marginBottom:2}}>{r.title}</div><div style={{fontSize:".82rem",color:MU}}>{r.subtitle}</div>{lastPos>0&&prog<100&&<div style={{fontSize:".75rem",color:CY,marginTop:4}}>↻ Resume from "{r.sections[lastPos]?.heading}"</div>}</div><span style={{color:CY}}>→</span></button>);})}</div>
-      {highlights.length>0&&<div style={{marginTop:36}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12}}>HIGHLIGHTS ({highlights.length})</div>{highlights.slice(0,8).map(hl=>(<div key={hl.id} style={{padding:"12px 16px",borderRadius:12,background:innr,border:`1px solid ${BD}`,borderLeft:`3px solid ${hlTagColor(hl.tag)}`,marginBottom:6}}><div style={{fontSize:".7rem",color:hlTagColor(hl.tag),fontWeight:700,marginBottom:4}}>{hlTagIcon(hl.tag)} {hl.tag}</div><p style={{fontSize:".82rem",color:T2,margin:0}}>{hl.text.length>80?hl.text.slice(0,80)+"...":hl.text}</p></div>))}</div>}
-    </div>}
-  </div>
-  {readerContent&&<div style={{width:mobileLayout?"100%":readerUtilOpen?240:48,flexShrink:0,borderLeft:`1px solid ${BD}`,background:"rgba(6,6,16,.6)",transition:"width 300ms ease",overflow:"hidden"}}><button onClick={()=>setReaderUtilOpen(!readerUtilOpen)} style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",color:MU,cursor:"pointer",fontSize:"1.1rem"}}>{readerUtilOpen?"▸":"◂"}</button>{readerUtilOpen&&<div style={{padding:"0 16px 28px"}}><div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".12em",color:MU,marginBottom:16}}>TOOLS</div><div style={{fontSize:"1.4rem",fontWeight:800,color:CY,marginBottom:12}}>{getReadingProgress(readerContent.id,readerContent.sections.length)}%</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{readerPrimaryConceptId&&<button onClick={()=>{const c=cc.find(x=>x.id===readerPrimaryConceptId);if(c)go("forge",{c});}} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${CY}33`,background:`${CY}08`,color:CY,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>⚡ Practice</button>}<button onClick={()=>go("oracle")} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${GD}33`,background:`${GD}08`,color:GD,fontSize:".82rem",fontWeight:600,cursor:"pointer",textAlign:"left"}}>🏛 Oracle</button></div></div>}</div>}
-</div>}
-
-{/* ═══ TRANSCRIPT MODE ═══ */}
-{v==="transcript"&&transcript&&<div style={{marginLeft:mobileLayout?0:-44,marginRight:mobileLayout?0:-44,marginTop:mobileLayout?-24:-48,minHeight:"calc(100dvh - 68px)",display:"flex",background:"#050510",flexDirection:mobileLayout?"column":"row"}}>
-  <div style={{width:mobileLayout?"100%":260,flexShrink:0,borderRight:`1px solid ${BD}`,padding:mobileLayout?"20px 16px":"28px 20px",overflowY:"auto",background:"rgba(6,6,16,.6)"}}>
-    <button onClick={()=>{setTranscript(null);go("reader");}} style={{background:"none",border:"none",color:MU,cursor:"pointer",fontSize:".82rem",marginBottom:20}}>← Reader</button>
-    <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12}}>🎧 TRANSCRIPT</div>
-    <h3 style={{fontSize:"1rem",fontWeight:700,color:TX,lineHeight:1.4,marginBottom:4}}>{transcript.title}</h3>
-    <p style={{fontSize:".78rem",color:MU,marginBottom:16}}>{transcript.speaker} · {formatTime(transcript.duration)}</p>
-    <div style={{padding:"14px 16px",borderRadius:14,background:innr,border:`1px solid ${BD}`,marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><button onClick={()=>setTxPlaying(!txPlaying)} style={{width:36,height:36,borderRadius:"50%",border:"2px solid #a78bfa",background:txPlaying?"#a78bfa":"transparent",color:txPlaying?"#000":"#a78bfa",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>{txPlaying?"⏸":"▶"}</button><div style={{flex:1}}><div style={{fontSize:".88rem",fontWeight:700,color:TX}}>{formatTime(txTime)}</div><div role="slider" tabIndex={0} aria-label="Transcript position" aria-valuemin={0} aria-valuemax={transcript.duration} aria-valuenow={txTime} style={{height:4,borderRadius:2,background:DM,marginTop:4,overflow:"hidden",cursor:"pointer"}} onClick={(e)=>{const rect=e.currentTarget.getBoundingClientRect();setTxTime(Math.floor((e.clientX-rect.left)/rect.width*transcript.duration));}} onKeyDown={e=>{if(e.key==="ArrowLeft"){e.preventDefault();setTxTime(p=>Math.max(0,p-5));}if(e.key==="ArrowRight"){e.preventDefault();setTxTime(p=>Math.min(transcript.duration,p+5));}}}><div style={{height:"100%",borderRadius:2,background:"#a78bfa",width:`${(txTime/transcript.duration)*100}%`}}/></div></div></div>
-      <div style={{display:"flex",gap:6}}><button onClick={()=>setTxTime(p=>Math.max(0,p-15))} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".7rem",cursor:"pointer"}}>-15s</button><button onClick={()=>setTxTime(p=>Math.min(transcript.duration,p+15))} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${BD}`,background:"transparent",color:MU,fontSize:".7rem",cursor:"pointer"}}>+15s</button><div style={{flex:1}}/><button onClick={()=>setTxAutoScroll(!txAutoScroll)} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${txAutoScroll?"#a78bfa33":BD}`,background:txAutoScroll?"rgba(167,139,250,.08)":"transparent",color:txAutoScroll?"#a78bfa":MU,fontSize:".7rem",cursor:"pointer"}}>{txAutoScroll?"Auto ✓":"Auto"}</button></div>
-    </div>
-    {transcript.segments.map(seg=>{const segActive=txTime>=seg.ts&&(!transcript.segments.find(s2=>s2.ts>seg.ts)||txTime<transcript.segments.find(s2=>s2.ts>seg.ts).ts);return(<button key={seg.id} onClick={()=>setTxTime(seg.ts)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",padding:"8px 12px",borderRadius:10,marginBottom:3,background:segActive?"rgba(167,139,250,.1)":"transparent",border:segActive?"1px solid rgba(167,139,250,.18)":"1px solid transparent",cursor:"pointer"}}><div style={{width:6,height:6,borderRadius:"50%",background:segActive?"#a78bfa":`${MU}44`,flexShrink:0}}/><div><div style={{fontSize:".8rem",fontWeight:segActive?600:400,color:segActive?"#a78bfa":TX}}>{seg.label}</div><div style={{fontSize:".65rem",color:MU}}>{formatTime(seg.ts)}</div></div></button>);})}
-  </div>
-  <div style={{flex:1,overflowY:"auto",display:"flex",justifyContent:"center"}}><div style={{maxWidth:700,padding:mobileLayout?"32px 18px 88px":"56px 48px 120px",width:"100%"}}>
-    <div style={{marginBottom:48,paddingBottom:32,borderBottom:`1px solid ${BD}`}}><div style={{fontSize:".72rem",fontWeight:700,letterSpacing:".2em",color:"#a78bfa",marginBottom:12}}>🎧 LECTURE TRANSCRIPT</div><h1 style={{fontSize:"2rem",fontWeight:700,color:TX,lineHeight:1.35,marginBottom:8,fontFamily:"'Space Grotesk',sans-serif"}}>{transcript.title}</h1><span style={{fontSize:".88rem",color:T2}}>{transcript.speaker} · {formatTime(transcript.duration)}</span></div>
-    {transcript.segments.map(seg=>{const segActive=txTime>=seg.ts&&(!transcript.segments.find(s2=>s2.ts>seg.ts)||txTime<transcript.segments.find(s2=>s2.ts>seg.ts).ts);return(<div key={seg.id} style={{marginBottom:32}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,paddingBottom:8,borderBottom:`1px solid ${segActive?"rgba(167,139,250,.15)":BD}`}}><div style={{width:4,height:20,borderRadius:2,background:segActive?"#a78bfa":"transparent"}}/><h3 style={{fontSize:"1.1rem",fontWeight:700,color:segActive?TX:T2,fontFamily:"'Space Grotesk',sans-serif",margin:0,flex:1}}>{seg.label}</h3><span style={{fontSize:".75rem",color:MU}}>{formatTime(seg.ts)}</span></div>
-      {seg.lines.map((line,li)=>{const lineActive=txTime>=line.t&&(li<seg.lines.length-1?txTime<seg.lines[li+1].t:true)&&segActive;return(<button key={li} onClick={()=>{setTxTime(line.t);if(!txPlaying)setTxPlaying(true);}} style={{display:"flex",gap:12,padding:"10px 14px",marginBottom:2,borderRadius:12,width:"100%",textAlign:"left",cursor:"pointer",border:"none",background:lineActive?"rgba(167,139,250,.08)":"transparent",transition:"all 300ms"}}><span style={{fontSize:".7rem",color:lineActive?"#a78bfa":MU,fontFamily:"'Space Grotesk',sans-serif",fontWeight:600,minWidth:36,paddingTop:3,flexShrink:0}}>{formatTime(line.t)}</span><span style={{fontSize:"1.02rem",lineHeight:1.8,color:lineActive?TX:T2}}>{line.text}</span></button>);})}</div>);})}
-  </div></div>
-</div>}
+{/* ??? TRANSCRIPT MODE ??? */}
+{v==="transcript"&&transcript&&<TranscriptWorkspacePanel
+  mobileLayout={mobileLayout}
+  transcript={transcript}
+  txPlaying={txPlaying}
+  txTime={txTime}
+  txAutoScroll={txAutoScroll}
+  theme={{bd:BD,mu:MU,tx:TX,t2:T2,dm:DM,inner:innr}}
+  formatTime={formatTime}
+  onBackToReader={()=>{setTranscript(null);go("reader");}}
+  onTogglePlaying={()=>setTxPlaying(!txPlaying)}
+  onSetTime={setTxTime}
+  onSeekBy={(delta)=>setTxTime((current)=>Math.max(0,Math.min(transcript.duration,current+delta)))}
+  onToggleAutoScroll={()=>setTxAutoScroll(!txAutoScroll)}
+  onEnsurePlaying={()=>{if(!txPlaying)setTxPlaying(true);}}
+/>}
 
 {/* ═══ DISTINCTION GYM ═══ */}
 {v==="gym"&&<div style={{maxWidth:920,margin:"0 auto"}}>
@@ -1861,6 +1524,15 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
 </div>);})()}
 </div>}
 
+{/* Inspect */}
+{v==="inspect"&&<CanonicalArtifactInspector
+  diagnostics={DIAGNOSTICS}
+  onDownloadCanonicalArtifact={onDownloadCanonicalArtifact}
+  onDownloadDiagnostics={onDownloadDiagnostics}
+  onDownloadOfflineSite={onDownloadOfflineSite}
+  onSaveReplayBundle={onSaveReplayBundle}
+/>}
+
 {/* Forge empty state — shown when no concepts are available for this course */}
 {v==="forge"&&!fc&&<div style={{maxWidth:620,margin:"0 auto",textAlign:"center",padding:"80px 24px"}}>
   <div style={{fontSize:"3.5rem",marginBottom:24}}>🧠</div>
@@ -1873,41 +1545,29 @@ return(<button key={i} id={"rail-btn-"+i} onClick={()=>{setReaderSection(i);setR
 </div>}
 
 {/* ═══ SETTINGS ═══ */}
-{v==="settings"&&<div style={{maxWidth:560,margin:"0 auto"}}><div style={{...card}}>
-<div style={ey}>SETTINGS</div>
-<div style={{marginBottom:20}}>
-<div style={{fontSize:".82rem",color:T2,marginBottom:8}}>Questions per set</div>
-<div style={{display:"flex",gap:8}}>{[5,10,25,50].map(n=><button key={n} onClick={()=>setQN(n)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${qn===n?CY:BD}`,background:qn===n?`${CY}15`:"transparent",color:qn===n?CY:MU,fontWeight:700,cursor:"pointer"}}>{n}</button>)}</div></div>
-<div style={{marginBottom:20}}>
-<div style={{fontSize:".82rem",color:T2,marginBottom:8}}>Difficulty</div>
-<div style={{display:"flex",gap:8}}>{["mixed","hard","review"].map(d=><button key={d} onClick={()=>setDiff(d)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${diff===d?CY:BD}`,background:diff===d?`${CY}15`:"transparent",color:diff===d?CY:MU,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{d}</button>)}</div></div>
-<div style={{marginBottom:20}}>
-<div style={{fontSize:".82rem",color:T2,marginBottom:8}}>Learning mode</div>
-<div style={{display:"flex",gap:8}}>{["learn","test","adaptive"].map(m=><button key={m} onClick={()=>setMode(m)} style={{padding:"10px 20px",borderRadius:12,border:`1px solid ${mode===m?CY:BD}`,background:mode===m?`${CY}15`:"transparent",color:mode===m?CY:MU,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>)}</div></div>
-<div style={{marginBottom:20}}>
-<div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:"#a78bfa",marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>📝 SESSION NOTES</div>
-<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Jot anything — key insights, reminders, questions for office hours…" rows={5} style={{width:"100%",padding:"16px 20px",borderRadius:16,border:`1px solid ${BD}`,background:innr,color:TX,fontSize:".92rem",lineHeight:1.7,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/>
-<div style={{fontSize:".72rem",color:MU,marginTop:6,textAlign:"right"}}>{notes.length} chars · saved automatically</div>
-</div>
-<div style={{padding:"20px 24px",borderRadius:16,background:`${CY}06`,border:`1px solid ${CY}18`}}>
-<div style={{fontSize:".75rem",fontWeight:700,letterSpacing:".14em",color:CY,marginBottom:12,fontFamily:"'Space Grotesk',sans-serif"}}>OFFLINE EXPORT</div>
-<p style={{color:T2,fontSize:".92rem",lineHeight:1.7,marginBottom:16}}>Download this exact workspace for offline replay, or save the replay bundle for later restore without regenerating.</p>
-<div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-<button onClick={onDownloadOfflineSite} style={bt(`linear-gradient(135deg,${CY},#0080ff)`,"#000")}>Download Offline Site</button>
-<button onClick={onSaveReplayBundle} style={{...bt("transparent",TL),border:`1px solid ${TL}33`}}>Save Replay Bundle</button>
-</div>
-</div>
-</div></div>}
+{v==="settings"&&<ShellSettingsPanel
+  questionCount={qn}
+  difficulty={diff}
+  mode={mode}
+  notes={notes}
+  onQuestionCountChange={setQN}
+  onDifficultyChange={setDiff}
+  onModeChange={setMode}
+  onNotesChange={setNotes}
+  onOpenInspect={()=>go("inspect")}
+  onDownloadOfflineSite={onDownloadOfflineSite}
+  onSaveReplayBundle={onSaveReplayBundle}
+/>}
 
-{v==="stats"&&<div style={{maxWidth:720,margin:"0 auto"}}>
-<div style={{...card}}><div style={ey}>PERFORMANCE</div>
-<div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:CY}}>{visibleMastered}/{visibleConceptCount}</div><div style={{color:MU,fontSize:".82rem"}}>Mastered</div></div>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:TL}}>{P(avg)}</div><div style={{color:MU,fontSize:".82rem"}}>Average</div></div>
-<div><div style={{fontSize:"2rem",fontWeight:800,color:GD}}>{totalAnswered>0?`${totalCorrect}/${totalAnswered}`:"—"}</div><div style={{color:MU,fontSize:".82rem"}}>Correct</div></div>
-</div></div>
-{visibleConcepts.map(c=><div key={c.id} style={{...card,padding:"16px 20px",marginTop:8,display:"flex",alignItems:"center",gap:12}}><span>{memoryStageIcon(getMemoryStage(c.id))}</span><span style={{flex:1,fontWeight:600}}>{c.name}</span><span style={{color:mc2(c.mastery),fontWeight:700}}>{P(c.mastery)}</span></div>)}
-</div>}
+{v==="stats"&&<ShellStatsPanel
+  concepts={visibleConcepts}
+  masteredCount={visibleMastered}
+  totalConceptCount={visibleConceptCount}
+  averageMastery={avg}
+  totalAnswered={totalAnswered}
+  totalCorrect={totalCorrect}
+  memoryStageIcon={(conceptId)=>memoryStageIcon(getMemoryStage(conceptId))}
+/>}
 
 </main>
 </>}

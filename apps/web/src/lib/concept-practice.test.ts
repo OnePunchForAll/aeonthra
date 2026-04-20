@@ -7,6 +7,7 @@ function makeConcept(partial: Partial<ShellConcept>): ShellConcept {
     id: partial.id ?? "concept",
     name: partial.name ?? "Concept",
     cat: partial.cat ?? "Concept",
+    mastery: partial.mastery ?? 0.5,
     core: partial.core ?? "Core concept definition with enough detail to render cleanly.",
     depth: partial.depth ?? "Depth explanation with enough detail to render cleanly.",
     dist: partial.dist ?? "Distinctive contrast sentence that marks where this concept differs.",

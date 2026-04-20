@@ -13,6 +13,7 @@ import {
 import type {
   CaptureForensics,
   CaptureHistorySummary,
+  CaptureLaneSummary,
   CourseContext,
   ExtensionSettings,
   RuntimeState,
@@ -34,6 +35,26 @@ const SESSION_STATES_KEY = "aeonthra:sessions";
 const QUOTA_BYTES = 100 * 1024 * 1024;
 const PENDING_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_PENDING_HANDOFFS = 5;
+
+const PROVENANCE_LABELS: Record<string, string> = {
+  FIRST_PARTY_API: "First-party API",
+  HTML_FETCH: "HTML fetch",
+  DOM_CAPTURE: "DOM capture",
+  DOCUMENT_INGEST: "Document ingest",
+  USER_GENERATED: "User generated",
+  DEMO_SEED: "Demo seed",
+  UNSPECIFIED: "Unspecified"
+};
+
+const STRATEGY_LABELS: Record<string, string> = {
+  "api-only": "API only",
+  "html-fetch": "HTML fetch",
+  "session-dom": "Session DOM",
+  "manual-import": "Manual import",
+  "demo-seed": "Demo seed",
+  "document-import": "Document import",
+  UNSPECIFIED: "Unspecified"
+};
 
 function storageGet(area: chrome.storage.StorageArea, keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -129,6 +150,54 @@ export function sessionKeyForCourse(course: Pick<CourseContext, "origin" | "cour
 
 function byteSize(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
+}
+
+function summarizeBundleLanes(bundle: CaptureBundle): {
+  provenanceLanes: CaptureLaneSummary[];
+  captureStrategyLanes: CaptureLaneSummary[];
+} {
+  const summarize = (
+    entries: Array<{ key?: string; isResource: boolean }>,
+    labels: Record<string, string>
+  ): CaptureLaneSummary[] => {
+    const counts = new Map<string, CaptureLaneSummary>();
+    for (const entry of entries) {
+      const id = entry.key ?? "UNSPECIFIED";
+      const current = counts.get(id) ?? {
+        id,
+        label: labels[id] ?? id,
+        itemCount: 0,
+        resourceCount: 0
+      };
+      if (entry.isResource) {
+        current.resourceCount += 1;
+      } else {
+        current.itemCount += 1;
+      }
+      counts.set(id, current);
+    }
+    return [...counts.values()].sort((left, right) =>
+      (right.itemCount + right.resourceCount) - (left.itemCount + left.resourceCount)
+      || left.label.localeCompare(right.label)
+    );
+  };
+
+  return {
+    provenanceLanes: summarize(
+      [
+        ...bundle.items.map((item) => ({ key: item.provenanceKind, isResource: false })),
+        ...bundle.resources.map((resource) => ({ key: resource.provenanceKind, isResource: true }))
+      ],
+      PROVENANCE_LABELS
+    ),
+    captureStrategyLanes: summarize(
+      [
+        ...bundle.items.map((item) => ({ key: item.captureStrategy, isResource: false })),
+        ...bundle.resources.map((resource) => ({ key: resource.captureStrategy, isResource: true }))
+      ],
+      STRATEGY_LABELS
+    )
+  };
 }
 
 function isFreshPendingHandoff(handoff: BridgeHandoffEnvelope): boolean {
@@ -496,7 +565,36 @@ export async function resetRuntimeState(course: CourseContext | null = null): Pr
 export async function readHistorySummaries(): Promise<CaptureHistorySummary[]> {
   const stored = await storageGet(chrome.storage.local, HISTORY_KEY);
   const history = stored[HISTORY_KEY];
-  return Array.isArray(history) ? history as CaptureHistorySummary[] : [];
+  if (!Array.isArray(history)) {
+    return [];
+  }
+  return history.map((entry) => {
+    const candidate = entry as Partial<CaptureHistorySummary>;
+    return {
+      id: candidate.id ?? "",
+      title: candidate.title ?? "Untitled capture",
+      capturedAt: candidate.capturedAt ?? "",
+      courseId: candidate.courseId,
+      courseName: candidate.courseName,
+      mode: candidate.mode ?? "complete",
+      sizeBytes: candidate.sizeBytes ?? 0,
+      counts: candidate.counts ?? {
+        assignments: 0,
+        discussions: 0,
+        quizzes: 0,
+        pages: 0,
+        modules: 0,
+        files: 0,
+        announcements: 0,
+        syllabus: 0,
+        total: 0
+      },
+      capturedItems: candidate.capturedItems ?? 0,
+      failedItems: candidate.failedItems ?? 0,
+      provenanceLanes: candidate.provenanceLanes ?? [],
+      captureStrategyLanes: candidate.captureStrategyLanes ?? []
+    } satisfies CaptureHistorySummary;
+  }).filter((entry) => entry.id.length > 0);
 }
 
 export async function writeHistorySummaries(history: CaptureHistorySummary[]): Promise<void> {
@@ -514,6 +612,7 @@ export async function writeCaptureRecord(record: StoredCaptureRecord): Promise<v
 
 export async function upsertHistory(record: StoredCaptureRecord): Promise<void> {
   const history = await readHistorySummaries();
+  const laneSummary = summarizeBundleLanes(record.bundle);
   const summary: CaptureHistorySummary = {
     id: record.id,
     title: record.title,
@@ -546,7 +645,9 @@ export async function upsertHistory(record: StoredCaptureRecord): Promise<void> 
           total: record.bundle.items.length
         },
     capturedItems: record.stats.totalItemsCaptured,
-    failedItems: record.stats.totalItemsFailed
+    failedItems: record.stats.totalItemsFailed,
+    provenanceLanes: laneSummary.provenanceLanes,
+    captureStrategyLanes: laneSummary.captureStrategyLanes
   };
 
   const nextHistory = [summary, ...history.filter((entry) => entry.id !== record.id)].slice(0, 20);

@@ -19,6 +19,7 @@ function makeShellConcept(partial: Partial<ShellConcept>): ShellConcept {
     id: partial.id ?? "concept",
     name: partial.name ?? "Concept",
     cat: partial.cat ?? "Concept",
+    mastery: partial.mastery ?? 0.5,
     core: partial.core ?? "Core concept definition.",
     depth: partial.depth ?? "Depth explanation with enough detail to be rendered.",
     dist: partial.dist ?? "Boundary text that distinguishes this concept from nearby ones.",

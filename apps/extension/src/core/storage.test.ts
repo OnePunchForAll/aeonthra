@@ -179,6 +179,87 @@ describe("extension storage", () => {
     expect(await readCaptureRecord("19")).not.toBeNull();
   });
 
+  it("persists provenance and capture-strategy lane summaries for saved history entries", async () => {
+    const record = makeRecord("lanes");
+    record.bundle.items[0] = {
+      ...record.bundle.items[0]!,
+      provenanceKind: "FIRST_PARTY_API",
+      captureStrategy: "api-only",
+      sourceHost: "canvas.example.test"
+    };
+    record.bundle.resources = [
+      {
+        id: "resource-1",
+        title: "Lecture PDF",
+        url: "https://canvas.example.test/courses/42/files/7/download",
+        kind: "file",
+        sourceItemId: record.bundle.items[0]!.id,
+        provenanceKind: "HTML_FETCH",
+        captureStrategy: "html-fetch",
+        sourceHost: "canvas.example.test"
+      }
+    ];
+    record.bundle.manifest = {
+      itemCount: record.bundle.items.length,
+      resourceCount: record.bundle.resources.length,
+      captureKinds: record.bundle.items.map((item) => item.kind),
+      sourceUrls: [record.bundle.items[0]!.canonicalUrl, record.bundle.resources[0]!.url]
+    };
+
+    await upsertHistory(record);
+
+    const history = await readHistorySummaries();
+    expect(history[0]?.provenanceLanes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "FIRST_PARTY_API", itemCount: 1 }),
+        expect.objectContaining({ id: "HTML_FETCH", resourceCount: 1 })
+      ])
+    );
+    expect(history[0]?.captureStrategyLanes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "api-only", itemCount: 1 }),
+        expect.objectContaining({ id: "html-fetch", resourceCount: 1 })
+      ])
+    );
+  });
+
+  it("dedupes repeated pending handoffs so restart retries keep one canonical queue entry", async () => {
+    const bundle = makeQueuedCanvasBundle({
+      title: "Retry-safe Canvas Capture",
+      capturedAt: "2026-04-15T01:00:00.000Z"
+    });
+
+    await queuePendingHandoff(bundle);
+    await queuePendingHandoff(bundle);
+
+    const inspection = await inspectPendingHandoff();
+    const queue = await readPendingHandoffQueue();
+
+    expect(inspection.state).toBe("ok");
+    expect(inspection.state === "ok" ? inspection.queueLength : 0).toBe(1);
+    expect(queue).toHaveLength(1);
+  });
+
+  it("drops stale pending handoffs during restart sanitation", async () => {
+    const bundle = makeQueuedCanvasBundle({
+      title: "Stale Canvas Capture",
+      capturedAt: "2026-04-15T02:00:00.000Z"
+    });
+    const stale = createBridgeHandoffEnvelope(bundle);
+
+    chrome.storage.local.set({
+      "aeonthra:pending-handoffs": [
+        {
+          ...stale,
+          queuedAt: "2020-01-01T00:00:00.000Z"
+        }
+      ]
+    });
+
+    expect(await readPendingHandoffQueue()).toEqual([]);
+    expect(await inspectPendingHandoff()).toEqual({ state: "missing" });
+  });
+
   it("removes only the truly evicted record when inserting a new capture at capacity", async () => {
     for (let index = 1; index <= 20; index += 1) {
       await upsertHistory(makeRecord(String(index)));

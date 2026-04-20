@@ -108,6 +108,7 @@ export type StructuralNode = {
   headingPath: string[];
   parentId: string | null;
   listDepth: number;
+  listContainerTag?: "ul" | "ol" | null;
   tableCoords?: { row: number; column: number };
   sourceField?: string;
   trustTier: TrustTier;

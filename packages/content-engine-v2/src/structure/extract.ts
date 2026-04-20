@@ -25,6 +25,8 @@ const DEFINITION_DETAIL_TAGS = new Set(["dd"]);
 const QUOTE_TAGS = new Set(["blockquote"]);
 const CAPTION_TAGS = new Set(["figcaption"]);
 const TABLE_CELL_TAGS = new Set(["td", "th"]);
+const CODE_TAGS = new Set(["code", "pre"]);
+const MATH_TAGS = new Set(["math"]);
 const CANDIDATE_ROOT_TAGS = new Set(["article", "body", "div", "main", "section"]);
 
 function attrText(node: HtmlAstNode): string {
@@ -74,6 +76,8 @@ function chooseContentRoot(root: HtmlAstNode): HtmlAstNode {
 function nodeKind(tagName: string): StructuralNode["kind"] | null {
   if (HEADING_TAGS.has(tagName)) return "heading";
   if (PARAGRAPH_TAGS.has(tagName)) return "paragraph";
+  if (CODE_TAGS.has(tagName)) return "paragraph";
+  if (MATH_TAGS.has(tagName)) return "paragraph";
   if (LIST_ITEM_TAGS.has(tagName)) return "list-item";
   if (DEFINITION_TERM_TAGS.has(tagName)) return "definition-term";
   if (DEFINITION_DETAIL_TAGS.has(tagName)) return "definition-detail";
@@ -99,6 +103,17 @@ function trustTierForText(text: string): TrustTier {
     return "low";
   }
   return "medium";
+}
+
+function nodeTextForExtraction(node: HtmlAstNode): string {
+  const raw = collectNodeText(node).replace(/\r\n?/g, "\n");
+  if (CODE_TAGS.has(node.tagName)) {
+    return raw.trim();
+  }
+  if (MATH_TAGS.has(node.tagName)) {
+    return raw.replace(/\s+/g, " ").trim();
+  }
+  return normalizeText(raw);
 }
 
 function buildStructuredPrelude(document: SourceDocument): StructuralNode[] {
@@ -177,6 +192,7 @@ function walkStructuredRoot(
   parentId: string | null,
   headingPath: string[],
   listDepth: number,
+  listContainerTag: "ul" | "ol" | null,
   nodes: StructuralNode[]
 ): void {
   if (nodeLooksChrome(node)) {
@@ -184,7 +200,7 @@ function walkStructuredRoot(
   }
 
   let nextHeadingPath = headingPath.slice();
-  const text = normalizeText(collectNodeText(node));
+  const text = nodeTextForExtraction(node);
   const kind = nodeKind(node.tagName);
   const nodeId = `${sourceItemId}:${deterministicHash({ trail, tag: node.tagName })}`;
 
@@ -206,12 +222,17 @@ function walkStructuredRoot(
       headingPath: nextHeadingPath.filter(Boolean),
       parentId,
       listDepth,
+      listContainerTag: kind === "list-item" ? listContainerTag : null,
       trustTier
     });
   }
 
   node.children.forEach((child, index) => {
     const nextListDepth = child.tagName === "ul" || child.tagName === "ol" ? listDepth + 1 : listDepth;
+    const nextListContainerTag =
+      child.tagName === "ul" || child.tagName === "ol"
+        ? child.tagName
+        : listContainerTag;
     walkStructuredRoot(
       child,
       sourceItemId,
@@ -220,6 +241,7 @@ function walkStructuredRoot(
       kind ? nodeId : parentId,
       nextHeadingPath,
       nextListDepth,
+      nextListContainerTag,
       nodes
     );
   });
@@ -232,7 +254,7 @@ function extractHtmlNodes(document: SourceDocument): StructuralNode[] {
   const root = parseHtmlTree(document.item.html);
   const contentRoot = chooseContentRoot(root);
   const nodes: StructuralNode[] = buildStructuredPrelude(document);
-  walkStructuredRoot(contentRoot, document.item.id, document.item.kind, [10], null, document.item.headingTrail.slice(0, 6), 0, nodes);
+  walkStructuredRoot(contentRoot, document.item.id, document.item.kind, [10], null, document.item.headingTrail.slice(0, 6), 0, null, nodes);
   return nodes.filter((node) => node.text.length > 0);
 }
 
@@ -285,7 +307,13 @@ export function extractStructuralNodes(document: SourceDocument): StructuralNode
   const htmlNodes = extractHtmlNodes(document)
     .filter((node) => !nodeLooksChrome({ tagName: node.tagName ?? "", attrs: {}, children: [], textParts: [node.text], parent: null }));
   const contentNodes = htmlNodes.filter((node) => node.kind !== "structured-title" && node.kind !== "excerpt");
-  if (contentNodes.length >= 2) {
+  const preserveStructuredContexts = contentNodes.some((node) =>
+    node.tagName === "pre"
+    || node.tagName === "code"
+    || node.tagName === "math"
+    || (node.kind === "list-item" && Boolean(node.listContainerTag))
+  );
+  if (contentNodes.length >= 2 || preserveStructuredContexts) {
     return htmlNodes;
   }
   return extractPlainTextNodes(document);

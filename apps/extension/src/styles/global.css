@@ -13,8 +13,8 @@ body {
   margin: 0;
   min-width: 360px;
   background:
-    radial-gradient(circle at top, rgba(0, 240, 255, 0.08), transparent 30%),
-    linear-gradient(180deg, #020208 0%, #04040c 55%, #020208 100%);
+    radial-gradient(circle at top, rgba(83, 182, 255, 0.08), transparent 32%),
+    linear-gradient(180deg, #070a12 0%, #0b1020 55%, #070a12 100%);
   color: var(--text-primary);
   font-family: var(--font-body);
 }
@@ -72,18 +72,17 @@ body {
 
 .ext-wordmark__name {
   font-family: var(--font-display);
-  font-weight: 900;
-  font-size: 1.16rem;
+  font-weight: 800;
+  font-size: 1.1rem;
   color: var(--cyan);
-  text-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
 }
 
 .ext-wordmark__sub {
   font-family: var(--font-display);
   font-size: 0.56rem;
   color: var(--text-muted);
-  letter-spacing: 0.22em;
+  letter-spacing: 0.16em;
 }
 
 .ae-card {
@@ -151,7 +150,7 @@ body {
 .ae-btn--primary {
   background: linear-gradient(135deg, var(--cyan), #0080ff);
   color: #020208;
-  box-shadow: 0 0 24px rgba(0, 240, 255, 0.24);
+  box-shadow: 0 10px 24px rgba(83, 182, 255, 0.18);
 }
 
 .ae-btn--ghost {
@@ -186,7 +185,7 @@ body {
 .ae-progress__fill {
   height: 100%;
   background: linear-gradient(90deg, var(--cyan), var(--teal));
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.24);
+  box-shadow: 0 8px 18px rgba(83, 182, 255, 0.18);
 }
 
 .ae-stats-grid {

@@ -9,7 +9,7 @@ import {
 function buildBundle(input: {
   plainText: string;
   html?: string;
-  provenanceKind?: "FIRST_PARTY_API" | "HTML_FETCH" | "DOM_CAPTURE";
+  provenanceKind?: "FIRST_PARTY_API" | "HTML_FETCH" | "DOM_CAPTURE" | "DOCUMENT_INGEST";
   captureStrategy?: "api-only" | "html-fetch" | "session-dom";
   sourceHost?: string;
   title?: string;
@@ -105,6 +105,78 @@ describe("canonical artifact", () => {
     }));
 
     expect(classifyCanonicalChange(paragraph.canonicalArtifact, list.canonicalArtifact)).toBe("COSMETIC_EDIT");
+  });
+
+  it("treats ordered and unordered lists with the same items as cosmetic edits", () => {
+    const unordered = analyzeBundle(buildBundle({
+      plainText: "Define the outcome. Compare the tradeoffs.",
+      html: "<main><h1>Week 1 Reading</h1><ul><li>Define the outcome.</li><li>Compare the tradeoffs.</li></ul></main>"
+    }));
+    const ordered = analyzeBundle(buildBundle({
+      plainText: "Define the outcome. Compare the tradeoffs.",
+      html: "<main><h1>Week 1 Reading</h1><ol><li>Define the outcome.</li><li>Compare the tradeoffs.</li></ol></main>"
+    }));
+
+    expect(classifyCanonicalChange(unordered.canonicalArtifact, ordered.canonicalArtifact)).toBe("COSMETIC_EDIT");
+  });
+
+  it("keeps table wrapper irregularities out of the semantic channel", () => {
+    const flatTable = analyzeBundle(buildBundle({
+      plainText: "Principle: Maximize well-being.",
+      html: "<main><table><tr><th>Principle</th><td>Maximize well-being.</td></tr></table></main>"
+    }));
+    const wrappedTable = analyzeBundle(buildBundle({
+      plainText: "Principle: Maximize well-being.",
+      html: "<main><table><tbody><tr><th>Principle</th><td>Maximize well-being.</td></tr></tbody></table></main>"
+    }));
+
+    expect(["IDENTICAL", "COSMETIC_EDIT"]).toContain(
+      classifyCanonicalChange(flatTable.canonicalArtifact, wrappedTable.canonicalArtifact)
+    );
+    expect(flatTable.canonicalArtifact.semanticHash).toBe(wrappedTable.canonicalArtifact.semanticHash);
+  });
+
+  it("preserves semantically meaningful whitespace inside code blocks", () => {
+    const left = analyzeBundle(buildBundle({
+      plainText: "const total = count + 1;",
+      html: "<main><pre>const total = count + 1;</pre></main>"
+    }));
+    const right = analyzeBundle(buildBundle({
+      plainText: "const  total = count + 1;",
+      html: "<main><pre>const  total = count + 1;</pre></main>"
+    }));
+
+    expect(classifyCanonicalChange(left.canonicalArtifact, right.canonicalArtifact)).toBe("SEMANTIC_EDIT");
+  });
+
+  it("collapses whitespace-only math variants without faking deeper equivalence", () => {
+    const spaced = analyzeBundle(buildBundle({
+      plainText: "x + y = z",
+      html: "<main><math>x   +   y = z</math></main>"
+    }));
+    const normalized = analyzeBundle(buildBundle({
+      plainText: "x + y = z",
+      html: "<main><math>x + y = z</math></main>"
+    }));
+
+    expect(spaced.canonicalArtifact.semanticHash).toBe(normalized.canonicalArtifact.semanticHash);
+  });
+
+  it("keeps api-first and dom fallback variants semantically equivalent when the text matches", () => {
+    const api = analyzeBundle(buildBundle({
+      plainText: "Use utilitarianism when a task asks you to compare likely harms and benefits.",
+      provenanceKind: "FIRST_PARTY_API",
+      captureStrategy: "api-only"
+    }));
+    const dom = analyzeBundle(buildBundle({
+      plainText: "Use utilitarianism when a task asks you to compare likely harms and benefits.",
+      html: "<main><div><p>Use utilitarianism when a task asks you to compare likely harms and benefits.</p></div></main>",
+      provenanceKind: "DOM_CAPTURE",
+      captureStrategy: "session-dom"
+    }));
+
+    expect(classifyCanonicalChange(api.canonicalArtifact, dom.canonicalArtifact)).not.toBe("SEMANTIC_EDIT");
+    expect(api.canonicalArtifact.semanticHash).toBe(dom.canonicalArtifact.semanticHash);
   });
 
   it("classifies semantic edits when the supported meaning changes", () => {

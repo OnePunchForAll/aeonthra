@@ -318,3 +318,51 @@
 - Decision: `CaptureItem` and `CaptureResource` now support explicit provenance metadata (`captureStrategy`, `provenanceKind`, `sourceEndpoint`, `sourceHost`, `adapterVersion`), and capture/import builders should populate those fields whenever they know them.
 - Why: the deterministic engine cannot enforce a provenance firewall if upstream capture only hands it `plainText`, optional `html`, and a generic `contentHash`. Provenance inferred later is already a lossy guess.
 - Scope: extension HTML/API capture, textbook import, demo seed generation, and manual import paths can now carry explicit provenance without breaking older bundles that lack those fields.
+
+### Canonical truth must be visible in-product, not only recoverable from saved JSON
+
+- Decision: the app must expose a first-class inspect/export route for `canonicalArtifact`, tri-channel hashes, provenance coverage, and capture lanes instead of treating those as debug-only internals.
+- Why: a hidden truth boundary is not a trustworthy truth boundary. Users need to inspect the same canonical evidence that the deterministic engine uses.
+- Scope: this visibility requirement currently lands in the web shell and offline-site export. Extension-side diagnostics may summarize the same lanes without duplicating the full artifact viewer.
+
+### Shell decomposition should favor bounded route extraction over a risky router/store rewrite
+
+- Decision: continue decomposing `AeonthraShell.tsx` by extracting route-sized surfaces into standalone components while preserving the existing state model and navigation flow.
+- Why: the shell is still large, but a flag-day rewrite would multiply risk across progress state, note scope, and route behaviors that are currently green.
+- Scope: compare, settings, stats, reader, and transcript routes are extracted first; `home`, `assignment`, and `practice` remain the next safe seams.
+
+### Structural list context belongs in the canonical structural channel
+
+- Decision: ordered vs unordered list container type is now part of the structural channel, while semantic equivalence remains text-grounded.
+- Why: collapsing `ol` and `ul` into identical structure made the engine less inspectable and prevented truthful structural-only diffs for list-format changes.
+- Scope: this affects only canonical structural hashing/diffing. It does not introduce fuzzy semantic equivalence or alter learner-facing synthesis directly.
+
+### HTML code and math blocks should not fall back to plain-text extraction when that would erase meaning
+
+- Decision: if HTML extraction yields code, math, or list-structured nodes, the canonical path should preserve the HTML-derived structure even when there is only one primary content node.
+- Why: a one-node threshold was convenient for generic prose fallback, but it silently erased code whitespace semantics and list structure in legitimate single-block documents.
+- Scope: the fallback rule remains for thin generic HTML, but code, math, and explicit list structure now fail closed toward the richer HTML lane instead of collapsing to normalized plain text.
+
+### Verified dead archive exhaust should be removed once the live monorepo path is known
+
+- Decision: tracked root zip artifacts and `_files_extracted/` historical dumps are safe to purge after verifying they are not part of the active app, extension, schema, docs, skills, or tests.
+- Why: leaving known-dead archives and prompt dumps in the repo makes every later audit slower and raises the chance of mistaking stale exhaust for canonical product code.
+- Scope: this purge does not authorize deletion of `Canvas-Converter-fixed-source/`, `aeonthra-lite/`, or `aeonthra-lite-extension/`; those still require explicit rollback-path review.
+
+### Rollback roots remain quarantined until an explicit archival review proves they are disposable
+
+- Decision: keep `Canvas-Converter-fixed-source/`, `aeonthra-lite/`, and `aeonthra-lite-extension/` in place for now.
+- Why: they are outside the npm workspace graph, but they are still referenced as rollback material in `.omega` docs and still appear in local dev logs. That is enough evidence to avoid a blind delete in a surgical pass.
+- Scope: future cleanup may archive or remove them only after a deliberate rollback-path review and a proof that no operator workflow still relies on them.
+
+### DOM-vs-API parity can only be claimed when the API lane still preserves the same structure-level meaning
+
+- Decision: treat DOM/API parity as a valid invariant only for cases where the API or plain-text lane still carries equivalent meaning.
+- Why: a flattened API/plain-text lane cannot truthfully claim equivalence with DOM list structure once list semantics have already been lost upstream. The engine should not fake that parity.
+- Scope: DOM/API parity tests now cover prose, code, table, and math cases that remain semantically equivalent, while list-structure behavior stays covered by structural-diff tests instead.
+
+### AeonthraShell keeps `@ts-nocheck` until the remaining minified state core is decomposed further
+
+- Decision: keep `// @ts-nocheck` on `apps/web/src/AeonthraShell.tsx` for this pass.
+- Why: removing it exposed hundreds of implicit-any, null-inference, and untyped-state errors across the still-minified core, which is not a surgical fix. Pretending otherwise would turn this pass into a broad shell rewrite.
+- Scope: the shell is still materially smaller and more componentized than before, but full typing now depends on further extractions around the remaining stateful route core.

@@ -153,6 +153,13 @@ export interface StoredCaptureRecord {
   bundle: CaptureBundle;
 }
 
+export interface CaptureLaneSummary {
+  id: string;
+  label: string;
+  itemCount: number;
+  resourceCount: number;
+}
+
 export interface CaptureHistorySummary {
   id: string;
   title: string;
@@ -164,6 +171,8 @@ export interface CaptureHistorySummary {
   counts: DiscoveryCounts;
   capturedItems: number;
   failedItems: number;
+  provenanceLanes: CaptureLaneSummary[];
+  captureStrategyLanes: CaptureLaneSummary[];
 }
 
 export interface StorageUsage {

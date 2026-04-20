@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import ReactDOM from "react-dom/client";
+import { LaneSummaryLine } from "./ui/LaneSummaryLine";
 import { Button, Card, Progress, Shell, Stat, formatBytes, formatRuntime, sendExtensionMessage, useExtensionState } from "./ui/shared";
 import "./styles/global.css";
 
@@ -10,6 +11,13 @@ function formatDateTime(value: string): string {
 
 function shortHash(value: string, size = 12): string {
   return value.length <= size ? value : value.slice(0, size);
+}
+
+function laneText(items: Array<{ label: string; itemCount: number; resourceCount: number }>): string {
+  return items
+    .filter((item) => item.itemCount + item.resourceCount > 0)
+    .map((item) => `${item.label} (${item.itemCount} item${item.itemCount === 1 ? "" : "s"}${item.resourceCount > 0 ? `, ${item.resourceCount} resource${item.resourceCount === 1 ? "" : "s"}` : ""})`)
+    .join(" • ");
 }
 
 function SidePanelApp() {
@@ -303,6 +311,16 @@ function SidePanelApp() {
             <Stat label="Failures" value={latestCapture.failedItems} />
             <Stat label="Size" value={formatBytes(latestCapture.sizeBytes)} />
           </div>
+          {latestCapture.provenanceLanes.length > 0 ? (
+            <p className="ae-copy">
+              <LaneSummaryLine prefix="Provenance lanes" items={latestCapture.provenanceLanes} />
+            </p>
+          ) : null}
+          {latestCapture.captureStrategyLanes.length > 0 ? (
+            <p className="ae-copy">
+              <LaneSummaryLine prefix="Capture strategies" items={latestCapture.captureStrategyLanes} />
+            </p>
+          ) : null}
           <div className="ae-inline-actions">
             <Button variant="primary" onClick={() => void openClassroom(latestCapture.id)}>Open + Import</Button>
             <Button variant="ghost" onClick={() => void downloadLatest(latestCapture.id)}>Download JSON</Button>
@@ -321,6 +339,16 @@ function SidePanelApp() {
                   <div className="history-item__meta">
                     {entry.mode} | {entry.capturedItems} captured | {formatBytes(entry.sizeBytes)}
                   </div>
+                  {entry.provenanceLanes.length > 0 ? (
+                    <div className="history-item__meta">
+                      {laneText(entry.provenanceLanes)}
+                    </div>
+                  ) : null}
+                  {entry.captureStrategyLanes.length > 0 ? (
+                    <div className="history-item__meta">
+                      {laneText(entry.captureStrategyLanes)}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="history-item__actions">
                   <Button variant="ghost" onClick={() => void openClassroom(entry.id)}>Open + Import</Button>

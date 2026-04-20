@@ -3,6 +3,7 @@ import type { StructuralNode } from "../contracts/types.ts";
 const ZERO_WIDTH_PATTERN = /[\u200B-\u200D\uFEFF]/g;
 
 export type CanonicalTextContext = "prose" | "date" | "identifier";
+export type ExtendedCanonicalTextContext = CanonicalTextContext | "code" | "math";
 
 function normalizeBaseText(text: string): string {
   return text
@@ -13,10 +14,13 @@ function normalizeBaseText(text: string): string {
 
 export function normalizeCanonicalText(
   text: string,
-  context: CanonicalTextContext
+  context: ExtendedCanonicalTextContext
 ): string {
   const normalized = normalizeBaseText(text);
   switch (context) {
+    case "code":
+      return normalized.trim();
+    case "math":
     case "date":
     case "identifier":
       return normalized.replace(/\s+/g, " ").trim();
@@ -36,8 +40,16 @@ export function normalizeHeadingPath(entries: string[]): string[] {
 }
 
 export function canonicalTextContextForNodeKind(
-  kind: StructuralNode["kind"]
-): CanonicalTextContext {
+  kind: StructuralNode["kind"],
+  tagName?: string | null
+): ExtendedCanonicalTextContext {
+  const normalizedTag = (tagName ?? "").toLowerCase();
+  if (normalizedTag === "code" || normalizedTag === "pre") {
+    return "code";
+  }
+  if (normalizedTag === "math") {
+    return "math";
+  }
   switch (kind) {
     case "structured-due-date":
       return "date";

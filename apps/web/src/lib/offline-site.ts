@@ -6,6 +6,7 @@ import {
   type LearningBundle,
   type OfflineSiteBundle
 } from "@learning/schema";
+import { buildWorkspaceDiagnostics } from "./canonical-diagnostics";
 import { deriveWorkspace, type AppProgress } from "./workspace";
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -214,9 +215,17 @@ function buildSectionList(title: string, items: string[]): string {
   `;
 }
 
+function buildDiagnosticsList(items: string[]): string {
+  if (items.length === 0) {
+    return "<li>No items recorded.</li>";
+  }
+  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
 export function buildOfflineSiteHtml(bundle: OfflineSiteBundle): string {
   const progress = fromStoredProgress(bundle.progress);
   const workspace = deriveWorkspace(bundle.mergedBundle, bundle.learningBundle, progress);
+  const diagnostics = buildWorkspaceDiagnostics(bundle.mergedBundle, bundle.learningBundle);
   const focusThemes = bundle.learningBundle.synthesis.focusThemes;
   const assignmentMappings = bundle.learningBundle.synthesis.assignmentMappings;
   const retentionModules = bundle.learningBundle.synthesis.retentionModules;
@@ -295,6 +304,25 @@ export function buildOfflineSiteHtml(bundle: OfflineSiteBundle): string {
         <div class="badge"><strong>Stable Concepts</strong><br /><span class="small">${bundle.learningBundle.synthesis.stableConceptIds.length}</span></div>
       </div>
     </section>
+
+    <div class="grid" style="margin-bottom: 24px;">
+      <section class="panel">
+        <h2>Truth Boundary</h2>
+        <ul>
+          <li>Status: ${escapeHtml(diagnostics.status)}</li>
+          <li>Semantic hash: ${escapeHtml(diagnostics.hashes.semantic || "unavailable")}</li>
+          <li>Structural hash: ${escapeHtml(diagnostics.hashes.structural || "unavailable")}</li>
+          <li>Provenance hash: ${escapeHtml(diagnostics.hashes.provenance || "unavailable")}</li>
+          <li>Explicit provenance: ${diagnostics.provenanceCoverage.percent}%</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Capture Lanes</h2>
+        <ul>${buildDiagnosticsList(diagnostics.provenanceLanes.map((lane) => `${lane.label}: ${lane.itemCount} items, ${lane.resourceCount} resources (${lane.stance})`))}</ul>
+        <p class="small" style="margin-top: 14px;">Strategy lanes: ${escapeHtml(diagnostics.captureStrategyLanes.map((lane) => `${lane.label} (${lane.itemCount})`).join(", ") || "none recorded")}</p>
+      </section>
+    </div>
 
     <div class="grid">
       <section class="panel">

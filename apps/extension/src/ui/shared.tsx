@@ -82,7 +82,7 @@ export function Shell({ title, subtitle, children, footer }: PropsWithChildren<{
       <header className="ae-shell__header">
         <div className="ext-wordmark">
           <span className="ext-wordmark__name">AEONTHRA</span>
-          <span className="ext-wordmark__sub">CAPTURE INTELLIGENCE</span>
+          <span className="ext-wordmark__sub">LOCAL CAPTURE DIAGNOSTICS</span>
         </div>
         <div className="ae-shell__eyebrow">{title}</div>
         <div className="ae-shell__subtitle">{subtitle}</div>

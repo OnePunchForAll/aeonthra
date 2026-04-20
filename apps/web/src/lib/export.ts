@@ -14,6 +14,10 @@ function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "aeonthra";
 }
 
+export function exportJson(filename: string, value: unknown): void {
+  downloadBlob(new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" }), filename);
+}
+
 export function exportConceptMapPng(svg: SVGSVGElement): Promise<void> {
   const serializer = new XMLSerializer();
   const svgText = serializer.serializeToString(svg);
@@ -87,4 +91,12 @@ export function exportForgeSummaryMarkdown(data: ForgeSessionData, progress: App
   ].join("\n");
 
   downloadBlob(new Blob([markdown], { type: "text/markdown;charset=utf-8" }), `aeonthra-summary-${slugify(data.chapter.title)}.md`);
+}
+
+export function exportCanonicalArtifactJson(title: string, artifact: unknown): void {
+  exportJson(`aeonthra-canonical-artifact-${slugify(title)}.json`, artifact);
+}
+
+export function exportWorkspaceDiagnosticsJson(title: string, diagnostics: unknown): void {
+  exportJson(`aeonthra-workspace-diagnostics-${slugify(title)}.json`, diagnostics);
 }

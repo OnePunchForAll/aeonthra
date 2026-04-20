@@ -1,31 +1,31 @@
 :root {
-  --font-display: "Orbitron", sans-serif;
-  --font-body: "Sora", sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: Inter, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  --bg-void: #020208;
-  --bg-deep: #04040c;
-  --bg-card: #06060f;
-  --bg-card-raised: #0a0a1a;
-  --bg-card-active: #0d0d20;
+  --bg-void: #070a12;
+  --bg-deep: #0b1020;
+  --bg-card: #101727;
+  --bg-card-raised: #131d31;
+  --bg-card-active: #18243b;
 
-  --border: #1a1a3a;
-  --border-subtle: #0f0f20;
-  --border-glow: rgba(0, 240, 255, 0.2);
+  --border: rgba(112, 135, 181, 0.24);
+  --border-subtle: rgba(112, 135, 181, 0.12);
+  --border-glow: rgba(83, 182, 255, 0.18);
 
-  --text-primary: #e0e0ff;
-  --text-secondary: #b0b0d0;
-  --text-muted: #6a6a9a;
-  --text-dim: #3a3a5a;
+  --text-primary: #eef2ff;
+  --text-secondary: #c8d1eb;
+  --text-muted: #8f9abc;
+  --text-dim: #5b698c;
 
-  --cyan: #00f0ff;
-  --teal: #06d6a0;
-  --green: #00ff88;
-  --gold: #ffd700;
-  --orange: #ff6b2b;
-  --red: #ff4466;
-  --purple: #a855f7;
-  --pink: #ff2bbb;
+  --cyan: #53b6ff;
+  --teal: #11d9b5;
+  --green: #61d3a6;
+  --gold: #f4c94f;
+  --orange: #ff9b62;
+  --red: #ff7a96;
+  --purple: #b794ff;
+  --pink: #f09bff;
 
   --unit: 8px;
   --space-0: 0;

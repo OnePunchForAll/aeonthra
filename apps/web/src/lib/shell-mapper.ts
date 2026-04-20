@@ -11,6 +11,7 @@
 import type { CaptureBundle, LearningBundle, LearningConcept, ConceptRelation, EvidenceFragment } from "@learning/schema";
 import type { CourseTask, ForgeChapter } from "./workspace";
 import { buildAtlasSkillTree, type AtlasSkillTree } from "./atlas-skill-tree";
+import { buildWorkspaceDiagnostics, type WorkspaceDiagnostics } from "./canonical-diagnostics";
 
 // ─── Shell data types ──────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ export type ShellConcept = {
   id: string;
   name: string;
   cat: string;
+  mastery: number;
   core: string;     // 1-sentence definition
   depth: string;    // deeper explanation
   dist: string;     // how it differs from similar concepts
@@ -238,6 +240,7 @@ export type ShellData = {
   philosophers: ShellPhilosopher[];
   synthesis: ShellSynthesis;
   skillTree: AtlasSkillTree;
+  diagnostics: WorkspaceDiagnostics;
 };
 
 // ─── Canvas metadata cleaner ──────────────────────────────────────────────────
@@ -964,6 +967,7 @@ function mapConcept(
     id: c.id,
     name: conceptName,
     cat: isUsefulCat ? rawCat : "Concept",
+    mastery: Math.max(0, Math.min(1, Number.isFinite(c.score) ? c.score : 0)),
     core: conceptCoreText(c),
     depth: conceptDepthText(c),
     dist: conceptDistinctionText(c, conceptById, contrastByConceptId),
@@ -1680,7 +1684,8 @@ export function mapToShellData(
     dists,
     philosophers,
     synthesis,
-    skillTree
+    skillTree,
+    diagnostics: buildWorkspaceDiagnostics(bundle, learning)
   };
 }
 

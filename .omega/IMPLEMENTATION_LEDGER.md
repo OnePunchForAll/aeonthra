@@ -816,3 +816,67 @@
 **Why**: the shell still read as a game dashboard even after the deterministic engine tightened, which undermined trust precisely where the product is strongest.
 **Downstream effects**: the app now presents as a more serious local-first study instrument while deeper shell decomposition remains pending.
 **Skill refs**: `ui-systems-polish`, `respect-codebase-grain`
+
+### [TRUTH INSPECTABILITY] Canonical hashes, provenance lanes, and export surfaces are now first-class in the app
+
+**Files changed**: `apps/web/src/lib/canonical-diagnostics.ts`, `apps/web/src/lib/canonical-diagnostics.test.ts`, `apps/web/src/components/CanonicalArtifactInspector.tsx`, `apps/web/src/lib/export.ts`, `apps/web/src/lib/offline-site.ts`, `apps/web/src/lib/offline-site.test.ts`, `apps/web/src/lib/shell-mapper.ts`, `apps/web/src/App.tsx`, `apps/web/src/AeonthraShell.tsx`
+**What it does**: Adds a deterministic diagnostics model for the current workspace, renders a dedicated `Inspect` route with canonical hashes / provenance coverage / capture lanes / export buttons, and carries the same truth-boundary summary into offline-site export.
+**Why**: the canonical artifact existed in code, but users still could not see or export the truth boundary directly from the product.
+**Downstream effects**: canonical JSON, diagnostics JSON, replay bundles, and offline-site output now expose the same inspectable evidence model instead of hiding it behind internal engine state.
+**Skill refs**: `evidence-lane-provenance`, `ui-systems-polish`
+
+### [SHELL DECOMPOSITION] Reader and transcript routes now live outside the main shell monolith
+
+**Files changed**: `apps/web/src/AeonthraShell.tsx`, `apps/web/src/components/CompareConceptsPanel.tsx`, `apps/web/src/components/ShellSettingsPanel.tsx`, `apps/web/src/components/ShellStatsPanel.tsx`, `apps/web/src/components/ReaderWorkspacePanel.tsx`, `apps/web/src/components/TranscriptWorkspacePanel.tsx`
+**What it does**: Pulls the compare, settings, stats, reader, and transcript surfaces into separate components while keeping the existing route/state model intact.
+**Why**: `AeonthraShell.tsx` was still the dominant maintainability risk after the first truth-boundary pass, and the reader/transcript seams were the safest high-leverage extraction points.
+**Downstream effects**: the shell remains behavior-compatible, but the biggest route-specific UI regions are now reviewable in isolation and calmer copy can evolve without editing the whole shell file.
+**Skill refs**: `ui-systems-polish`, `respect-codebase-grain`
+
+### [CANONICAL ADVERSARIAL HARDENING] Structural list differences and code-block whitespace now survive the deterministic path honestly
+
+**Files changed**: `packages/content-engine-v2/src/contracts/types.ts`, `packages/content-engine-v2/src/canonical/build.ts`, `packages/content-engine-v2/src/canonical/normalize.ts`, `packages/content-engine-v2/src/canonical/types.ts`, `packages/content-engine-v2/src/structure/extract.ts`, `packages/content-engine-v2/src/tests/canonical.test.ts`
+**What it does**: Preserves ordered-vs-unordered list container information in the structural channel, keeps code and math HTML contexts from collapsing back into plain-text fallback when that would erase meaning, and expands adversarial tests around those cases.
+**Why**: the first completion pass added stronger tests, but the engine was still flattening some structural context and could lose semantically meaningful code whitespace when HTML extraction produced only one content node.
+**Downstream effects**: the canonical diff can now report ordered/unordered list changes as structural-only, and code-block whitespace changes reach the semantic channel instead of being misclassified as provenance-only noise.
+**Skill refs**: `fixture-golden-tests`, `regression-orchestrator`
+
+### [EXTENSION TRUST TONE] Capture history now summarizes provenance lanes and capture strategy directly in the side panel
+
+**Files changed**: `apps/extension/src/core/types.ts`, `apps/extension/src/core/storage.ts`, `apps/extension/src/core/storage.test.ts`, `apps/extension/src/side-panel.tsx`, `apps/extension/src/styles/tokens.css`, `apps/extension/src/styles/global.css`, `apps/extension/src/ui/shared.tsx`
+**What it does**: Persists lane summaries with capture history entries, renders those summaries in the side panel, backfills older stored history safely, and calms the extension typography/palette so diagnostics read as trustworthy instrumentation instead of neon chrome.
+**Why**: provenance was present in the bundle but still too hidden in the extension UI, and old stored summaries would have broken if the UI assumed the new fields existed.
+**Downstream effects**: extension diagnostics now show provenance and capture-strategy summaries at a glance, and older local state upgrades cleanly instead of crashing or showing blank metadata.
+**Skill refs**: `universal-web-capture-extension`, `ui-systems-polish`
+
+### [SAFE PURGE] Removed tracked archive debris and extracted prompt dumps that were verified dead
+
+**Files changed**: removed `Canvas-Converter-fixed-source.zip`, `aeonthra-v2.zip`, `files.zip`, and the tracked `_files_extracted/` archive dump tree.
+**What it does**: deletes root zip artifacts and the extracted historical prompt/output dump that were no longer part of the active monorepo path.
+**Why**: these files were tracked bloat, duplicated historical exhaust, and a source of confusion during repo scanning, but they were not part of the live app, extension, schema, or deterministic engine path.
+**Downstream effects**: the repo root is less fragmented, future audits have less noise, and the live product path is easier to reason about without deleting active docs, skills, or runtime packages.
+**Skill refs**: `purge-canonicalizer`
+
+### [FINAL HARDENING] Schema contracts are now split behind the existing barrel without breaking consumers
+
+**Files changed**: `packages/schema/src/index.ts`, `packages/schema/src/constants.ts`, `packages/schema/src/utils.ts`, `packages/schema/src/identity.ts`, `packages/schema/src/capture.ts`, `packages/schema/src/canvas-course.ts`, `packages/schema/src/learning.ts`, `packages/schema/src/bridge.ts`
+**What it does**: breaks the old schema monolith into focused modules while preserving the existing public import surface through `packages/schema/src/index.ts`.
+**Why**: the schema package had become a single-file choke point, and the user explicitly required an internal split without a destabilizing rename or consumer migration.
+**Downstream effects**: shared contracts are easier to review and extend, root tests still import the same barrel path, and no workspace/package import churn was introduced.
+**Skill refs**: `respect-codebase-grain`, `blast-radius-reasoning`
+
+### [SHELL SURGERY] Home, assignment, practice, and inspect surfaces are extracted and covered by mounted regressions
+
+**Files changed**: `apps/web/src/AeonthraShell.tsx`, `apps/web/src/components/HomeDashboardPanel.tsx`, `apps/web/src/components/AssignmentWorkspacePanel.tsx`, `apps/web/src/components/PracticeWorkspacePanel.tsx`, `apps/web/src/components/CanonicalArtifactInspector.test.tsx`, `apps/web/src/AeonthraShell.inspect.test.tsx`, `apps/web/src/App.inspect.test.ts`
+**What it does**: pulls additional route-sized regions out of the shell, restores the shell after a duplicated-tail parse break, and adds mounted regressions around the inspect view plus direct route resolution coverage.
+**Why**: `AeonthraShell.tsx` was still the biggest maintainability risk, and the inspect route needed proof that canonical diagnostics stay visible after future shell changes.
+**Downstream effects**: the shell dropped from `1956` lines in the last known backup to `1610` lines, the inspect route is directly regression-tested, and the canonical export surface is harder to accidentally remove.
+**Skill refs**: `ui-systems-polish`, `regression-orchestrator`
+
+### [DETERMINISTIC HARDENING] Canonical fuzz coverage and restart-safe queue regressions now cover the remaining proof gaps
+
+**Files changed**: `packages/content-engine-v2/src/tests/canonical.fuzz.test.ts`, `apps/extension/src/core/storage.test.ts`, `apps/extension/src/ui/LaneSummaryLine.test.tsx`
+**What it does**: adds seeded cosmetic-wrapper fuzz coverage, an expanded DOM-vs-API parity corpus for cases where the API path preserves equivalent meaning, explicit capture-strategy summary rendering checks, and pending-handoff retry/restart regressions.
+**Why**: the deterministic path was still lighter on property-style invariants and the extension queue still needed direct proof that retries and stale handoffs fail closed.
+**Downstream effects**: semantic hashes are now checked across seeded cosmetic DOM variants, extension lane summaries have mounted coverage for both provenance and capture strategies, and queued-handoff sanitation is verified at the storage boundary.
+**Skill refs**: `regression-orchestrator`, `canvas-live-zero-failure`

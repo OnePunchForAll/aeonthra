@@ -38,6 +38,8 @@ import {
   parseOfflineSiteBundle,
   restoreOfflineSiteBundle
 } from "./lib/offline-site";
+import { buildWorkspaceDiagnostics } from "./lib/canonical-diagnostics";
+import { exportCanonicalArtifactJson, exportWorkspaceDiagnosticsJson } from "./lib/export";
 import {
   describeCanvasLoadState,
   describeTextbookLoadState,
@@ -262,6 +264,10 @@ export function discardLegacyProgressMigration(state: LegacyProgressMigrationSta
 
   clearLegacyProgress();
   state.current = false;
+}
+
+export function resolveInitialShellViewFromLocationHash(hash: string): string | undefined {
+  return hash.toLowerCase().includes("inspect") ? "inspect" : undefined;
 }
 
 export function normalizeRestoredWorkspacePayload(restored: RestoredWorkspacePayload): RestoredWorkspacePayload {
@@ -1185,6 +1191,24 @@ export default function App() {
     setStatus(`Replay bundle saved: ${offlineBundle.title}`);
   };
 
+  const downloadCanonicalArtifact = () => {
+    if (!mergedBundle || !learning?.synthesis.canonicalArtifact) {
+      setStatus("Canonical artifact is not available for export.");
+      return;
+    }
+    exportCanonicalArtifactJson(mergedBundle.title, learning.synthesis.canonicalArtifact);
+    setStatus(`Canonical artifact exported: ${mergedBundle.title}`);
+  };
+
+  const downloadWorkspaceDiagnostics = () => {
+    if (!mergedBundle || !learning) {
+      setStatus("Workspace diagnostics are not available before synthesis completes.");
+      return;
+    }
+    exportWorkspaceDiagnosticsJson(mergedBundle.title, buildWorkspaceDiagnostics(mergedBundle, learning));
+    setStatus(`Workspace diagnostics exported: ${mergedBundle.title}`);
+  };
+
   const renderIntake = () => {
     const textbookStepTitle = textbookLoadState.state === "failed"
       ? "Textbook intake failed"
@@ -1480,6 +1504,8 @@ export default function App() {
     return renderProcessing();
   }
 
+  const initialShellView = resolveInitialShellViewFromLocationHash(window.location.hash);
+
   return (
     <ShellErrorBoundary>
       <AeonthraShell
@@ -1488,9 +1514,12 @@ export default function App() {
         progress={progress}
         onProgressUpdate={handleProgressUpdate}
         onReset={resetWorkspace}
+        onDownloadCanonicalArtifact={downloadCanonicalArtifact}
+        onDownloadDiagnostics={downloadWorkspaceDiagnostics}
         onDownloadOfflineSite={downloadOfflineSite}
         onSaveReplayBundle={downloadReplayBundle}
         isDemoMode={isDemoMode}
+        initialView={initialShellView}
       />
     </ShellErrorBoundary>
   );

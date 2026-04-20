@@ -593,3 +593,27 @@
 **Symptom**: equivalent source bundles could drift when heuristic admissions changed, provenance-only changes could not be classified cleanly, and there was no inspectable artifact separating semantic, structural, and provenance identity.
 **Fix**: added an additive canonical layer that builds `semanticHash`, `structuralHash`, and `provenanceHash` from canonicalized source/evidence structure, exposes a diff classifier, and forwards the artifact through the learning-synthesis compatibility boundary while preserving the legacy `deterministicHash` for storage compatibility.
 **Guard**: `packages/content-engine-v2/src/tests/canonical.test.ts` now covers undefined omission stability, Unicode/zero-width normalization, provenance-only changes, cosmetic edits, and semantic edits. Root `npm test`, `npm run typecheck`, and `npm run build` all pass with the new schema and engine paths active.
+
+### [CANONICAL EXTRACTION] Single-block HTML code paths were collapsing back to normalized plain text
+
+**Status**: FIXED
+**Root cause**: `extractStructuralNodes()` only kept the HTML-derived structure when it found at least two primary content nodes. Single-block HTML documents such as `<pre>` or `<math>` therefore fell back to plain-text extraction, which erased code whitespace or structural context.
+**Symptom**: adversarial canonical tests classified code-block whitespace changes as `PROVENANCE_ONLY` instead of `SEMANTIC_EDIT`, because the code text had already been flattened before canonical hashing.
+**Fix**: `packages/content-engine-v2/src/structure/extract.ts` now preserves HTML-derived structure whenever the content lane includes code, math, or explicit list structure, even if there is only one content node.
+**Guard**: `packages/content-engine-v2/src/tests/canonical.test.ts` now proves code-block whitespace stays semantically meaningful and math whitespace-only variants still normalize safely.
+
+### [STRUCTURAL DIFF LOSS] Ordered and unordered lists were indistinguishable in the structural channel
+
+**Status**: FIXED
+**Root cause**: structural units retained `li` nodes and list depth, but not the surrounding container type, so `ul` and `ol` with identical items hashed to the same structure.
+**Symptom**: the adversarial corpus could not distinguish ordered-vs-unordered changes as structural-only edits, which weakened inspectability and made the structural hash less truthful than intended.
+**Fix**: added `listContainerTag` to structural nodes/units and preserved it through canonical structural hashing.
+**Guard**: `packages/content-engine-v2/src/tests/canonical.test.ts` now proves equivalent ordered and unordered lists keep the same semantic hash while surfacing a structural-only diff instead of an identical artifact.
+
+### [SHELL PARSE BREAK] A duplicated tail block after the first return made AeonthraShell syntactically invalid
+
+**Status**: FIXED
+**Root cause**: during shell decomposition, a duplicated `reader/transcript/gym/...` tail remained after the first `return` close in `apps/web/src/AeonthraShell.tsx`, leaving JSX outside the component boundary.
+**Symptom**: `npm run typecheck` and Prettier both failed with parse errors around `</main>` / `</>}` even though the extracted route blocks themselves were valid.
+**Fix**: removed the orphaned duplicate tail and restored the file to one component boundary before continuing with typed panel extraction.
+**Guard**: `npm run typecheck`, `npm run test --workspace @learning/web`, and `npm run build` now pass again with mounted inspect-route regressions in place.

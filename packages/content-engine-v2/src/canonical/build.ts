@@ -64,7 +64,7 @@ function safeSourceHost(url: string): string | undefined {
 function meaningfulNodeText(node: StructuralNode): string {
   return normalizeCanonicalText(
     node.text,
-    canonicalTextContextForNodeKind(node.kind)
+    canonicalTextContextForNodeKind(node.kind, node.tagName)
   );
 }
 
@@ -107,6 +107,7 @@ function buildStructuralUnits(
         position: position++,
         kind: node.kind,
         tagName: node.tagName,
+        listContainerTag: node.listContainerTag ?? null,
         ordinalPath: node.ordinalPath,
         listDepth: node.listDepth,
         headingPath: normalizeHeadingPath(node.headingPath),

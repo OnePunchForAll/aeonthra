@@ -23,6 +23,7 @@ export type CanonicalStructuralUnit = {
   position: number;
   kind: StructuralNode["kind"];
   tagName: string | null;
+  listContainerTag: "ul" | "ol" | null;
   ordinalPath: number[];
   listDepth: number;
   headingPath: string[];

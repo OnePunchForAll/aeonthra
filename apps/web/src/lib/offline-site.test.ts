@@ -73,6 +73,8 @@ describe("offline replay bundle", () => {
     expect(html).toContain("AEONTHRA Offline Site");
     expect(html).toContain(offlineBundle.title);
     expect(html).toContain("Instructor Focus Map");
+    expect(html).toContain("Truth Boundary");
+    expect(html).toContain("Capture Lanes");
   });
 
   it("rejects malformed replay payloads", () => {
