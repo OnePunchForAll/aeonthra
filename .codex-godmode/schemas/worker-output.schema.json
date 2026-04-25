@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AEONTHRA worker output schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "agent_role",
+    "status",
+    "files_touched",
+    "commands_run",
+    "validation_results",
+    "verified_claims",
+    "unverified_claims",
+    "rejected_claims",
+    "proof_bundle",
+    "summary",
+    "created_at",
+    "blockers"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "enum": [1] },
+    "mission_id": { "type": "string" },
+    "agent_role": { "type": "string" },
+    "status": { "type": "string", "enum": ["success", "failed", "blocked", "degraded"] },
+    "files_touched": { "type": "array", "items": { "type": "string" } },
+    "commands_run": { "type": "array", "items": { "type": "string" } },
+    "validation_results": { "type": "array", "items": { "type": "string" } },
+    "verified_claims": { "type": "array", "items": { "type": "string" } },
+    "unverified_claims": { "type": "array", "items": { "type": "string" } },
+    "rejected_claims": { "type": "array", "items": { "type": "string" } },
+    "proof_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proof_refs", "notes"],
+      "properties": {
+        "proof_refs": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+    "summary": { "type": "string" },
+    "created_at": { "type": "string" },
+    "blockers": { "type": "array", "items": { "type": "string" } }
+  }
+}

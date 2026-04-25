@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-25T00:00:00Z",
+  "status": "proposal_only",
+  "auto_activate": false,
+  "trust_required": true,
+  "write_boundary": ".codex-godmode/hooks/outbox/",
+  "rules": [
+    "Hooks may write only to hook outbox.",
+    "Master-controller remains the single writer for shared state and ledgers.",
+    "No destructive action hooks are enabled by this proposal."
+  ]
+}

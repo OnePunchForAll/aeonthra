@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "aeonthra-trace-crystal",
+  "title": "AEONTHRA Trace Crystal",
+  "purpose": "Convert latest operational evidence into trace JSONL and summary JSON.",
+  "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Run-TraceCrystal.ps1 -Project .",
+  "auto_activate": false,
+  "created_by": "aeonthra-phase3-5"
+}

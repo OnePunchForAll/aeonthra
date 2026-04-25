@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "items": [
-    "advanced tournaments deferred",
-    "Three.js deferred until vendored local asset is available",
-    "Codex-native hooks/rules activation deferred until project trust behavior is verified"
-  ]
-}

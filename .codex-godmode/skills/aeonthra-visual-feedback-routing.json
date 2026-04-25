@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "aeonthra-visual-feedback-routing",
+  "title": "AEONTHRA Visual Feedback Routing",
+  "purpose": "Convert persisted Comment Mode events into proof-required missions without patching directly.",
+  "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\master-controller.ps1 -Project . -Mode safe -Once -NoSpawn -NoPatch",
+  "auto_activate": false,
+  "created_by": "aeonthra-phase3-5"
+}

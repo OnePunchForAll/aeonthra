@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-04-25T00:00:00Z",
+  "status": "proposal_only",
+  "auto_activate": false,
+  "rules": [
+    "Do not mutate shared .codex-godmode state from worker agents; write only inbox/results or inbox/heartbeats.",
+    "Browser success requires Codex Browser Use proof or an explicit DEGRADED blocker.",
+    "Worker success requires schema-valid output ingested by master-controller.",
+    "Visual feedback creates missions; it does not authorize patching by itself."
+  ],
+  "execpolicy_check": { "status": "not_run", "reason": "codex execpolicy check availability must be probed before activation" }
+}
