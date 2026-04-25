@@ -1,7 +1,7 @@
 param([string]$Project='.',[switch]$SkipWorkerSmoke)
 $ErrorActionPreference='Continue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $S = Split-Path -Parent $MyInvocation.MyCommand.Path
-foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Operational','Live','Health','InternalHookBus') { . (Join-Path $S "lib/GodMode.$l.ps1") }
+foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Operational','Live','Health','InternalHookBus','Leveling') { . (Join-Path $S "lib/GodMode.$l.ps1") }
 $root = Initialize-GodModeStructure $Project
 $projectPath = Resolve-GodModeProjectPath $Project
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
@@ -96,6 +96,13 @@ $traceOut = & (Join-Path $S 'Run-TraceCrystal.ps1') -Project $Project -MissionId
 $checkStatus = 'failed'; if($traceExit -eq 0){ $checkStatus = 'passed' }
 Add-Check 'trace-crystal-smoke' $checkStatus @{exit_code=$traceExit;output=($traceOut -join "`n")}
 if($traceExit -ne 0){$blockers += 'Trace Crystal smoke failed'}
+try {
+  $leveling = Update-GodModeLevelingProjection $Project
+  Add-Check 'leveling-projection' 'passed' @{status=$leveling.status;level_gate_status=$leveling.level_gate_status;beauty_gate_status=$leveling.beauty_gate_status;blockers=$leveling.blockers}
+} catch {
+  Add-Check 'leveling-projection' 'failed' @{error=$_.Exception.Message}
+  $blockers += 'Leveling projection failed'
+}
 $status = if($blockers.Count){'failed'}else{'passed'}
 $summary = [ordered]@{ schema_version=1; generated_at=Get-GodModeIso; status=$status; run_id=$runId; checks=$checks; blockers=$blockers }
 $summaryPath = Join-GodModePath $root "logs/godmode-validation-$stamp.json"
@@ -112,6 +119,7 @@ Update-GodModeHealth $Project $healthStatus @($checks | Where-Object {$_.status 
 Update-GodModeLiveResult $Project @{ status=if($status -eq 'passed'){$healthStatus}else{'DEGRADED'}; headline='GodMode validation completed'; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; latest_proof_bundle=$summaryPath; validation_logs=@($summaryPath); what_changed=@("GodMode validation status: $status"; "Operational projection: $healthStatus"); what_still_failed=$blockers; next_repair_action=if($status -eq 'passed'){'Run Status-GodMode.ps1 or continue daily GodMode operation.'}else{'Inspect state/validation-status.json.'} } | Out-Null
 Write-Host ("[GODMODE-VALIDATION] {0} {1}" -f $status,$summaryPath)
 if($status -eq 'passed'){exit 0}else{exit 1}
+
 
 
 

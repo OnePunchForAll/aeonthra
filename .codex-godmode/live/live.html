@@ -3,54 +3,63 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="operations-cathedral" content="live-result">
     <title>Aeonthra Live Result</title>
     <link rel="stylesheet" href="/live.css">
   </head>
-  <body>
+  <body class="oc-grid-bg" data-screen="live-result">
     <main class="wrap">
-      <header class="top">
-        <p class="eyebrow">AEONTHRA LIVE RESULT VIEWER</p>
-        <h1>Runtime truth, not vibes.</h1>
-        <p>This surface shows local projections and proof references. It does not claim browser success without a browser proof bundle.</p>
-        <div id="status" class="badge loading">Loading…</div>
+      <header class="top-rail">
+        <div><span>AEONTHRA</span> / LIVE RESULT VIEWER</div>
+        <div id="railMeta">session pending · loopback only</div>
       </header>
 
-      <section class="cards">
-        <article>
-          <h2>Current result</h2>
-          <dl id="summary"></dl>
-        </article>
-        <article>
-          <h2>What changed</h2>
-          <ul id="changed"><li>Loading…</li></ul>
-        </article>
-        <article>
-          <h2>What still failed</h2>
-          <ul id="failed"><li>Loading…</li></ul>
-        </article>
-        <article>
-          <h2>Next repair action</h2>
-          <p id="next">Loading…</p>
-        </article>
+      <section id="liveHero" class="hero cathedral-panel" data-oc-section="hero">
+        <p class="eyebrow">Operations Cathedral</p>
+        <h1>Runtime <span>truth</span>, not vibes.</h1>
+        <p class="lede">This page displays local projections, proof references, and visual feedback. It never claims browser verification without a proof bundle.</p>
+        <div class="verdict-row">
+          <div id="status" class="verdict status-chip neutral">Loading current result…</div>
+          <div id="sessionMeta" class="session-meta">timestamp pending</div>
+        </div>
       </section>
 
-      <section class="proof">
-        <h2>Proof references</h2>
-        <div id="proofs" class="mono empty">No proof loaded.</div>
+      <section id="verificationChain" class="pipeline cathedral-panel" data-oc-section="verification-chain">
+        <div class="pipeline-head"><h2>Verification Chain</h2><span id="pipelineAside">real-state driven</span></div>
+        <div id="pipelineNodes" class="pipeline-nodes" aria-live="polite"></div>
       </section>
 
-      <section class="comments">
-        <button id="toggleComments" type="button">Comment Mode</button>
-        <div id="commentPanel" hidden>
+      <section class="verdict-grid" data-oc-section="verdict-grid">
+        <article class="cathedral-panel"><h2>Current Result</h2><dl id="summary" class="kv"></dl></article>
+        <article class="cathedral-panel"><h2>What Changed</h2><ul id="changed" class="structured-list"><li>Loading…</li></ul></article>
+        <article class="cathedral-panel"><h2>What Still Failed</h2><ul id="failed" class="structured-list"><li>Loading…</li></ul></article>
+        <article class="cathedral-panel repair"><h2>Next Repair Action</h2><p id="next">Loading…</p></article>
+      </section>
+
+      <section class="comments cathedral-panel" data-oc-section="comment-mode">
+        <button id="toggleComments" class="comment-bar" type="button" aria-expanded="false" aria-controls="commentPanel">
+          <span class="toggle-pip" aria-hidden="true"></span>
+          <span class="comment-label">Comment Mode</span>
+          <span class="comment-desc">persisted visual feedback → proof-required mission routing</span>
+        </button>
+        <div id="commentPanel" class="comment-panel" hidden>
           <label for="commentText">Persisted visual feedback</label>
-          <p class="hint">Saved notes are validated and appended to <code>.codex-godmode/live/visual-feedback-events.jsonl</code>.</p>
+          <p class="hint">Saved notes are validated and appended locally to <code>.codex-godmode/live/visual-feedback-events.jsonl</code>.</p>
           <textarea id="commentText" rows="4" maxlength="1000" placeholder="Describe a visible issue to review later…"></textarea>
           <div class="comment-actions">
             <button id="saveComment" type="button">Save persisted note</button>
             <span id="commentStatus" class="comment-status" role="status" aria-live="polite"></span>
           </div>
-          <ul id="commentList"><li>Loading persisted feedback…</li></ul>
+          <div id="commentList" class="feedback-log"><div>Loading persisted feedback…</div></div>
         </div>
+      </section>
+
+      <section class="proof-section cathedral-panel" data-oc-section="proof-json">
+        <div class="proof-head">
+          <div><h2>Proof References</h2><p>Syntax-highlighted local evidence snapshot.</p></div>
+          <button id="copyProof" type="button" class="copy-btn">copy json</button>
+        </div>
+        <pre id="proofs" class="proof-json empty" aria-live="polite">No proof loaded.</pre>
       </section>
     </main>
     <script src="/live.js"></script>

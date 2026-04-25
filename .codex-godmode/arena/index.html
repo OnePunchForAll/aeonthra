@@ -1,3 +1,90 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aeonthra God Arena</title><link rel="stylesheet" href="/arena.css"></head>
-<body><main class="shell"><section class="hero"><p class="eyebrow">AEONTHRA OPERATIONAL CONTROL PLANE</p><h1>God Arena</h1><p class="lede">Operational monitor for local-only GodMode. Browser UI exposes safe links and copyable commands only.</p><div id="status" class="status loading">Loading operational manifest…</div><div class="actions"><a id="openLive" class="button" href="/live/result-state.json">Open Live Result</a><a class="button" href="/api/latest-proof">View latest proof</a><a class="button" href="/api/latest-trace">View latest trace</a></div></section><section class="ops-grid"><article class="panel"><h2>Processes</h2><div id="processes" class="kv"></div></article><article class="panel"><h2>Queues</h2><div id="queues" class="kv"></div></article><article class="panel"><h2>Routes</h2><div id="routes" class="kv"></div></article><article class="panel"><h2>Latest Evidence</h2><div id="evidence" class="kv"></div></article></section><section class="panel"><h2>Safe Commands</h2><pre id="commands" class="commands"></pre></section><section class="panel"><h2>Visual Feedback</h2><ul id="feedback" class="events empty"><li>No feedback loaded yet.</li></ul></section><section class="grid" id="entities" aria-live="polite"></section><section class="panel"><h2>Latest Events</h2><ul id="events" class="events empty"><li>No events loaded yet.</li></ul></section></main><script src="/arena.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="operations-cathedral" content="arena">
+  <title>Aeonthra God Arena</title>
+  <link rel="stylesheet" href="/arena.css">
+</head>
+<body class="oc-surface oc-grid-bg" data-screen="arena">
+  <div class="cathedral-noise" aria-hidden="true"></div>
+  <main class="arena-shell">
+    <header class="top-rail" aria-label="Arena operating rail">
+      <div>
+        <span class="rail-kicker">AEONTHRA</span>
+        <span class="rail-title">Operational Control Plane</span>
+      </div>
+      <div class="rail-meta">
+        <span id="railVersion">phase 7</span>
+        <span id="railSession">session unknown</span>
+        <span id="railScope">scope loopback-only</span>
+        <span id="railLive" class="pulse-dot">live state probing</span>
+      </div>
+    </header>
+
+    <section id="arena-hero" class="hero cathedral-panel" data-oc-section="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Operations Cathedral</p>
+        <h1><em>God Arena</em></h1>
+        <p class="lede">A local-only shrine for verified agents, queues, proof routes, trace crystals, and living deity projections. The browser performs no destructive actions.</p>
+        <div id="verdict" class="verdict status-chip neutral" data-testid="verdict">Loading operational verdict…</div>
+      </div>
+      <div class="glyph-mark" aria-hidden="true">
+        <svg viewBox="0 0 120 120" role="img" aria-label="AEONTHRA glyph">
+          <path d="M60 6 94 26v38L60 114 26 64V26Z" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="M60 24 78 36v24L60 88 42 60V36Z" fill="none" stroke="currentColor" stroke-width="2" opacity=".75"/>
+          <circle cx="60" cy="58" r="7" fill="currentColor"/>
+        </svg>
+      </div>
+      <nav class="hero-actions" aria-label="Safe arena links">
+        <a id="openLive" class="action-link" href="http://127.0.0.1:7474/live.html">Live Result</a>
+        <a id="openMission" class="action-link" href="http://127.0.0.1:7575/">Mission Control</a>
+        <a class="action-link" href="/api/latest-proof">Latest Proof</a>
+        <a class="action-link" href="/api/latest-trace">Latest Trace</a>
+      </nav>
+    </section>
+
+    <section id="ascensionTheater" class="cathedral-panel ascension-theater" data-oc-section="ascension-theater">
+      <div class="panel-head"><h2>Ascension Theater</h2><span id="levelGateSummary">level gate pending projection</span></div>
+      <div class="theater-grid">
+        <div id="deityStage" class="deity-stage deity-baseline" aria-label="Selected proof-bound deity form"></div>
+        <div class="deity-readout">
+          <p class="eyebrow">Deity Evolution Layer</p>
+          <h3 id="selectedDeityName">Awaiting manifest</h3>
+          <p id="selectedDeityForm" class="muted">Procedural CSS/SVG form derives from role, stability, proof state, and mission state.</p>
+          <dl id="selectedDeityStats" class="stat-grid"></dl>
+        </div>
+      </div>
+    </section>
+
+    <section id="telemetry" class="telemetry-grid" data-oc-section="telemetry">
+      <article class="cathedral-panel"><h2>Processes</h2><div id="processes" class="telemetry-list"></div></article>
+      <article class="cathedral-panel"><h2>Queues</h2><div id="queues" class="queue-bars"></div></article>
+      <article class="cathedral-panel"><h2>Routes</h2><div id="routes" class="telemetry-list"></div></article>
+      <article class="cathedral-panel"><h2>Latest Evidence</h2><div id="evidence" class="evidence-stack"></div></article>
+    </section>
+
+    <section id="safeCommands" class="cathedral-panel command-panel" data-oc-section="safe-commands">
+      <div class="panel-head"><h2>Safe Daily Commands</h2><span>copy only · no browser execution</span></div>
+      <div id="commands" class="command-list" role="list"></div>
+    </section>
+
+    <section id="feedbackPanel" class="cathedral-panel" data-oc-section="visual-feedback-log">
+      <div class="panel-head"><h2>Visual Feedback Log</h2><span id="feedbackSummary">waiting for routing state</span></div>
+      <div id="feedback" class="feedback-log" role="list"></div>
+    </section>
+
+    <section id="agentRoster" class="roster-section" data-oc-section="agent-roster">
+      <div class="panel-head"><h2>Agent Roster</h2><span id="rosterSummary">manifest loading</span></div>
+      <div id="entities" class="agent-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="ticker" aria-label="Latest events ticker">
+      <span>latest events</span>
+      <div id="events" class="ticker-track">No events loaded yet.</div>
+    </section>
+  </main>
+  <script src="/arena.js"></script>
+</body>
+</html>

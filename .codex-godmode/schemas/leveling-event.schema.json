@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "type": "object",
+  "required": ["schema_version", "generated_at", "status", "level_gate_status", "beauty_gate_status", "max_project_level_delta", "blockers", "agents"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": { "type": "string" },
+    "status": { "enum": ["eligible", "pending", "locked", "failed"] },
+    "level_gate_status": { "enum": ["eligible", "pending", "locked", "failed"] },
+    "beauty_gate_status": { "enum": ["passed", "pending-human-review", "not_proven", "failed", "blocked"] },
+    "max_project_level_delta": { "type": "integer", "maximum": 5 },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "agents": { "type": "object" }
+  }
+}

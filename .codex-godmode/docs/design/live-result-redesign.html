@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Result — Aeonthra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #07080b;
+    --bg-2: #0a0c11;
+    --surface: #0f1218;
+    --surface-2: #14171f;
+    --surface-3: #1a1e28;
+    --border: #1d212c;
+    --border-lit: #2c3142;
+    --border-glow: #3a4258;
+
+    --text: #e8e9ed;
+    --text-2: #a4a8b3;
+    --text-3: #6a6f7d;
+    --text-4: #4a4e5a;
+
+    --mono: #8a92a4;
+
+    --accent: #5dd4ff;
+    --accent-soft: #5dd4ff22;
+    --ok: #3dd87b;
+    --ok-soft: #3dd87b18;
+    --warn: #f0b441;
+    --warn-soft: #f0b44118;
+    --err: #ff6b6b;
+    --err-soft: #ff6b6b18;
+    --ember: #ff8a4c;
+
+    --grid: rgba(255,255,255,0.018);
+
+    --display: "Instrument Serif", Georgia, serif;
+    --sans: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono-f: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse 1000px 500px at 50% 0%, rgba(61,216,123,0.05), transparent 60%),
+      radial-gradient(ellipse 800px 400px at 100% 100%, rgba(93,212,255,0.04), transparent 60%),
+      linear-gradient(180deg, #07080b 0%, #06070a 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.008) 0px, rgba(255,255,255,0.008) 1px, transparent 1px, transparent 3px);
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: overlay;
+  }
+
+  .shell {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 36px 80px;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* TOP RAIL */
+  .top-rail {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--mono-f);
+    font-size: 11px;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+  }
+  .brand-mark {
+    width: 10px; height: 10px;
+    background: var(--ember);
+    box-shadow: 0 0 10px var(--ember), 0 0 24px var(--ember);
+    transform: rotate(45deg);
+  }
+  .brand strong { color: var(--text); font-weight: 500; letter-spacing: 0.18em; }
+  .brand-sep { color: var(--text-4); }
+  .top-meta {
+    display: flex; align-items: center; gap: 28px;
+    font-family: var(--mono-f);
+    font-size: 11px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+  }
+  .top-meta .k { color: var(--text-4); margin-right: 8px; }
+  .top-meta .v { color: var(--text-2); }
+  .pulse-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--ok);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--ok);
+    margin-right: 8px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* HERO */
+  .hero {
+    padding-bottom: 44px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 44px;
+    position: relative;
+  }
+  .eyebrow {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    letter-spacing: 0.24em;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 32px; height: 1px;
+    background: var(--text-4);
+    display: inline-block;
+  }
+  .hero h1 {
+    font-family: var(--display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(56px, 8vw, 116px);
+    line-height: 0.95;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    max-width: 18ch;
+    margin-bottom: 28px;
+  }
+  .hero h1 em {
+    font-style: italic;
+    color: var(--ok);
+    text-shadow: 0 0 32px rgba(61,216,123,0.25);
+  }
+  .hero p.lead {
+    font-size: 15px;
+    color: var(--text-2);
+    max-width: 64ch;
+    line-height: 1.55;
+    margin-bottom: 28px;
+  }
+
+  .verdict-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 18px 12px 14px;
+    background: linear-gradient(180deg, rgba(61,216,123,0.08), rgba(61,216,123,0.02));
+    border: 1px solid rgba(61,216,123,0.35);
+    border-radius: 4px;
+    font-family: var(--mono-f);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--ok);
+    text-transform: uppercase;
+    box-shadow: inset 0 0 24px rgba(61,216,123,0.05), 0 0 24px rgba(61,216,123,0.06);
+  }
+  .verdict-bar {
+    width: 2px; height: 18px;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+  }
+  .verdict-time { color: var(--text-3); margin-left: 6px; }
+
+  .stamp {
+    margin-left: auto;
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-4);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-align: right;
+  }
+  .stamp strong { color: var(--text-2); display: block; font-weight: 500; }
+
+  /* PIPELINE */
+  .pipeline {
+    margin-bottom: 44px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 24px 28px;
+    position: relative;
+  }
+  .pipeline-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 22px;
+  }
+  .pipeline-title {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    color: var(--text-3);
+    text-transform: uppercase;
+  }
+  .pipeline-title::before { content: "//"; color: var(--text-4); margin-right: 10px; }
+  .pipeline-aside {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-4);
+    letter-spacing: 0.05em;
+  }
+
+  .pipe-track {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    position: relative;
+  }
+  .pipe-track::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, var(--ok) 0%, var(--ok) 80%, var(--text-4) 100%);
+    opacity: 0.4;
+  }
+  .pipe-step {
+    position: relative;
+    text-align: center;
+  }
+  .pipe-node {
+    width: 28px; height: 28px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    border: 1px solid var(--ok);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ok);
+    font-family: var(--mono-f);
+    font-size: 12px;
+    box-shadow: 0 0 12px rgba(61,216,123,0.2), inset 0 0 8px rgba(61,216,123,0.1);
+    position: relative;
+    z-index: 2;
+  }
+  .pipe-node.muted {
+    border-color: var(--text-4);
+    color: var(--text-4);
+    background: var(--surface);
+    box-shadow: none;
+  }
+  .pipe-label {
+    font-family: var(--mono-f);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .pipe-step.muted .pipe-label { color: var(--text-4); }
+  .pipe-detail {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+  }
+  .pipe-step.muted .pipe-detail { color: var(--text-4); }
+
+  /* VERDICT GRID */
+  .vgrid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 44px;
+  }
+  .vcell {
+    background: var(--surface);
+    padding: 24px 26px;
+  }
+  .vcell-head {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .vcell-head::before { content: "//"; color: var(--text-4); }
+
+  .row-kv {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 14px;
+    padding: 8px 0;
+    border-bottom: 1px dashed rgba(255,255,255,0.04);
+    align-items: baseline;
+  }
+  .row-kv:last-child { border-bottom: none; }
+  .kv-k {
+    font-family: var(--mono-f);
+    font-size: 10px;
+    color: var(--text-3);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .kv-v {
+    font-family: var(--mono-f);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .kv-v a { color: var(--accent); text-decoration: none; }
+  .kv-v a:hover { text-decoration: underline; }
+  .kv-v.warn-text { color: var(--warn); }
+  .kv-v.dim { color: var(--text-3); }
+  .kv-v.ok { color: var(--ok); }
+
+  .ev-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: var(--mono-f);
+    font-size: 11px;
+    color: var(--text-2);
+    cursor: pointer;
+    max-width: 100%;
+  }
+  .ev-chip:hover { border-color: var(--accent); color: var(--accent); }
+  .ev-chip .icon { color: var(--text-4); }
+  .ev-chip .path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    max-width: 200px;
+  }
+
+  .verdict-statement {
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 22px;
+    line-height: 1.25;
+    color: var(--text);
+    margin-bottom: 18px;
+    letter-spacing: -0.005em;
+  }
+  .verdict-statement em {
+    color: var(--warn);
+    font-style: italic;
+  }
+
+  .changed-list, .failed-list {
+    list-style: none;
+    padding: 0;
+  }
+  .changed-list li, .failed-list li {
+    padding: 8px 0;
+    font-family: var(--mono-f);
+    font-size: 12px;
+    color: var(--text-2);
+    display: grid;
+    grid-template-columns: 14px 1fr;
+    gap: 8px;
+    align-items: baseline;
+    border-bottom: 1px dashed rgba(255,255,255,0.04);
+  }
+  .changed-list li:last-child, .failed-list li:last-child { border-bottom: none; }
+  .changed-list li::before {
+    content: "→";
+    color: var(--ok);
+  }
+  .failed-list li::before {
+    content: "▢";
+    color: var(--text-4);
+  }
+  .empty-state {
+    font-family: var(--mono-f);
+    font-size: 11px;
+    color: var(--text-4);
+    font-style: italic;
+    padding: 14px 0;
+    letter-spacing: 0.02em;
+  }
+  .empty-state .ok-mark {
+    color: var(--ok);
+    font-style: normal;
+    margin-right: 8px;
+  }
+
+  .repair-action {
+    background: var(--surface-2);
+    border: 1px solid var(--border-lit);
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-family: var(--mono-f);
+    font-size: 11.5px;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 14px;
+    border-left: 2px solid var(--accent);
+  }
+  .repair-action strong { color: var(--accent); font-weight: 500; }
+  .repair-aside {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-3);
+    line-height: 1.5;
+  }
+
+  /* PROOF JSON */
+  .proof-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .proof-head {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 18px;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .proof-title {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    color: var(--text-3);
+    text-transform: uppercase;
+  }
+  .proof-title::before { content: "//"; color: var(--text-4); margin-right: 10px; }
+  .proof-meta {
+    display: flex; gap: 18px;
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+  }
+  .proof-meta strong { color: var(--text-2); font-weight: 500; }
+
+  .json {
+    font-family: var(--mono-f);
+    font-size: 12px;
+    line-height: 1.65;
+    padding: 24px 28px;
+    color: var(--text-2);
+    overflow-x: auto;
+  }
+  .json .k { color: var(--accent); }
+  .json .s { color: var(--ok); }
+  .json .n { color: var(--ember); }
+  .json .b { color: var(--warn); }
+  .json .br { color: var(--text-4); }
+  .json .c { color: var(--text-4); font-style: italic; }
+  .json .lead {
+    font-family: var(--sans);
+    font-style: italic;
+    color: var(--text-3);
+    font-size: 12.5px;
+    margin-bottom: 14px;
+    padding-left: 14px;
+    border-left: 2px solid var(--border-lit);
+  }
+  .ind { display: inline-block; width: 1.5em; }
+  .ind2 { display: inline-block; width: 3em; }
+  .ind3 { display: inline-block; width: 4.5em; }
+
+  .proof-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-3);
+    letter-spacing: 0.04em;
+  }
+  .proof-foot a { color: var(--accent); text-decoration: none; }
+  .proof-foot a:hover { text-decoration: underline; }
+
+  /* COMMENT MODE */
+  .comment-bar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+    padding: 18px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    margin-bottom: 36px;
+  }
+  .comment-label {
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    color: var(--text-3);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .comment-label::before { content: "//"; color: var(--text-4); }
+  .comment-desc {
+    font-family: var(--mono-f);
+    font-size: 11.5px;
+    color: var(--text-3);
+    letter-spacing: 0.02em;
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border: 1px solid var(--border-lit);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--mono-f);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--text-2);
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .toggle .pip {
+    width: 8px; height: 8px;
+    background: var(--text-4);
+    border-radius: 50%;
+  }
+  .toggle.on .pip {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  /* FOOTER */
+  footer {
+    margin-top: 60px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono-f);
+    font-size: 10.5px;
+    color: var(--text-4);
+    letter-spacing: 0.08em;
+  }
+  footer .left { color: var(--text-3); }
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- TOP RAIL -->
+  <div class="top-rail">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <strong>AEONTHRA</strong>
+      <span class="brand-sep">/</span>
+      <span>LIVE RESULT VIEWER</span>
+      <span class="brand-sep">/</span>
+      <span>FILE 002</span>
+    </div>
+    <div class="top-meta">
+      <div><span class="k">SESSION</span><span class="v">8a91-4f3c</span></div>
+      <div><span class="k">PHASE</span><span class="v">04 / VERIFIED</span></div>
+      <div><span class="pulse-dot"></span><span class="v">LIVE 01:55:12</span></div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="eyebrow">RUNTIME PROJECTION · NOT BROWSER-VALIDATED</div>
+    <h1>Runtime <em>truth</em>, not vibes.</h1>
+    <p class="lead">
+      This surface shows local projections and proof references. It does not claim browser
+      success without a browser proof bundle. What you see here is what actually happened on
+      this machine, in this session — not what we hoped happened.
+    </p>
+
+    <div class="verdict-row">
+      <div class="verdict">
+        <span class="verdict-bar"></span>
+        <span>VERIFIED · OPERATIONAL · PHASE 4</span>
+        <span class="verdict-time">· 01:55:12</span>
+      </div>
+      <div class="stamp">
+        <strong>WORKER SMOKE — PASSED</strong>
+        <span>2026 · 04 · 25 · ZULU</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="pipeline">
+    <div class="pipeline-head">
+      <div class="pipeline-title">verification chain</div>
+      <div class="pipeline-aside">5 of 5 satisfied · 1 unproven</div>
+    </div>
+
+    <div class="pipe-track">
+      <div class="pipe-step">
+        <div class="pipe-node">✓</div>
+        <div class="pipe-label">Validation</div>
+        <div class="pipe-detail">passed</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-node">✓</div>
+        <div class="pipe-label">Worker Smoke</div>
+        <div class="pipe-detail">passed · 15 spans</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-node">✓</div>
+        <div class="pipe-label">Trace Crystal</div>
+        <div class="pipe-detail">15 success</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-node">✓</div>
+        <div class="pipe-label">Projection</div>
+        <div class="pipe-detail">8 routed · 0 rejected</div>
+      </div>
+      <div class="pipe-step muted">
+        <div class="pipe-node muted">○</div>
+        <div class="pipe-label">Browser Proof</div>
+        <div class="pipe-detail">not_proven</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VERDICT GRID -->
+  <section class="vgrid">
+
+    <div class="vcell">
+      <div class="vcell-head">current result</div>
+
+      <div class="row-kv">
+        <span class="kv-k">Browser</span>
+        <span class="kv-v warn-text">not browser-validated</span>
+      </div>
+      <div class="row-kv">
+        <span class="kv-k">Live URL</span>
+        <span class="kv-v"><a href="http://127.0.0.1:7474/live.html">127.0.0.1:7474/live.html</a></span>
+      </div>
+      <div class="row-kv">
+        <span class="kv-k">Arena URL</span>
+        <span class="kv-v"><a href="http://127.0.0.1:7374/">127.0.0.1:7374</a></span>
+      </div>
+      <div class="row-kv">
+        <span class="kv-k">Worker Smoke</span>
+        <span class="kv-v ok">passed</span>
+      </div>
+      <div class="row-kv">
+        <span class="kv-k">Trace Crystal</span>
+        <span class="kv-v">
+          <span class="ev-chip">
+            <span class="icon">▤</span>
+            <span class="path">.codex-godmode/traces/status-godmode.summary.json</span>
+          </span>
+        </span>
+      </div>
+      <div class="row-kv">
+        <span class="kv-k">Feedback</span>
+        <span class="kv-v">8 routed <span style="color:var(--text-4);"> · </span><span style="color:var(--text-3);">0 rejected</span></span>
+      </div>
+    </div>
+
+    <div class="vcell">
+      <div class="vcell-head">what changed</div>
+      <ul class="changed-list">
+        <li>GodMode validation status: <span style="color:var(--ok);">passed</span></li>
+        <li>15 trace spans recorded · all <span style="color:var(--ok);">success</span></li>
+        <li>Status projection updated</li>
+        <li>Worker smoke produced schema-constrained output</li>
+      </ul>
+    </div>
+
+    <div class="vcell">
+      <div class="vcell-head">what still failed</div>
+      <div class="empty-state">
+        <span class="ok-mark">✓</span>No current failures listed.
+      </div>
+      <div style="margin-top:18px;">
+        <ul class="failed-list">
+          <li><span style="color:var(--text-3);">Browser proof bundle: not yet produced</span></li>
+          <li><span style="color:var(--text-3);">mission-control process: offline</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="vcell">
+      <div class="vcell-head">next repair action</div>
+      <div class="repair-action">
+        Run <strong>Status-GodMode.ps1</strong> or continue Phase 5 proposals.
+      </div>
+      <div class="repair-aside">
+        Browser proof remains the open thread. To close it, route through <span style="color:var(--text-2);">Run-BrowserProof.ps1</span> and verify <span style="color:var(--text-2);">latest_proof_bundle</span> is non-empty before re-projecting.
+      </div>
+    </div>
+
+  </section>
+
+  <!-- COMMENT MODE -->
+  <div class="comment-bar">
+    <div class="comment-label">comment mode</div>
+    <div class="comment-desc">local-only visual notes · annotations stay on this machine</div>
+    <button class="toggle on" id="cmtToggle"><span class="pip"></span>Active</button>
+  </div>
+
+  <!-- PROOF REFERENCES -->
+  <section class="proof-section">
+    <div class="proof-head">
+      <div class="proof-title">proof references</div>
+      <div class="proof-meta">
+        <span><strong>15</strong> spans</span>
+        <span><strong>1</strong> validation log</span>
+        <span><strong>0</strong> screenshots</span>
+      </div>
+      <div class="proof-meta">
+        <span style="color:var(--ok);">● parsed ok</span>
+      </div>
+    </div>
+
+    <div class="json">
+      <div class="lead">// Parsed proof manifest. Paths normalized for display. Click any field to jump to source.</div>
+
+      <span class="br">{</span><br>
+      <span class="ind"></span><span class="k">"latest_proof_bundle"</span>: <span class="s">".codex-godmode/logs/godmode-validation-20260425T085440Z.json"</span><span class="br">,</span><br>
+      <span class="ind"></span><span class="k">"validation_logs"</span>: <span class="br">[</span><br>
+      <span class="ind2"></span><span class="s">".codex-godmode/logs/godmode-validation-20260425T085440Z.json"</span><br>
+      <span class="ind"></span><span class="br">],</span><br>
+      <span class="ind"></span><span class="k">"proof_bundles"</span>: <span class="br">[],</span> <span class="c">// awaiting browser-proof run</span><br>
+      <span class="ind"></span><span class="k">"screenshots"</span>: <span class="br">[],</span> <span class="c">// none captured yet</span><br>
+      <br>
+      <span class="ind"></span><span class="k">"trace_summary"</span>: <span class="br">{</span><br>
+      <span class="ind2"></span><span class="k">"schema_version"</span>: <span class="n">1</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"mission_id"</span>: <span class="s">"status-godmode"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"updated_at"</span>: <span class="s">"2026-04-25T08:59:34.6017524Z"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"trace_file"</span>: <span class="s">".codex-godmode/traces/status-godmode.trace.jsonl"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"summary_file"</span>: <span class="s">".codex-godmode/traces/status-godmode.summary.json"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"total_spans"</span>: <span class="n">15</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"status_counts"</span>: <span class="br">{</span> <span class="k">"success"</span>: <span class="n">15</span> <span class="br">},</span><br>
+      <span class="ind2"></span><span class="k">"latest_event_type"</span>: <span class="s">"status"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"latest_status"</span>: <span class="s">"success"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"latest_notes"</span>: <span class="s">"Status projection updated."</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"proof_refs"</span>: <span class="br">[</span> <span class="s">"state/status-summary.json"</span> <span class="br">],</span><br>
+      <span class="ind2"></span><span class="k">"files"</span>: <span class="br">[</span> <span class="s">"state/status-summary.json"</span> <span class="br">]</span><br>
+      <span class="ind"></span><span class="br">},</span><br>
+      <br>
+      <span class="ind"></span><span class="k">"worker_smoke"</span>: <span class="br">{</span><br>
+      <span class="ind2"></span><span class="k">"schema_version"</span>: <span class="n">1</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"created_at"</span>: <span class="s">"2026-04-25T08:55:11.2349807Z"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"status"</span>: <span class="s">"passed"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"mission_id"</span>: <span class="s">"worker-smoke-20260425T085446Z"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"result_path"</span>: <span class="s">".codex-godmode/inbox/results/worker-smoke-20260425T085446Z.json"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"stdout_log"</span>: <span class="s">".codex-godmode/logs/worker-smoke-…/codex-stdout.jsonl"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"stderr_log"</span>: <span class="s">".codex-godmode/logs/worker-smoke-…/codex-stderr.txt"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"route"</span>: <span class="s">"codex_exec_output_schema"</span><span class="br">,</span><br>
+      <span class="ind2"></span><span class="k">"blockers"</span>: <span class="br">[]</span><br>
+      <span class="ind"></span><span class="br">}</span><br>
+      <span class="br">}</span>
+    </div>
+
+    <div class="proof-foot">
+      <span>parsed at 08:59:34Z · paths shown relative to project root</span>
+      <span><a href="#">copy raw json ↗</a></span>
+    </div>
+  </section>
+
+  <footer>
+    <span class="left">AEONTHRA · LIVE RESULT · LOCAL PROJECTION ONLY · NOT A BROWSER CLAIM</span>
+    <span>RUNTIME TRUTH</span>
+  </footer>
+
+</div>
+
+<script>
+  const t = document.getElementById('cmtToggle');
+  t && t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    const span = t.lastChild;
+    span.textContent = t.classList.contains('on') ? 'Active' : 'Idle';
+  });
+</script>
+</body>
+</html>

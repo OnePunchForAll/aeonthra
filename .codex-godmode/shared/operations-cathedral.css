@@ -1,0 +1,15 @@
+/* AEONTHRA Operations Cathedral shared design source. Runtime pages duplicate these tokens locally unless their loopback server safely exposes /shared. */
+:root{
+  color-scheme:dark;
+  --bg:#07080b;--bg-2:#0a0c11;--surface:#0f1218;--surface-2:#14171f;--surface-3:#1a1e28;
+  --border:#1d212c;--border-lit:#2c3142;--border-glow:#3a4258;
+  --text:#e8e9ed;--text-2:#a4a8b3;--text-3:#6a6f7d;--text-4:#4a4e5a;
+  --accent:#5dd4ff;--ok:#3dd87b;--warn:#f0b441;--err:#ff6b6b;--ember:#ff8a4c;
+  --display:"Instrument Serif","Iowan Old Style",Georgia,serif;
+  --sans:"Inter Tight","Segoe UI",system-ui,sans-serif;
+  --mono-f:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+}
+.oc-grid-bg{background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.055) 1px,transparent 0);background-size:24px 24px;}
+.oc-scan:after{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(transparent 50%,rgba(255,255,255,.018) 50%);background-size:100% 4px;mix-blend-mode:screen;opacity:.25;}
+.oc-path{direction:rtl;text-align:left;unicode-bidi:plaintext;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono-f);}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
