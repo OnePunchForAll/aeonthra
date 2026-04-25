@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "default-ui",
+  "name": "Default local dashboard smoke",
+  "steps": [
+    {
+      "target": "live_result_url",
+      "type": "navigate"
+    },
+    {
+      "text": "Runtime truth",
+      "type": "assert_text"
+    },
+    {
+      "target": "arena_url",
+      "type": "navigate"
+    },
+    {
+      "text": "God Arena",
+      "type": "assert_text"
+    }
+  ],
+  "created_at": "2026-04-25T06:15:33.6218518Z",
+  "origin_policy": "localhost-only"
+}

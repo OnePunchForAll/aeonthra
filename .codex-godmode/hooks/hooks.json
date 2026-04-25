@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "deferred_mvp",
+  "hooks": [
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "Stop",
+    "UserPromptSubmit"
+  ],
+  "activation": "proposal_only"
+}

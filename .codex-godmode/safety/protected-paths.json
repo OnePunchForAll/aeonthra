@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "self_patch_approval_file": ".codex-godmode/state/self-patch-approval.json",
+  "rules": [
+    "agents write only to inbox/results and inbox/heartbeats",
+    "master is single writer for shared state",
+    "no deletes of user files"
+  ],
+  "protected_paths": [
+    ".git/",
+    ".env",
+    ".env.*",
+    ".codex-godmode/",
+    ".codex/",
+    "node_modules/",
+    "apps/extension/dist/"
+  ]
+}

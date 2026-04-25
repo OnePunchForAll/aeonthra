@@ -34,3 +34,14 @@ Do claim:
 - source-grounded concept derivation
 - local persistence and export
 - graceful fallback paths when capture or handoff is incomplete
+
+## Aeonthra Operating Contract
+
+This repo may include an optional local `.codex-godmode/` orchestration layer for Windows-first Codex workflows.
+
+- Preserve the no-runtime-API boundary: the control plane must not add hosted inference, secrets, or backend requirements.
+- Evidence is required before claims: validation logs, command exit codes, hashes, and browser proof bundles must back success reports.
+- Browser/UI success is not claimed unless a loopback browser proof bundle or equivalent runtime evidence exists.
+- Master-controller projections are the only writer for shared `.codex-godmode/state`, ledgers, Arena manifest, and Live Result state.
+- Agents and dry-run workers write only to `.codex-godmode/inbox/results` and `.codex-godmode/inbox/heartbeats`.
+- Full details live in `.codex-godmode/docs/AEONTHRA-SYSTEM-SPEC.md` and `.codex-godmode/docs/SAFETY-CONTRACT.md`.

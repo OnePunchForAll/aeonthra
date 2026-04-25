@@ -1,0 +1,89 @@
+{
+  "rules": [
+    {
+      "log_required": true,
+      "timeout_seconds": 30,
+      "allowed_args_pattern": "^(status -sb|diff --stat|log -n 20)$",
+      "network_required": false,
+      "requires_verified_tool": true,
+      "cwd_policy": "project_root",
+      "role": "ARCHITECT",
+      "browser_related": false,
+      "patch_allowed": false,
+      "output_capture_required": true,
+      "command_pattern": "git",
+      "windows_safe": true
+    },
+    {
+      "log_required": true,
+      "timeout_seconds": 30,
+      "allowed_args_pattern": "selected diagnostics only",
+      "network_required": false,
+      "requires_verified_tool": false,
+      "cwd_policy": "project_root",
+      "role": "WINDOWS-DOCTOR",
+      "browser_related": false,
+      "patch_allowed": false,
+      "output_capture_required": true,
+      "command_pattern": "powershell",
+      "windows_safe": true
+    },
+    {
+      "log_required": true,
+      "timeout_seconds": 10,
+      "allowed_args_pattern": "--version|/?|ver",
+      "network_required": false,
+      "requires_verified_tool": false,
+      "cwd_policy": "project_root",
+      "role": "TOOL-RESOLVER",
+      "browser_related": false,
+      "patch_allowed": false,
+      "output_capture_required": true,
+      "command_pattern": "*-version probes",
+      "windows_safe": true
+    },
+    {
+      "log_required": true,
+      "timeout_seconds": 600,
+      "allowed_args_pattern": "^run (typecheck|test|build|test:web|test:extension|build:web|build:extension)$",
+      "network_required": false,
+      "requires_verified_tool": true,
+      "cwd_policy": "project_root",
+      "role": "TEST-RUNNER",
+      "browser_related": false,
+      "patch_allowed": false,
+      "output_capture_required": true,
+      "command_pattern": "npm",
+      "windows_safe": true
+    },
+    {
+      "log_required": true,
+      "timeout_seconds": 0,
+      "allowed_args_pattern": "-ExecutionPolicy Bypass -File .codex-godmode/(arena/Start-Arena.ps1|live/Start-LivePreview.ps1)",
+      "network_required": false,
+      "requires_verified_tool": false,
+      "cwd_policy": "project_root",
+      "role": "LIVE-PREVIEW",
+      "browser_related": true,
+      "patch_allowed": false,
+      "output_capture_required": true,
+      "command_pattern": "powershell",
+      "windows_safe": true
+    },
+    {
+      "log_required": true,
+      "timeout_seconds": 120,
+      "allowed_args_pattern": "^(apply --check|apply|diff --stat|diff)",
+      "network_required": false,
+      "requires_verified_tool": true,
+      "cwd_policy": "worktree",
+      "role": "SAFE-PATCHER",
+      "browser_related": false,
+      "patch_allowed": true,
+      "output_capture_required": true,
+      "command_pattern": "git",
+      "windows_safe": true
+    }
+  ],
+  "schema_version": 1
+}

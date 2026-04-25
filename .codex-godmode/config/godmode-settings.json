@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "mode": "safe",
+  "default_live_preview_port": 7474,
+  "network_installs_allowed": false,
+  "self_patch_requires_approval": true,
+  "loopback_only": true,
+  "default_arena_port": 7373
+}

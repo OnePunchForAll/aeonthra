@@ -1,0 +1,12 @@
+{
+  "title": "live-result.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "updated_at",
+    "status",
+    "browser_status"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

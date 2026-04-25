@@ -1,0 +1,17 @@
+﻿logs/
+checkpoints/
+archive/
+worktrees/
+traces/
+events/
+inbox/
+queues/active/
+queues/done/
+queues/failed/
+state/*.lock*
+state/*-port.txt
+state/latest-result.url
+live/preview-history.jsonl
+live/visual-feedback-events.jsonl
+memory/*.jsonl
+*.png

@@ -1,0 +1,12 @@
+{
+  "title": "lore-event.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "entity_id",
+    "text",
+    "created_at"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

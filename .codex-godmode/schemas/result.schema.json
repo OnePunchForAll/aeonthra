@@ -1,0 +1,14 @@
+{
+  "title": "result.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "mission_id",
+    "agent_role",
+    "status",
+    "proof_bundle",
+    "created_at"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

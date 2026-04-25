@@ -1,0 +1,29 @@
+{
+  "patterns": [
+    {
+      "pattern": "ignore previous instructions",
+      "action": "reject"
+    },
+    {
+      "pattern": "system prompt",
+      "action": "reject"
+    },
+    {
+      "pattern": "you are now",
+      "action": "reject"
+    },
+    {
+      "pattern": "override AGENTS.md",
+      "action": "reject"
+    },
+    {
+      "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)",
+      "action": "reject"
+    },
+    {
+      "pattern": "[A-Za-z0-9+/]{4000,}",
+      "action": "reject"
+    }
+  ],
+  "schema_version": 1
+}

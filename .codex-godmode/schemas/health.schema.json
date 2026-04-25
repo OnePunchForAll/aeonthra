@@ -1,0 +1,13 @@
+{
+  "title": "health.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "updated_at",
+    "status",
+    "degraded_reasons",
+    "blockers"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

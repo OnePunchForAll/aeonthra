@@ -1,0 +1,14 @@
+{
+  "title": "entity-profile.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "id",
+    "role",
+    "name",
+    "state",
+    "stability"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

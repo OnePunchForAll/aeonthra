@@ -1,0 +1,11 @@
+{
+  "title": "system-capabilities.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "operating_system"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

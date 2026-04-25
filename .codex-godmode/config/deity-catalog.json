@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "families": [
+    "circuit",
+    "prism",
+    "archive",
+    "signal",
+    "lockscale",
+    "glasswing"
+  ],
+  "policy": "original-creature-identities-only",
+  "deprecated_terms": [
+    "griffin",
+    "phoenix",
+    "cerberus",
+    "basilisk",
+    "leviathan"
+  ]
+}

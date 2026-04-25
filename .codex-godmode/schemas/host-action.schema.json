@@ -1,0 +1,13 @@
+{
+  "title": "host-action.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "id",
+    "created_at",
+    "recommended_command",
+    "status"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

@@ -1,0 +1,11 @@
+{
+  "title": "tool-map.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "tools"
+  ],
+  "type": "object",
+  "additionalProperties": true
+}
