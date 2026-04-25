@@ -4,6 +4,7 @@ archive/
 worktrees/
 traces/
 events/
+feedback/
 inbox/
 queues/active/
 queues/done/

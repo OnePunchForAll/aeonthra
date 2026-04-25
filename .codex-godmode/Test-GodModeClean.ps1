@@ -10,7 +10,7 @@ function Add-Warning([string]$m){$script:warnings+=$m}
 function Is-RuntimeArtifact([string]$Path){
   $p=$Path -replace '\\','/'
   if($p -eq '.codex-godmode/state/STOP.example'){ return $false }
-  return ($p -match '^\.codex-godmode/(logs|checkpoints|archive|worktrees|traces|events|inbox)/' -or
+  return ($p -match '^\.codex-godmode/(logs|checkpoints|archive|worktrees|traces|events|feedback|inbox)/' -or
     $p -match '^\.codex-godmode/queues/(active|done|failed|pending)/' -or
     $p -match '^\.codex-godmode/state/.*\.(json|txt|lock)$' -or
     $p -match '^\.codex-godmode/live/(result-state\.json|preview-history\.jsonl|visual-feedback-events\.jsonl)$' -or
@@ -43,7 +43,7 @@ foreach($ps in Get-ChildItem -LiteralPath $root -Filter '*.ps1' -Recurse -ErrorA
 if($parseFailures.Count){ Add-Blocker ('PowerShell parse failures: ' + (($parseFailures|Select-Object -First 5)-join '; ')); $remediation += 'Fix parser errors reported by Test-GodModeClean.ps1' }
 $registryPath=Join-GodModePath $root 'state/process-registry.json'
 if(Test-Path -LiteralPath $registryPath){ try{Get-Content $registryPath -Raw -Encoding UTF8|ConvertFrom-Json|Out-Null}catch{Add-Blocker "process-registry.json invalid JSON: $($_.Exception.Message)"} }
-foreach($sample in @('.codex-godmode/logs/probe.log','.codex-godmode/checkpoints/probe/.keep','.codex-godmode/traces/probe.trace.jsonl','.codex-godmode/inbox/results/probe.json','.codex-godmode/state/process-registry.json','.codex-godmode/state/mission-control-port.txt','.codex-godmode/live/visual-feedback-events.jsonl','.codex-godmode/queues/pending/probe.json')){
+foreach($sample in @('.codex-godmode/logs/probe.log','.codex-godmode/checkpoints/probe/.keep','.codex-godmode/traces/probe.trace.jsonl','.codex-godmode/feedback/feedback-resolution-report.md','.codex-godmode/inbox/results/probe.json','.codex-godmode/state/process-registry.json','.codex-godmode/state/mission-control-port.txt','.codex-godmode/live/visual-feedback-events.jsonl','.codex-godmode/queues/pending/probe.json')){
   try { $out=& git -C $projectPath check-ignore $sample 2>$null; if($LASTEXITCODE -ne 0){ Add-Blocker "runtime ignore probe not ignored: $sample" } } catch { Add-Blocker "git check-ignore failed for $sample" }
 }
 if($gitStatus.Count){ Add-Warning ('Git working tree has source/config changes: ' + (($gitStatus|Select-Object -First 12)-join ' | ')); $remediation += 'git diff --stat ; review source changes before staging' }

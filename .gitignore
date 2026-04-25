@@ -21,6 +21,7 @@ output/
 .codex-godmode/worktrees/
 .codex-godmode/traces/
 .codex-godmode/events/
+.codex-godmode/feedback/
 .codex-godmode/inbox/
 .codex-godmode/queues/active/
 .codex-godmode/queues/done/
@@ -51,6 +52,7 @@ output/
 .codex-godmode/worktrees/
 .codex-godmode/traces/
 .codex-godmode/events/
+.codex-godmode/feedback/
 .codex-godmode/inbox/
 .codex-godmode/queues/active/
 .codex-godmode/queues/done/
