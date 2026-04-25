@@ -1,7 +1,274 @@
 param([int]$Port=7474,[string]$Project='.',[int]$MaxRequests=0)
-$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
-$GodRoot=Split-Path -Parent $PSScriptRoot; $StateDir=Join-Path $GodRoot 'state'
-function Test-PortFree([int]$p){try{$l=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse('127.0.0.1'),$p);$l.Start();$l.Stop();$true}catch{$false}}
-while(-not(Test-PortFree $Port)){$Port++}; Set-Content (Join-Path $StateDir 'live-preview-port.txt') $Port -Encoding UTF8; $url="http://127.0.0.1:$Port/live.html"; Set-Content (Join-Path $StateDir 'latest-result.url') $url -Encoding UTF8
-$listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse('127.0.0.1'),$Port); $listener.Start(); Write-Host "[PREVIEW] Live Result Viewer listening on $url"; $count=0
-try{while($true){$client=$listener.AcceptTcpClient();$count++;try{$stream=$client.GetStream();$reader=[IO.StreamReader]::new($stream,[Text.Encoding]::UTF8,$false,1024,$true);$req=$reader.ReadLine();while($true){$line=$reader.ReadLine();if($null -eq $line -or $line -eq ''){break}};$target='/live.html';if($req -match 'GET\s+([^\s]+)'){$target=[Uri]::UnescapeDataString($Matches[1].Split('?')[0])};if($target -eq '/'){$target='/live.html'};$map=@{'/live.html'='live.html';'/live.js'='live.js';'/live.css'='live.css';'/result-state.json'='result-state.json';'/state/health.json'='../state/health.json'};$status='200 OK';$ctype='text/plain; charset=utf-8';$bytes=$null;if($map.ContainsKey($target)){$file=Join-Path $PSScriptRoot $map[$target];if(Test-Path $file){$ext=[IO.Path]::GetExtension($file).ToLowerInvariant();if($ext -eq '.html'){$ctype='text/html; charset=utf-8'}elseif($ext -eq '.js'){$ctype='text/javascript; charset=utf-8'}elseif($ext -eq '.css'){$ctype='text/css; charset=utf-8'}elseif($ext -eq '.json'){$ctype='application/json; charset=utf-8'};$bytes=[IO.File]::ReadAllBytes($file)}};if($null -eq $bytes){$status='404 Not Found';$bytes=[Text.Encoding]::UTF8.GetBytes('not found')};$header="HTTP/1.1 $status`r`nContent-Type: $ctype`r`nCache-Control: no-store`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n";$hb=[Text.Encoding]::UTF8.GetBytes($header);$stream.Write($hb,0,$hb.Length);$stream.Write($bytes,0,$bytes.Length)}finally{$client.Close()};if($MaxRequests -gt 0 -and $count -ge $MaxRequests){break}}}finally{$listener.Stop()}
+
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+
+$GodRoot = Split-Path -Parent $PSScriptRoot
+$StateDir = Join-Path $GodRoot 'state'
+$SafetyDir = Join-Path $GodRoot 'safety'
+$FeedbackFile = Join-Path $PSScriptRoot 'visual-feedback-events.jsonl'
+
+function Test-PortFree([int]$p) {
+  try {
+    $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse('127.0.0.1'), $p)
+    $l.Start()
+    $l.Stop()
+    $true
+  } catch {
+    $false
+  }
+}
+
+function Find-HeaderEnd([byte[]]$Bytes, [int]$Length) {
+  for ($i = 0; $i -le ($Length - 4); $i++) {
+    if ($Bytes[$i] -eq 13 -and $Bytes[$i + 1] -eq 10 -and $Bytes[$i + 2] -eq 13 -and $Bytes[$i + 3] -eq 10) {
+      return $i + 4
+    }
+  }
+  return -1
+}
+
+function Read-HttpRequest([IO.Stream]$Stream) {
+  $Stream.ReadTimeout = 5000
+  $buffer = New-Object byte[] 4096
+  $raw = [IO.MemoryStream]::new()
+  $headerEnd = -1
+
+  while ($headerEnd -lt 0 -and $raw.Length -lt 65536) {
+    $read = $Stream.Read($buffer, 0, $buffer.Length)
+    if ($read -le 0) { break }
+    $raw.Write($buffer, 0, $read)
+    $bytes = $raw.ToArray()
+    $headerEnd = Find-HeaderEnd $bytes $bytes.Length
+  }
+
+  if ($headerEnd -lt 0) {
+    throw 'Malformed HTTP request: missing header terminator.'
+  }
+
+  $all = $raw.ToArray()
+  $headerText = [Text.Encoding]::UTF8.GetString($all, 0, $headerEnd)
+  $headerLines = $headerText -split "`r`n"
+  $requestLine = $headerLines[0]
+  if ($requestLine -notmatch '^(GET|POST|OPTIONS)\s+([^\s]+)\s+HTTP/') {
+    throw "Unsupported request line: $requestLine"
+  }
+  $method = $Matches[1]
+  $rawTarget = $Matches[2]
+
+  $headers = @{}
+  foreach ($line in $headerLines | Select-Object -Skip 1) {
+    if ([string]::IsNullOrWhiteSpace($line) -or $line -notmatch ':') { continue }
+    $parts = $line.Split(':', 2)
+    $headers[$parts[0].Trim().ToLowerInvariant()] = $parts[1].Trim()
+  }
+
+  $contentLength = 0
+  if ($headers.ContainsKey('content-length')) {
+    [void][int]::TryParse($headers['content-length'], [ref]$contentLength)
+  }
+  if ($contentLength -gt 16384) {
+    throw 'Request body too large.'
+  }
+
+  $body = [IO.MemoryStream]::new()
+  if ($all.Length -gt $headerEnd) {
+    $already = [Math]::Min($contentLength, $all.Length - $headerEnd)
+    if ($already -gt 0) {
+      $body.Write($all, $headerEnd, $already)
+    }
+  }
+  while ($body.Length -lt $contentLength) {
+    $remaining = $contentLength - [int]$body.Length
+    $read = $Stream.Read($buffer, 0, [Math]::Min($buffer.Length, $remaining))
+    if ($read -le 0) { break }
+    $body.Write($buffer, 0, $read)
+  }
+
+  $target = [Uri]::UnescapeDataString($rawTarget.Split('?')[0])
+  if ($target -eq '/') { $target = '/live.html' }
+
+  @{
+    Method = $method
+    Target = $target
+    Headers = $headers
+    Body = [Text.Encoding]::UTF8.GetString($body.ToArray())
+  }
+}
+
+function Send-HttpResponse([IO.Stream]$Stream, [string]$Status, [string]$ContentType, [byte[]]$Bytes) {
+  $header = "HTTP/1.1 $Status`r`nContent-Type: $ContentType`r`nCache-Control: no-store`r`nContent-Length: $($Bytes.Length)`r`nConnection: close`r`n`r`n"
+  $headerBytes = [Text.Encoding]::UTF8.GetBytes($header)
+  $Stream.Write($headerBytes, 0, $headerBytes.Length)
+  $Stream.Write($Bytes, 0, $Bytes.Length)
+}
+
+function Send-Json([IO.Stream]$Stream, [string]$Status, $Value) {
+  $json = $Value | ConvertTo-Json -Depth 8
+  Send-HttpResponse $Stream $Status 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+function Get-ContentType([string]$File) {
+  $ext = [IO.Path]::GetExtension($File).ToLowerInvariant()
+  if ($ext -eq '.html') { return 'text/html; charset=utf-8' }
+  if ($ext -eq '.js') { return 'text/javascript; charset=utf-8' }
+  if ($ext -eq '.css') { return 'text/css; charset=utf-8' }
+  if ($ext -eq '.json') { return 'application/json; charset=utf-8' }
+  return 'text/plain; charset=utf-8'
+}
+
+function Get-InjectionPatterns {
+  $path = Join-Path $SafetyDir 'injection-patterns.json'
+  if (-not (Test-Path -LiteralPath $path)) { return @() }
+  $config = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+  return @($config.patterns | Where-Object { $_.action -eq 'reject' } | ForEach-Object { $_.pattern })
+}
+
+function Test-VisualCommentText([string]$Text) {
+  foreach ($pattern in Get-InjectionPatterns) {
+    try {
+      if ([regex]::IsMatch($Text, $pattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        return @{ ok = $false; reason = "Rejected by injection pattern: $pattern" }
+      }
+    } catch {
+      return @{ ok = $false; reason = "Invalid injection pattern configured: $pattern" }
+    }
+  }
+  return @{ ok = $true; reason = $null }
+}
+
+function Read-VisualFeedbackEvents {
+  if (-not (Test-Path -LiteralPath $FeedbackFile)) { return @() }
+  $events = @()
+  foreach ($line in Get-Content -LiteralPath $FeedbackFile) {
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+    try {
+      $events += ($line | ConvertFrom-Json)
+    } catch {
+      $events += [pscustomobject]@{
+        schema_version = 1
+        id = 'unreadable-line'
+        target = 'visual-feedback-events.jsonl'
+        text = 'A persisted feedback line could not be parsed.'
+        created_at = (Get-Date).ToUniversalTime().ToString('o')
+        degraded = $true
+      }
+    }
+  }
+  return $events
+}
+
+function Save-VisualFeedbackEvent([string]$Body) {
+  try {
+    $payload = $Body | ConvertFrom-Json
+  } catch {
+    return @{ ok = $false; status = '400 Bad Request'; body = @{ ok = $false; error = 'invalid-json' } }
+  }
+
+  if ($null -eq $payload -or $null -eq $payload.text -or -not ($payload.text -is [string])) {
+    return @{ ok = $false; status = '400 Bad Request'; body = @{ ok = $false; error = 'missing-text' } }
+  }
+
+  $text = $payload.text.Trim()
+  if ($text.Length -lt 1) {
+    return @{ ok = $false; status = '400 Bad Request'; body = @{ ok = $false; error = 'empty-text' } }
+  }
+  if ($text.Length -gt 1000) {
+    return @{ ok = $false; status = '413 Payload Too Large'; body = @{ ok = $false; error = 'text-too-long'; max = 1000 } }
+  }
+
+  $scan = Test-VisualCommentText $text
+  if (-not $scan.ok) {
+    return @{ ok = $false; status = '400 Bad Request'; body = @{ ok = $false; error = 'injection-suspected'; reason = $scan.reason } }
+  }
+
+  $target = 'live-result-viewer'
+  if ($payload.PSObject.Properties['target'] -and $payload.target -is [string] -and -not [string]::IsNullOrWhiteSpace($payload.target)) {
+    $target = $payload.target.Trim()
+  }
+  if ($target.Length -gt 200) {
+    return @{ ok = $false; status = '400 Bad Request'; body = @{ ok = $false; error = 'target-too-long'; max = 200 } }
+  }
+
+  $pageUrl = $null
+  if ($payload.PSObject.Properties['page_url'] -and $payload.page_url -is [string]) {
+    $pageUrl = $payload.page_url.Trim()
+    if ($pageUrl.Length -gt 500) { $pageUrl = $pageUrl.Substring(0, 500) }
+  }
+
+  $event = [ordered]@{
+    schema_version = 1
+    id = [Guid]::NewGuid().ToString('n')
+    target = $target
+    text = $text
+    created_at = (Get-Date).ToUniversalTime().ToString('o')
+    page_url = $pageUrl
+    source = 'live-result-viewer'
+    route = 'POST /api/visual-feedback'
+  }
+
+  $line = ($event | ConvertTo-Json -Compress -Depth 8) + "`n"
+  [IO.File]::AppendAllText($FeedbackFile, $line, [Text.UTF8Encoding]::new($false))
+  return @{ ok = $true; status = '201 Created'; body = @{ ok = $true; event = $event } }
+}
+
+while (-not (Test-PortFree $Port)) { $Port++ }
+New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
+Set-Content (Join-Path $StateDir 'live-preview-port.txt') $Port -Encoding UTF8
+$url = "http://127.0.0.1:$Port/live.html"
+Set-Content (Join-Path $StateDir 'latest-result.url') $url -Encoding UTF8
+
+$listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse('127.0.0.1'), $Port)
+$listener.Start()
+Write-Host "[PREVIEW] Live Result Viewer listening on $url"
+$count = 0
+
+try {
+  while ($true) {
+    $client = $listener.AcceptTcpClient()
+    $count++
+    try {
+      $stream = $client.GetStream()
+      $request = Read-HttpRequest $stream
+
+      if ($request.Method -eq 'OPTIONS') {
+        Send-HttpResponse $stream '204 No Content' 'text/plain; charset=utf-8' ([byte[]]@())
+      } elseif ($request.Method -eq 'GET' -and $request.Target -eq '/api/visual-feedback') {
+        Send-Json $stream '200 OK' @{ ok = $true; events = @(Read-VisualFeedbackEvents) }
+      } elseif ($request.Method -eq 'POST' -and $request.Target -eq '/api/visual-feedback') {
+        $saved = Save-VisualFeedbackEvent $request.Body
+        Send-Json $stream $saved.status $saved.body
+      } elseif ($request.Method -eq 'GET') {
+        $map = @{
+          '/live.html' = 'live.html'
+          '/live.js' = 'live.js'
+          '/live.css' = 'live.css'
+          '/result-state.json' = 'result-state.json'
+          '/state/health.json' = '../state/health.json'
+        }
+        $bytes = $null
+        if ($map.ContainsKey($request.Target)) {
+          $file = Join-Path $PSScriptRoot $map[$request.Target]
+          if (Test-Path -LiteralPath $file) {
+            $bytes = [IO.File]::ReadAllBytes($file)
+            Send-HttpResponse $stream '200 OK' (Get-ContentType $file) $bytes
+          }
+        }
+        if ($null -eq $bytes) {
+          Send-HttpResponse $stream '404 Not Found' 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes('not found'))
+        }
+      } else {
+        Send-Json $stream '405 Method Not Allowed' @{ ok = $false; error = 'method-not-allowed' }
+      }
+    } catch {
+      try {
+        Send-Json $stream '400 Bad Request' @{ ok = $false; error = 'bad-request'; message = $_.Exception.Message }
+      } catch {}
+    } finally {
+      $client.Close()
+    }
+    if ($MaxRequests -gt 0 -and $count -ge $MaxRequests) { break }
+  }
+} finally {
+  $listener.Stop()
+}
