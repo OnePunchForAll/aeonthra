@@ -16,8 +16,11 @@ screenshots/
 *.trace.jsonl
 *.jsonl
 state/*.lock*
+state/*.json
+state/*.txt
 state/*-port.txt
 state/latest-result.url
+state/mission-control.url
 state/process-registry.json
 state/status-summary.json
 state/validation-status.json

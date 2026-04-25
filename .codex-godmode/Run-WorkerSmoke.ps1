@@ -61,13 +61,15 @@ Task: Summarize the local GodMode-only repo shape from the prompt context and re
 if ($status -eq 'passed' -and -not $NoIngest) {
   try { & (Join-Path $S 'master-controller.ps1') -Project $Project -Mode safe -Once -NoSpawn -NoBrowser -NoWorker -NoPatch; if($LASTEXITCODE -ne 0){ $blockers += ('master ingest exit code ' + $LASTEXITCODE); $status='degraded' } } catch { $blockers += ('master ingest failed: ' + $_.Exception.Message); $status='degraded' }
 }
-$smoke = [ordered]@{ schema_version=1; created_at=Get-GodModeIso; status=$status; mission_id=$missionId; result_path=$resultPath; stdout_log=$stdoutLog; stderr_log=$stderrLog; command=$cmdText; route=Get-GodModeProperty $router 'structured_worker_route' 'unknown'; blockers=$blockers }
+$doneResultPath = Join-GodModePath $root "queues/done/$missionId.result.json"
+$smoke = [ordered]@{ schema_version=1; created_at=Get-GodModeIso; status=$status; mission_id=$missionId; result_path=$resultPath; ingested_result_path=if(Test-Path -LiteralPath $doneResultPath){$doneResultPath}else{$null}; stdout_log=$stdoutLog; stderr_log=$stderrLog; command=$cmdText; route=Get-GodModeProperty $router 'structured_worker_route' 'unknown'; blockers=$blockers }
 Write-GodModeJsonAtomic (Join-GodModePath $root 'state/worker-smoke.json') $smoke | Out-Null
 $traceStatus = 'degraded'; if($status -eq 'passed'){ $traceStatus = 'success' }
 Add-GodModeTraceSpan $Project $missionId 'run-worker-smoke' $traceStatus @{smoke=$smoke} 'run_worker' 'SUMMARIZER' $cmdText $null @($resultPath,$stdoutLog,$stderrLog) @('schemas/worker-output.schema.json',$runSchemaPath,'inbox/results') 'Worker smoke completed or degraded with exact blockers.' | Out-Null
-Update-GodModeLiveResult $Project @{ status=if($status -eq 'passed'){'VERIFIED-OPERATIONAL-PHASE4'}else{'DEGRADED'}; headline='Worker smoke completed'; latest_proof_bundle=$resultPath; proof_bundles=@($resultPath); what_changed=@("Worker smoke status: $status"); what_still_failed=$blockers; next_repair_action=if($status -eq 'passed'){'Run Run-GodModeValidation.ps1.'}else{'Inspect state/worker-smoke.json and codex stderr log.'} } | Out-Null
+Update-GodModeLiveResult $Project @{ status=if($status -eq 'passed'){'VERIFIED-OPERATIONAL-PHASE5'}else{'DEGRADED'}; headline='Worker smoke completed'; latest_proof_bundle=$resultPath; proof_bundles=@($resultPath); what_changed=@("Worker smoke status: $status"); what_still_failed=$blockers; next_repair_action=if($status -eq 'passed'){'Run Run-GodModeValidation.ps1.'}else{'Inspect state/worker-smoke.json and codex stderr log.'} } | Out-Null
 Write-Host ("[WORKER] {0} {1}" -f $status,$resultPath)
 if ($status -eq 'passed') { exit 0 } else { exit 1 }
+
 
 
 

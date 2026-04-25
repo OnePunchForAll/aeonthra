@@ -4,9 +4,9 @@
   "status": "proposal_only",
   "auto_activate": false,
   "trust_required": true,
-  "write_boundary": ".codex-godmode/hooks/outbox/",
+  "write_boundary": ".codex-godmode/events/hooks.jsonl",
   "rules": [
-    "Hooks may write only to hook outbox.",
+    "Hooks may write only to .codex-godmode/events/hooks.jsonl.",
     "Master-controller remains the single writer for shared state and ledgers.",
     "No destructive action hooks are enabled by this proposal."
   ]
