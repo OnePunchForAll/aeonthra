@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-trace-crystal",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Chrono Facet",
+    "stability":  72,
+    "dna_seed":  "2087362932",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#9ee8ff",
+    "role":  "TRACE-CRYSTAL",
+    "xp":  0,
+    "form":  "timecut quartz runner",
+    "level":  1
+}

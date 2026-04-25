@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-browser-reality",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Viewport Warden",
+    "stability":  72,
+    "dna_seed":  "1043090797",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#73d2ff",
+    "role":  "BROWSER-REALITY",
+    "xp":  0,
+    "form":  "render-glass surveyor",
+    "level":  1
+}

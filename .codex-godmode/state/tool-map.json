@@ -1,0 +1,395 @@
+﻿{
+    "schema_version":  1,
+    "tools":  {
+                  "git":  {
+                              "candidates":  [
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Program Files\\Git\\cmd\\git.exe"
+                                                 }
+                                             ],
+                              "selected_path":  "C:\\Program Files\\Git\\cmd\\git.exe",
+                              "probe":  {
+                                            "stdout":  "git version 2.53.0.windows.3\n",
+                                            "timed_out":  false,
+                                            "stderr":  "",
+                                            "exit_code":  0
+                                        },
+                              "verified":  true,
+                              "windowsapps_path_risk":  false
+                          },
+                  "cmd":  {
+                              "candidates":  [
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\windows\\system32\\cmd.exe"
+                                                 }
+                                             ],
+                              "selected_path":  "C:\\windows\\system32\\cmd.exe",
+                              "probe":  {
+                                            "stdout":  "\r\nMicrosoft Windows [Version 10.0.26220.8283]\r\n",
+                                            "timed_out":  false,
+                                            "stderr":  "",
+                                            "exit_code":  0
+                                        },
+                              "verified":  true,
+                              "windowsapps_path_risk":  false
+                          },
+                  "rg":  {
+                             "candidates":  [
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\path\\rg.exe"
+                                                },
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\ProgramData\\chocolatey\\bin\\rg.exe"
+                                                },
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\Users\\aquae\\AppData\\Local\\Microsoft\\WinGet\\Links\\rg.exe"
+                                                }
+                                            ],
+                             "selected_path":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\path\\rg.exe",
+                             "probe":  {
+                                           "stdout":  "ripgrep 15.1.0 (rev af60c2de9d)\n\nfeatures:+pcre2\nsimd(compile):+SSE2,-SSSE3,-AVX2\nsimd(runtime):+SSE2,+SSSE3,+AVX2\n\nPCRE2 10.45 is available (JIT is available)\n",
+                                           "timed_out":  false,
+                                           "stderr":  "",
+                                           "exit_code":  0
+                                       },
+                             "verified":  true,
+                             "windowsapps_path_risk":  false
+                         },
+                  "pwsh":  {
+                               "candidates":  [
+                                                  {
+                                                      "from":  "Get-Command",
+                                                      "command_type":  "Application",
+                                                      "source":  "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe"
+                                                  },
+                                                  {
+                                                      "from":  "Get-Command",
+                                                      "command_type":  "Application",
+                                                      "source":  "C:\\Users\\aquae\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"
+                                                  }
+                                              ],
+                               "selected_path":  "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+                               "probe":  {
+                                             "stdout":  "PowerShell 7.6.1\r\n",
+                                             "timed_out":  false,
+                                             "stderr":  "",
+                                             "exit_code":  0
+                                         },
+                               "verified":  true,
+                               "windowsapps_path_risk":  true
+                           },
+                  "py":  {
+                             "candidates":  [
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\windows\\py.exe"
+                                                },
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Python\\Launcher\\py.exe"
+                                                },
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\Users\\aquae\\AppData\\Local\\Microsoft\\WindowsApps\\py.exe"
+                                                }
+                                            ],
+                             "selected_path":  "C:\\windows\\py.exe",
+                             "probe":  {
+                                           "stdout":  "Python 3.14.3\r\n",
+                                           "timed_out":  false,
+                                           "stderr":  "",
+                                           "exit_code":  0
+                                       },
+                             "verified":  true,
+                             "windowsapps_path_risk":  false
+                         },
+                  "codex":  {
+                                "candidates":  [
+                                                   {
+                                                       "from":  "Get-Command",
+                                                       "command_type":  "ExternalScript",
+                                                       "source":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex.ps1"
+                                                   },
+                                                   {
+                                                       "from":  "Get-Command",
+                                                       "command_type":  "Application",
+                                                       "source":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex.cmd"
+                                                   },
+                                                   {
+                                                       "from":  "Get-Command",
+                                                       "command_type":  "Application",
+                                                       "source":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex"
+                                                   }
+                                               ],
+                                "selected_path":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex.cmd",
+                                "probe":  {
+                                              "stdout":  "codex-cli 0.125.0\n",
+                                              "timed_out":  false,
+                                              "stderr":  "",
+                                              "exit_code":  0
+                                          },
+                                "verified":  true,
+                                "windowsapps_path_risk":  false
+                            },
+                  "node":  {
+                               "candidates":  [
+                                                  {
+                                                      "from":  "Get-Command",
+                                                      "command_type":  "Application",
+                                                      "source":  "C:\\Program Files\\nodejs\\node.exe"
+                                                  }
+                                              ],
+                               "selected_path":  "C:\\Program Files\\nodejs\\node.exe",
+                               "probe":  {
+                                             "stdout":  "v24.15.0\r\n",
+                                             "timed_out":  false,
+                                             "stderr":  "",
+                                             "exit_code":  0
+                                         },
+                               "verified":  true,
+                               "windowsapps_path_risk":  false
+                           },
+                  "npx":  {
+                              "candidates":  [
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "ExternalScript",
+                                                     "source":  "C:\\Program Files\\nodejs\\npx.ps1"
+                                                 },
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Program Files\\nodejs\\npx.cmd"
+                                                 },
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Program Files\\nodejs\\npx"
+                                                 }
+                                             ],
+                              "selected_path":  "C:\\Program Files\\nodejs\\npx.cmd",
+                              "probe":  {
+                                            "stdout":  "11.12.1\n",
+                                            "timed_out":  false,
+                                            "stderr":  "",
+                                            "exit_code":  0
+                                        },
+                              "verified":  true,
+                              "windowsapps_path_risk":  false
+                          },
+                  "gh":  {
+                             "candidates":  [
+                                                {
+                                                    "from":  "Get-Command",
+                                                    "command_type":  "Application",
+                                                    "source":  "C:\\Program Files\\GitHub CLI\\gh.exe"
+                                                }
+                                            ],
+                             "selected_path":  "C:\\Program Files\\GitHub CLI\\gh.exe",
+                             "probe":  {
+                                           "stdout":  "gh version 2.90.0 (2026-04-16)\nhttps://github.com/cli/cli/releases/tag/v2.90.0\n",
+                                           "timed_out":  false,
+                                           "stderr":  "",
+                                           "exit_code":  0
+                                       },
+                             "verified":  true,
+                             "windowsapps_path_risk":  false
+                         },
+                  "code":  {
+                               "candidates":  [
+                                                  {
+                                                      "from":  "Get-Command",
+                                                      "command_type":  "Application",
+                                                      "source":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd"
+                                                  },
+                                                  {
+                                                      "from":  "Get-Command",
+                                                      "command_type":  "Application",
+                                                      "source":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code"
+                                                  }
+                                              ],
+                               "selected_path":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd",
+                               "probe":  {
+                                             "stdout":  "1.117.0\n10c8e557c8b9f9ed0a87f61f1c9a44bde731c409\nx64\n",
+                                             "timed_out":  false,
+                                             "stderr":  "",
+                                             "exit_code":  0
+                                         },
+                               "verified":  true,
+                               "windowsapps_path_risk":  false
+                           },
+                  "python":  {
+                                 "candidates":  [
+                                                    {
+                                                        "from":  "Get-Command",
+                                                        "command_type":  "Application",
+                                                        "source":  "C:\\Python314\\python.exe"
+                                                    },
+                                                    {
+                                                        "from":  "Get-Command",
+                                                        "command_type":  "Application",
+                                                        "source":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+                                                    },
+                                                    {
+                                                        "from":  "Get-Command",
+                                                        "command_type":  "Application",
+                                                        "source":  "C:\\Users\\aquae\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe"
+                                                    },
+                                                    {
+                                                        "from":  "Get-Command",
+                                                        "command_type":  "Application",
+                                                        "source":  "C:\\Users\\aquae\\AppData\\Local\\Python\\bin\\python.exe"
+                                                    }
+                                                ],
+                                 "selected_path":  "C:\\Python314\\python.exe",
+                                 "probe":  {
+                                               "stdout":  "Python 3.14.3\r\n",
+                                               "timed_out":  false,
+                                               "stderr":  "",
+                                               "exit_code":  0
+                                           },
+                                 "verified":  true,
+                                 "windowsapps_path_risk":  false
+                             },
+                  "powershell":  {
+                                     "candidates":  [
+                                                        {
+                                                            "from":  "Get-Command",
+                                                            "command_type":  "Application",
+                                                            "source":  "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+                                                        }
+                                                    ],
+                                     "selected_path":  "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                                     "probe":  {
+                                                   "stdout":  "5.1.26100.8283\r\n",
+                                                   "timed_out":  false,
+                                                   "stderr":  "",
+                                                   "exit_code":  0
+                                               },
+                                     "verified":  true,
+                                     "windowsapps_path_risk":  false
+                                 },
+                  "dotnet":  {
+                                 "candidates":  [
+                                                    {
+                                                        "from":  "Get-Command",
+                                                        "command_type":  "Application",
+                                                        "source":  "C:\\Program Files\\dotnet\\dotnet.exe"
+                                                    }
+                                                ],
+                                 "selected_path":  "C:\\Program Files\\dotnet\\dotnet.exe",
+                                 "probe":  {
+                                               "stdout":  "10.0.201\r\n",
+                                               "timed_out":  false,
+                                               "stderr":  "",
+                                               "exit_code":  0
+                                           },
+                                 "verified":  true,
+                                 "windowsapps_path_risk":  false
+                             },
+                  "wsl":  {
+                              "candidates":  [
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\windows\\system32\\wsl.exe"
+                                                 },
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Users\\aquae\\AppData\\Local\\Microsoft\\WindowsApps\\wsl.exe"
+                                                 }
+                                             ],
+                              "selected_path":  "C:\\windows\\system32\\wsl.exe",
+                              "probe":  {
+                                            "stdout":  "W\u0000S\u0000L\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00002\u0000.\u00006\u0000.\u00003\u0000.\u00000\u0000\r\u0000\n\u0000K\u0000e\u0000r\u0000n\u0000e\u0000l\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00006\u0000.\u00006\u0000.\u00008\u00007\u0000.\u00002\u0000-\u00001\u0000\r\u0000\n\u0000W\u0000S\u0000L\u0000g\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00001\u0000.\u00000\u0000.\u00007\u00001\u0000\r\u0000\n\u0000M\u0000S\u0000R\u0000D\u0000C\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00001\u0000.\u00002\u0000.\u00006\u00003\u00005\u00003\u0000\r\u0000\n\u0000D\u0000i\u0000r\u0000e\u0000c\u0000t\u00003\u0000D\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00001\u0000.\u00006\u00001\u00001\u0000.\u00001\u0000-\u00008\u00001\u00005\u00002\u00008\u00005\u00001\u00001\u0000\r\u0000\n\u0000D\u0000X\u0000C\u0000o\u0000r\u0000e\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000n\u0000:\u0000 \u00001\u00000\u0000.\u00000\u0000.\u00002\u00006\u00001\u00000\u00000\u0000.\u00001\u0000-\u00002\u00004\u00000\u00003\u00003\u00001\u0000-\u00001\u00004\u00003\u00005\u0000.\u0000g\u0000e\u0000-\u0000r\u0000e\u0000l\u0000e\u0000a\u0000s\u0000e\u0000\r\u0000\n\u0000W\u0000i\u0000n\u0000d\u0000o\u0000w\u0000s\u0000 \u0000v\u0000e\u0000r\u0000s\u0000i\u0000o\u0000",
+                                            "timed_out":  false,
+                                            "stderr":  "",
+                                            "exit_code":  0
+                                        },
+                              "verified":  true,
+                              "windowsapps_path_risk":  false
+                          },
+                  "where":  {
+                                "candidates":  [
+                                                   {
+                                                       "from":  "Get-Command",
+                                                       "command_type":  "Application",
+                                                       "source":  "C:\\windows\\system32\\where.exe"
+                                                   }
+                                               ],
+                                "selected_path":  "C:\\windows\\system32\\where.exe",
+                                "probe":  {
+                                              "stdout":  "\r\nWHERE [/R dir] [/Q] [/F] [/T] pattern...\r\n\r\nDescription:\r\n    Displays the location of files that match the search pattern.\r\n    By default, the search is done along the current directory and\r\n    in the paths specified by the PATH environment variable.\r\n\r\nParameter List:\r\n    /R       Recursively searches and displays the files that match the\r\n             given pattern starting from the specif",
+                                              "timed_out":  false,
+                                              "stderr":  "",
+                                              "exit_code":  0
+                                          },
+                                "verified":  true,
+                                "windowsapps_path_risk":  false
+                            },
+                  "npm":  {
+                              "candidates":  [
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "ExternalScript",
+                                                     "source":  "C:\\Program Files\\nodejs\\npm.ps1"
+                                                 },
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Program Files\\nodejs\\npm.cmd"
+                                                 },
+                                                 {
+                                                     "from":  "Get-Command",
+                                                     "command_type":  "Application",
+                                                     "source":  "C:\\Program Files\\nodejs\\npm"
+                                                 }
+                                             ],
+                              "selected_path":  "C:\\Program Files\\nodejs\\npm.cmd",
+                              "probe":  {
+                                            "stdout":  "11.12.1\n",
+                                            "timed_out":  false,
+                                            "stderr":  "",
+                                            "exit_code":  0
+                                        },
+                              "verified":  true,
+                              "windowsapps_path_risk":  false
+                          }
+              },
+    "selected_summary":  {
+                             "git":  "C:\\Program Files\\Git\\cmd\\git.exe",
+                             "cmd":  "C:\\windows\\system32\\cmd.exe",
+                             "rg":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\path\\rg.exe",
+                             "pwsh":  "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.1.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+                             "py":  "C:\\windows\\py.exe",
+                             "codex":  "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex.cmd",
+                             "node":  "C:\\Program Files\\nodejs\\node.exe",
+                             "npx":  "C:\\Program Files\\nodejs\\npx.cmd",
+                             "gh":  "C:\\Program Files\\GitHub CLI\\gh.exe",
+                             "code":  "C:\\Users\\aquae\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd",
+                             "python":  "C:\\Python314\\python.exe",
+                             "powershell":  "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                             "dotnet":  "C:\\Program Files\\dotnet\\dotnet.exe",
+                             "wsl":  "C:\\windows\\system32\\wsl.exe",
+                             "where":  "C:\\windows\\system32\\where.exe",
+                             "npm":  "C:\\Program Files\\nodejs\\npm.cmd"
+                         },
+    "broken_helpers":  [
+
+                       ],
+    "generated_at":  "2026-04-25T06:34:09.2470817Z"
+}

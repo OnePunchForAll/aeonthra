@@ -1,0 +1,25 @@
+﻿{
+    "onedrive_path":  true,
+    "recommendation":  "Continue MVP; consider ASCII-safe mirror only if path failures occur.",
+    "non_ascii_git_remote_url":  "unknown",
+    "wsl_path":  false,
+    "project_path_non_ascii":  false,
+    "risks":  [
+                  "spaces_in_path",
+                  "parentheses_in_path",
+                  "onedrive_sync_path"
+              ],
+    "long_path_risk":  false,
+    "project_path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter",
+    "unc_path":  false,
+    "mapped_drive":  true,
+    "generated_at":  "2026-04-25T06:34:09.1685369Z",
+    "protected_system_location":  false,
+    "repo_under_windowsapps":  false,
+    "cloud_sync_path":  true,
+    "schema_version":  1,
+    "repo_under_program_files":  false,
+    "git_path_encoding_risk":  false,
+    "parentheses_in_critical_paths":  true,
+    "spaces_in_critical_paths":  true
+}

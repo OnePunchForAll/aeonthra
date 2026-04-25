@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-reality-router",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Route Prism",
+    "stability":  72,
+    "dna_seed":  "1122005264",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#a3bffa",
+    "role":  "REALITY-ROUTER",
+    "xp":  0,
+    "form":  "splitlight pathfinder",
+    "level":  1
+}

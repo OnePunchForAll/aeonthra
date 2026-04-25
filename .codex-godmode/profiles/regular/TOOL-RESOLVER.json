@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-tool-resolver",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Path Tuner",
+    "stability":  72,
+    "dna_seed":  "1636980413",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#b6f0c1",
+    "role":  "TOOL-RESOLVER",
+    "xp":  0,
+    "form":  "compass-claw resolver",
+    "level":  1
+}

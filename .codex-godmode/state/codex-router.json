@@ -1,0 +1,23 @@
+{
+  "visual_browser_route": "reality_router",
+  "codex_cli_installed": true,
+  "degraded_reasons": [
+    "codex_remote_plugin_sync_403_non_blocking"
+  ],
+  "codex_app_version": null,
+  "codex_app_server_exists": false,
+  "codex_app_installed": "unknown",
+  "codex_cli_version": "codex-cli 0.125.0",
+  "blockers": [],
+  "codex_exec_exists": true,
+  "generated_at": "2026-04-25T07:42:02.0074105Z",
+  "current_surface": "codex_app_or_cli_unknown",
+  "codex_command_executes": true,
+  "project_trusted": "unknown",
+  "structured_worker_route": "codex_exec_output_schema",
+  "schema_version": 1,
+  "codex_exec_output_schema_available": true,
+  "codex_exec_readonly_probe": "exit_0_marker_returned",
+  "codex_cli_path": "C:\\Users\\aquae\\AppData\\Roaming\\npm\\codex.ps1",
+  "codex_exec_json_available": true
+}

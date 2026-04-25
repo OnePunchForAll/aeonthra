@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-artifact-oracle",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Artifact Lantern",
+    "stability":  72,
+    "dna_seed":  "1022118215",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#ffdf99",
+    "role":  "ARTIFACT-ORACLE",
+    "xp":  0,
+    "form":  "archive-shell witness",
+    "level":  1
+}

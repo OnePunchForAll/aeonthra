@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-04-25T07:39:40.3891059Z",
+  "requested": "repair npm run typecheck",
+  "worktree_attempted": true,
+  "worktree_created": true,
+  "worktree_path": "C:\\Users\\aquae\\AppData\\Local\\Temp\\aeonthra-safe-patch-phase2-20260425003938",
+  "selected_route": "direct_safe_write_from_HEAD_for_two_regressed_files",
+  "rationale": "Current working tree has pre-existing broad deletions/untracked control-plane state; exact typecheck failures are caused by two tracked files regressed away from their existing exported contracts.",
+  "target_files": [
+    "apps/web/src/AeonthraShell.tsx",
+    "apps/web/src/lib/pdf-ingest.ts"
+  ]
+}

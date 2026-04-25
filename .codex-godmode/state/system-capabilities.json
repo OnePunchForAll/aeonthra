@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "browser_mode": "unknown",
+  "shell_name": "powershell",
+  "live_preview_mode": "static_preview",
+  "blockers": [],
+  "operating_system": "windows_pending_probe",
+  "frontend_framework_candidates": [
+    "React",
+    "Vite"
+  ],
+  "package_json_exists": true,
+  "validation_command_candidates": [
+    "npm run typecheck",
+    "npm test",
+    "npm run build"
+  ],
+  "computer_use_mode": "unavailable_on_windows",
+  "arena_mode": "css3d",
+  "dev_server_command_candidates": [
+    "npm run dev:web"
+  ],
+  "self_patch_approval_present": false,
+  "generated_at": "2026-04-25T06:15:04.5038168Z",
+  "protected_paths_detected": true,
+  "degraded_reasons": [
+    "probes_pending"
+  ]
+}

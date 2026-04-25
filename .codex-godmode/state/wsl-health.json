@@ -1,0 +1,22 @@
+﻿{
+    "current_codex_agent_mode":  "windows_or_unknown",
+    "default_distro":  "unknown",
+    "wsl2_installed":  "unknown",
+    "schema_version":  1,
+    "repo_filesystem":  "windows",
+    "blockers":  [
+
+                 ],
+    "wsl_command_probe_exit_code":  0,
+    "node_inside_wsl":  "not_probed",
+    "generated_at":  "2026-04-25T06:34:17.0631228Z",
+    "repo_accessible_from_wsl":  "not_probed",
+    "wsl_version_output":  " \u0000 \u0000N\u0000A\u0000M\u0000E\u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000S\u0000T\u0000A\u0000T\u0000E\u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000V\u0000E\u0000R\u0000S\u0000I\u0000O\u0000N\u0000\r\u0000\n\u0000*\u0000 \u0000U\u0000b\u0000u\u0000n\u0000t\u0000u\u0000 \u0000 \u0000 \u0000 \u0000S\u0000t\u0000o\u0000p\u0000p\u0000e\u0000d\u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u0000 \u00002\u0000\r\u0000\n\u0000",
+    "wsl_exe_available":  true,
+    "degraded_reasons":  {
+
+                         },
+    "path_translation_possible":  "unknown",
+    "git_inside_wsl":  "not_probed",
+    "python_inside_wsl":  "not_probed"
+}

@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-test-runner",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Talon Metric",
+    "stability":  72,
+    "dna_seed":  "522445639",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#74e0a3",
+    "role":  "TEST-RUNNER",
+    "xp":  0,
+    "form":  "metronome shell guardian",
+    "level":  1
+}

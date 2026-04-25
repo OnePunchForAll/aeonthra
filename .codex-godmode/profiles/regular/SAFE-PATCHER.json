@@ -1,0 +1,18 @@
+﻿{
+    "id":  "entity-safe-patcher",
+    "metabolic_rate":  "unknown",
+    "schema_version":  1,
+    "state":  "active",
+    "tier":  "seed",
+    "name":  "Needle Gate",
+    "stability":  72,
+    "dna_seed":  "1848712181",
+    "windows_route_status":  "probed_or_pending",
+    "browser_status":  "not_proven",
+    "latest_event":  "MVP profile generated from deterministic catalog",
+    "accent":  "#ffd18f",
+    "role":  "SAFE-PATCHER",
+    "xp":  0,
+    "form":  "stitchplate guardian",
+    "level":  1
+}
