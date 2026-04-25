@@ -1,7 +1,7 @@
 param([string]$Project='.',[string]$InAppProofPath='')
 $ErrorActionPreference='Continue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $S = Split-Path -Parent $MyInvocation.MyCommand.Path
-foreach($l in 'Common','Queue','TraceCrystal','Operational','Live') { . (Join-Path $S "lib/GodMode.$l.ps1") }
+foreach($l in 'Common','Queue','TraceCrystal','Operational','Live','Proof') { . (Join-Path $S "lib/GodMode.$l.ps1") }
 $root = Initialize-GodModeStructure $Project
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $bundleDir = Join-GodModePath $root "logs/browser-proof-$stamp"
@@ -29,13 +29,40 @@ if ($inApp) {
   $clickedCommentMode = [bool](Get-GodModeProperty $inApp 'clicked_comment_mode' $false)
   $consoleErrorCount = Get-GodModeProperty $inApp 'console_error_count' 0
 }
-$proof = [ordered]@{ schema_version=1; created_at=Get-GodModeIso; status=$status; route=$route; browser_use_status=if($status -eq 'passed'){'codex-browser-use-proof-recorded'}else{'not_proven_in_powershell'}; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; observations=@([ordered]@{target='live';url=$liveUrl;probe=$liveProbe},[ordered]@{target='arena';url=$arenaUrl;probe=$arenaProbe},[ordered]@{target='mission-control';url=$missionUrl;probe=$missionProbe}); clicked_comment_mode=$clickedCommentMode; console_error_count=$consoleErrorCount; blockers=$blockers; in_app_proof=$inApp }
+$visualPolicy = $null
+try {
+  $visualPolicy = Update-GodModeVisualProofPolicy $Project
+  if ((Get-GodModeProperty $visualPolicy 'status' '') -eq 'passed') {
+    $status = 'passed'
+    $route = [string](Get-GodModeProperty $visualPolicy 'selected_visual_proof_route' $route)
+    $blockers = @()
+    $policyDom = Get-GodModeProperty (Get-GodModeProperty $visualPolicy 'route_statuses' @{}) 'codex_browser_dom_console' $null
+    if($policyDom){
+      $clickedCommentMode = [bool](Get-GodModeProperty $policyDom 'clicked_comment_mode' $clickedCommentMode)
+      $consoleErrorCount = Get-GodModeProperty $policyDom 'console_error_count' $consoleErrorCount
+    }
+  } else {
+    foreach($b in @(Get-GodModeProperty $visualPolicy 'blockers' @())){ if($b){ $blockers += [string]$b } }
+  }
+} catch {
+  $blockers += "visual proof policy evaluation failed: $($_.Exception.Message)"
+}
+$browserUseStatus = if($status -eq 'passed'){
+  if($route -eq 'codex_browser_screenshot'){'codex-browser-screenshot-proof-recorded'}
+  elseif($route -eq 'chrome_headless_screenshot_fallback'){'codex-browser-dom-console-with-headless-screenshot-fallback'}
+  elseif($route -eq 'codex_browser_dom_console'){'codex-browser-dom-console-proof-recorded'}
+  else{'codex-browser-use-proof-recorded'}
+}else{'not_proven_in_powershell'}
+$proof = [ordered]@{ schema_version=1; created_at=Get-GodModeIso; status=$status; route=$route; browser_use_status=$browserUseStatus; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; observations=@([ordered]@{target='live';url=$liveUrl;probe=$liveProbe},[ordered]@{target='arena';url=$arenaUrl;probe=$arenaProbe},[ordered]@{target='mission-control';url=$missionUrl;probe=$missionProbe}); clicked_comment_mode=$clickedCommentMode; console_error_count=$consoleErrorCount; blockers=$blockers; in_app_proof=$inApp; visual_proof_policy=$visualPolicy }
 $proofPath = Join-Path $bundleDir 'browser-proof.json'
 Write-GodModeJsonAtomic $proofPath $proof | Out-Null
 $reality = Read-GodModeJson (Join-GodModePath $root 'state/reality-router.json') ([ordered]@{})
 $realityOut = [ordered]@{}
 foreach($p in $reality.PSObject.Properties) { $realityOut[$p.Name] = $p.Value }
-$realityOut['generated_at'] = Get-GodModeIso; $realityOut['selected_browser_route'] = $route; $realityOut['browser_use_active'] = ($status -eq 'passed'); $realityOut['browser_use_probe'] = if($status -eq 'passed'){'proof_bundle_recorded'}else{'blocked_from_powershell_context'}; $realityOut['latest_browser_proof'] = $proofPath; $realityOut['degraded_reasons'] = if($status -eq 'passed'){@()}else{@('codex_browser_use_not_proven')}; $realityOut['blockers'] = $blockers
+$degradedReasons = @()
+if($status -ne 'passed'){ $degradedReasons += 'codex_browser_use_not_proven' }
+foreach($d in @(Get-GodModeProperty $visualPolicy 'optional_degraded_evidence' @())){ if($d){ $degradedReasons += [string]$d } }
+$realityOut['generated_at'] = Get-GodModeIso; $realityOut['selected_browser_route'] = $route; $realityOut['browser_use_active'] = ($status -eq 'passed'); $realityOut['browser_use_probe'] = if($status -eq 'passed'){$browserUseStatus}else{'blocked_from_powershell_context'}; $realityOut['latest_browser_proof'] = $proofPath; $realityOut['visual_proof_policy'] = $visualPolicy; $realityOut['visual_proof_routes'] = Get-GodModeProperty $visualPolicy 'route_statuses' ([ordered]@{}); $realityOut['degraded_reasons'] = @($degradedReasons | Select-Object -Unique); $realityOut['blockers'] = $blockers
 Write-GodModeJsonAtomic (Join-GodModePath $root 'state/reality-router.json') $realityOut | Out-Null
 Update-GodModeLiveResult $Project @{ status=if($status -eq 'passed'){'VERIFIED-OPERATIONAL-PHASE5'}else{'DEGRADED'}; headline='Browser proof probe completed'; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; browser_status=$proof.browser_use_status; latest_proof_bundle=$proofPath; proof_bundles=@($proofPath); what_changed=@('Browser proof bundle written.'); what_still_failed=$blockers; next_repair_action=if($status -eq 'passed'){'Run Run-GodModeValidation.ps1.'}else{'Use Codex in-app Browser Use to inspect and click UI; do not claim browser-verified yet.'} } | Out-Null
 $traceStatus = 'degraded'; if($status -eq 'passed'){ $traceStatus = 'success' }

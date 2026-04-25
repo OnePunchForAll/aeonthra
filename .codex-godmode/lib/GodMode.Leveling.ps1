@@ -20,11 +20,17 @@ function Update-GodModeLevelingProjection {
   $trace=Read-GodModeJson (Join-GodModePath $r 'state/latest-trace-summary.json') ([ordered]@{})
   $clean=Read-GodModeJson (Join-GodModePath $r 'state/clean-doctor.json') ([ordered]@{status='unknown'})
   $reality=Read-GodModeJson (Join-GodModePath $r 'state/reality-router.json') ([ordered]@{})
+  $visualPolicy=Read-GodModeJson (Join-GodModePath $r 'state/visual-proof-policy.json') ([ordered]@{status='unknown';selected_visual_proof_route='unknown'})
+  try {
+    if (Get-Command Update-GodModeVisualProofPolicy -ErrorAction SilentlyContinue) {
+      $visualPolicy = Update-GodModeVisualProofPolicy $Project
+    }
+  } catch {}
   $beauty=Get-GodModeBeautyGateState $Project
   $blockers=@()
   if((Get-GodModeProperty $validation 'status' '') -ne 'passed'){ $blockers += 'validation_not_passed' }
   if((Get-GodModeProperty $worker 'status' '') -ne 'passed'){ $blockers += 'worker_smoke_not_passed' }
-  if((Get-GodModeProperty $reality 'selected_browser_route' '') -ne 'codex_browser_use_iab' -or -not (Get-GodModeLatestBrowserProofPath $Project)){ $blockers += 'browser_proof_not_passed' }
+  if((Get-GodModeProperty $visualPolicy 'status' '') -ne 'passed' -or -not (Get-GodModeLatestBrowserProofPath $Project)){ $blockers += 'browser_proof_not_passed' }
   if(-not (Get-GodModeProperty $trace 'summary_file' $null)){ $blockers += 'trace_crystal_missing' }
   if((Get-GodModeProperty $clean 'status' 'unknown') -notin @('CLEAN','DIRTY-BUT-SAFE')){ $blockers += 'clean_doctor_not_safe' }
   foreach($b in @(Get-GodModeProperty $status 'full_godmode_blockers' @())){ if($b){$blockers += "full_blocker:$b"} }
@@ -58,7 +64,7 @@ function Update-GodModeLevelingProjection {
     beauty_gate_status=$beautyStatus
     max_project_level_delta=5
     blockers=@($blockers | Select-Object -Unique)
-    evidence=[ordered]@{validation=(Get-GodModeProperty $validation 'status' 'unknown');worker=(Get-GodModeProperty $worker 'status' 'unknown');browser=(Get-GodModeProperty $reality 'selected_browser_route' 'unknown');trace=(Get-GodModeProperty $trace 'summary_file' $null);clean=(Get-GodModeProperty $clean 'status' 'unknown');beauty_gate=$beauty}
+    evidence=[ordered]@{validation=(Get-GodModeProperty $validation 'status' 'unknown');worker=(Get-GodModeProperty $worker 'status' 'unknown');browser=(Get-GodModeProperty $visualPolicy 'selected_visual_proof_route' (Get-GodModeProperty $reality 'selected_browser_route' 'unknown'));visual_proof_policy=$visualPolicy;trace=(Get-GodModeProperty $trace 'summary_file' $null);clean=(Get-GodModeProperty $clean 'status' 'unknown');beauty_gate=$beauty}
     agents=$agents
   }
   Write-GodModeJsonAtomic (Join-GodModePath $r 'state/leveling-projection.json') $projection | Out-Null

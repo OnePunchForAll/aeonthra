@@ -1,7 +1,7 @@
 param([string]$Project='.',[switch]$Json)
 $ErrorActionPreference='Continue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $S = Split-Path -Parent $MyInvocation.MyCommand.Path
-foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Operational','Health','Live') { . (Join-Path $S "lib/GodMode.$l.ps1") }
+foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Proof','Operational','Health','Live') { . (Join-Path $S "lib/GodMode.$l.ps1") }
 $root = Initialize-GodModeStructure $Project
 $status = Get-GodModeOperationalStatusObject $Project
 Write-GodModeJsonAtomic (Join-GodModePath $root 'state/status-summary.json') $status | Out-Null
@@ -21,6 +21,7 @@ $healthExtra = @{
   latest_browser_proof = $status.latest_browser_proof
   latest_worker_proof = $status.latest_worker_proof
   latest_trace_proof = $status.latest_trace_proof
+  visual_proof_policy = $status.visual_proof_policy
   ignored_runtime_tracking_state = $status.ignored_runtime_tracking_state
 }
 try { Update-GodModeHealth $Project $status.operational_level @($status.degraded_capabilities) @($status.phase5_core_blockers) $healthExtra | Out-Null } catch {}
@@ -39,6 +40,12 @@ Write-Host 'Server PIDs:'
 foreach($p in @($status.process_status)) { Write-Host (" - {0}: pid={1} alive={2} http={3} url={4}" -f $p.component,$p.pid,$p.alive,$p.http_ok,$p.url) }
 Write-Host ("Validation status: {0}" -f (Get-GodModeProperty $status.validation_status 'status' 'unknown'))
 Write-Host ("Browser proof status: {0}" -f (Get-GodModeProperty $status.browser_route_status 'selected_browser_route' 'unknown'))
+Write-Host ("Visual proof policy: {0} via {1}" -f (Get-GodModeProperty $status.visual_proof_policy 'status' 'unknown'), (Get-GodModeProperty $status.visual_proof_policy 'selected_visual_proof_route' 'unknown'))
+foreach($routeName in @('codex_browser_screenshot','codex_browser_dom_console','chrome_headless_screenshot_fallback','degraded_no_screenshot')) {
+  $routeInfo = Get-GodModeProperty (Get-GodModeProperty $status.visual_proof_policy 'route_statuses' @{}) $routeName $null
+  if($routeInfo){ Write-Host (" - visual route {0}: {1}" -f $routeName,(Get-GodModeProperty $routeInfo 'status' 'unknown')) }
+}
+foreach($degraded in @(Get-GodModeProperty $status.visual_proof_policy 'optional_degraded_evidence' @())){ if($degraded){ Write-Host (" - optional visual degradation: {0}" -f $degraded) } }
 Write-Host ("Codex worker route: {0}" -f (Get-GodModeProperty $status.codex_worker_route_status 'structured_worker_route' 'unknown'))
 Write-Host ("Latest proof bundle: {0}" -f $status.latest_proof_bundle)
 Write-Host ("Latest worker proof: {0}" -f $status.latest_worker_proof)

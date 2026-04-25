@@ -1,4 +1,8 @@
 Set-StrictMode -Version 2.0
+if (-not (Get-Command Get-GodModeVisualProofPolicy -ErrorAction SilentlyContinue)) {
+  $proofLib = Join-Path $PSScriptRoot 'GodMode.Proof.ps1'
+  if (Test-Path -LiteralPath $proofLib) { . $proofLib }
+}
 function Get-GodModeProperty {
   param($Object,[string]$Name,$Default=$null)
   if ($null -eq $Object) { return $Default }
@@ -436,6 +440,8 @@ function Get-GodModeOperationalStatusObject {
   $skills = Read-GodModeJson (Join-GodModePath $r 'state/skill-forge-status.json') ([ordered]@{status='unknown'})
   $routing = Get-GodModeFeedbackRoutingState $Project
   $runtimeTracking = Get-GodModeRuntimeTrackingState $Project
+  $visualPolicy = Read-GodModeJson (Join-GodModePath $r 'state/visual-proof-policy.json') ([ordered]@{status='unknown';selected_visual_proof_route='unknown';route_statuses=[ordered]@{};blockers=@('visual proof policy not evaluated')})
+  try { $visualPolicy = Update-GodModeVisualProofPolicy $Project } catch {}
   $latestProof = $null
   $latestProofFile = Get-ChildItem -LiteralPath (Join-GodModePath $r 'logs') -Recurse -Filter 'browser-proof.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if ($latestProofFile) { $latestProof = $latestProofFile.FullName }
@@ -466,7 +472,8 @@ function Get-GodModeOperationalStatusObject {
   if (-not ($missionComponent -and $missionComponent.http_ok)) { $coreBlockers += 'mission_control_http_missing' }
   if ((Get-GodModeProperty $validation 'status' '') -ne 'passed') { $coreBlockers += 'validation_not_passed' }
   if ((Get-GodModeProperty $worker 'status' '') -ne 'passed') { $coreBlockers += 'worker_smoke_not_passed' }
-  if (-not $latestProof -or (Get-GodModeProperty $reality 'selected_browser_route' '') -ne 'codex_browser_use_iab') { $coreBlockers += 'codex_browser_use_proof_missing' }
+  $visualProofPassed = ((Get-GodModeProperty $visualPolicy 'status' '') -eq 'passed')
+  if (-not $latestProof -or -not $visualProofPassed) { $coreBlockers += 'browser_visual_proof_policy_not_passed' }
   if (-not (Get-GodModeProperty $trace 'summary_file' $null)) { $coreBlockers += 'trace_crystal_missing' }
   if ($failedCount -gt 0) { $coreBlockers += 'failed_missions_unresolved' }
   if ((Get-GodModeProperty $runtimeTracking 'status' '') -ne 'safe') { $coreBlockers += 'runtime_artifacts_tracked' }
@@ -486,7 +493,10 @@ function Get-GodModeOperationalStatusObject {
   if ($unresolvedFeedback -gt 0 -and $classificationStatus -ne 'classified') { $fullBlockers += 'pending_feedback_unresolved_unclassified' }
   if ($unresolvedFeedback -gt 0 -and $classificationStatus -eq 'classified' -and $backlogCount -lt $unresolvedFeedback) { $fullBlockers += 'pending_feedback_not_all_backlog' }
   foreach($pair in @(@('internal_rules',$internalRules),@('internal_hooks',$internalHooks),@('skills',$skills))) { $st=[string](Get-GodModeProperty $pair[1] 'status' 'unknown'); if($st -notin @('passed','validated','enabled')){ $fullBlockers += ("{0}_not_ready:{1}" -f $pair[0],$st) } }
-  if ($fullBlockers.Count -eq 0) { $operationalLevel = 'FULL-GODMODE-OPERATIONAL' }
+  if(-not $visualProofPassed) {
+    foreach($b in @(Get-GodModeProperty $visualPolicy 'blockers' @())){ if($b){ $fullBlockers += "visual_proof:$b" } }
+  }
+  if ($fullBlockers.Count -eq 0) { $operationalLevel = 'FULL-GODMODE-OPERATIONAL-VISUAL' }
   $next = 'powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Run-GodModeValidation.ps1 -Project .'
   if (-not ($liveComponent -and $liveComponent.http_ok) -or -not ($arenaComponent -and $arenaComponent.http_ok) -or -not ($missionComponent -and $missionComponent.http_ok)) { $next = 'powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Start-GodMode.ps1 -Project .' }
   elseif ($failedCount -gt 0) { $next = 'powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Resolve-FailedMissions.ps1 -Project .' }
@@ -496,6 +506,6 @@ function Get-GodModeOperationalStatusObject {
   $workerProof = Get-GodModeProperty $worker 'ingested_result_path' $null
   if (-not $workerProof) { $workerProof = Get-GodModeProperty $worker 'result_path' $null }
   $degraded = @($degraded | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-  return [ordered]@{ schema_version=1; updated_at=Get-GodModeIso; operational_level=$operationalLevel; full_godmode_blockers=@($fullBlockers | Select-Object -Unique); phase5_core_blockers=@($coreBlockers | Select-Object -Unique); branch=$branch; git_status=$gitDirty; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; live_port=$livePort; arena_port=$arenaPort; mission_control_port=$missionPort; process_registry=$registry; process_status=$components; validation_status=$validation; clean_doctor_state=$clean; browser_route_status=$reality; codex_worker_route_status=$codex; worker_smoke=$worker; latest_proof_bundle=$latestProof; latest_browser_proof=$latestProof; latest_worker_proof=$workerProof; latest_trace_crystal=$trace; latest_trace_proof=(Get-GodModeProperty $trace 'summary_file' $null); latest_validation_bundle=$latestValidationPath; queue=$queue; active_missions=$queue.active; failed_missions=$queue.failed; failed_mission_state=$failedResolution; visual_feedback_routing=$routing; visual_feedback_count=(Get-GodModeProperty $routing 'feedback_count' 0); visual_feedback_routed_count=(Get-GodModeProperty $routing 'routed_count' 0); visual_feedback_unresolved_count=$unresolvedFeedback; visual_feedback_backlog_count=(Get-GodModeProperty $routing 'backlog_count' 0); visual_feedback_classification_status=(Get-GodModeProperty $routing 'classification_status' 'unclassified'); visual_feedback_resolution_report=(Get-GodModeProperty $routing 'resolution_report' $null); visual_feedback_explanation=if($unresolvedFeedback -gt 0){'Feedback creates proof-required review missions and does not authorize direct patches.'}elseif((Get-GodModeProperty $routing 'backlog_count' 0) -gt 0){'All remaining feedback items are explicitly classified proof-required backlog.'}else{'No unresolved feedback events.'}; rules_forge_state=$rules; hook_bus_state=$hooks; internal_rules_state=$internalRules; internal_hook_bus_state=$internalHooks; skill_forge_state=$skills; optional_codex_native_integrations=[ordered]@{ rules=$rules; hooks=$hooks }; ignored_runtime_tracking_state=$runtimeTracking; degraded_capability_count=(@($degraded | Select-Object -Unique)).Count; degraded_capabilities=@($degraded | Select-Object -Unique); next_recommended_command=$next }
+  return [ordered]@{ schema_version=1; updated_at=Get-GodModeIso; operational_level=$operationalLevel; full_godmode_blockers=@($fullBlockers | Select-Object -Unique); phase5_core_blockers=@($coreBlockers | Select-Object -Unique); branch=$branch; git_status=$gitDirty; live_url=$liveUrl; arena_url=$arenaUrl; mission_control_url=$missionUrl; live_port=$livePort; arena_port=$arenaPort; mission_control_port=$missionPort; process_registry=$registry; process_status=$components; validation_status=$validation; clean_doctor_state=$clean; browser_route_status=$reality; visual_proof_policy=$visualPolicy; codex_worker_route_status=$codex; worker_smoke=$worker; latest_proof_bundle=$latestProof; latest_browser_proof=$latestProof; latest_worker_proof=$workerProof; latest_trace_crystal=$trace; latest_trace_proof=(Get-GodModeProperty $trace 'summary_file' $null); latest_validation_bundle=$latestValidationPath; queue=$queue; active_missions=$queue.active; failed_missions=$queue.failed; failed_mission_state=$failedResolution; visual_feedback_routing=$routing; visual_feedback_count=(Get-GodModeProperty $routing 'feedback_count' 0); visual_feedback_routed_count=(Get-GodModeProperty $routing 'routed_count' 0); visual_feedback_unresolved_count=$unresolvedFeedback; visual_feedback_backlog_count=(Get-GodModeProperty $routing 'backlog_count' 0); visual_feedback_classification_status=(Get-GodModeProperty $routing 'classification_status' 'unclassified'); visual_feedback_resolution_report=(Get-GodModeProperty $routing 'resolution_report' $null); visual_feedback_explanation=if($unresolvedFeedback -gt 0){'Feedback creates proof-required review missions and does not authorize direct patches.'}elseif((Get-GodModeProperty $routing 'backlog_count' 0) -gt 0){'All remaining feedback items are explicitly classified proof-required backlog.'}else{'No unresolved feedback events.'}; rules_forge_state=$rules; hook_bus_state=$hooks; internal_rules_state=$internalRules; internal_hook_bus_state=$internalHooks; skill_forge_state=$skills; optional_codex_native_integrations=[ordered]@{ rules=$rules; hooks=$hooks }; ignored_runtime_tracking_state=$runtimeTracking; degraded_capability_count=(@($degraded | Select-Object -Unique)).Count; degraded_capabilities=@($degraded | Select-Object -Unique); next_recommended_command=$next }
 }
 

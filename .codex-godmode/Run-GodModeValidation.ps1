@@ -1,7 +1,7 @@
 param([string]$Project='.',[switch]$SkipWorkerSmoke)
 $ErrorActionPreference='Continue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $S = Split-Path -Parent $MyInvocation.MyCommand.Path
-foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Operational','Live','Health','InternalHookBus','Leveling') { . (Join-Path $S "lib/GodMode.$l.ps1") }
+foreach($l in 'Common','Queue','Schema','Safety','TraceCrystal','Operational','Live','Health','InternalHookBus','Proof','Leveling') { . (Join-Path $S "lib/GodMode.$l.ps1") }
 $root = Initialize-GodModeStructure $Project
 $projectPath = Resolve-GodModeProjectPath $Project
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
@@ -64,6 +64,23 @@ if($iabProof){ $browser = & (Join-Path $S 'Run-BrowserProof.ps1') -Project $Proj
 $browserExit = $LASTEXITCODE
 $checkStatus = 'degraded'; if($browserExit -eq 0){ if($iabProof){ $checkStatus = 'passed' } else { $checkStatus = 'degraded_or_passed' } }
 Add-Check 'browser-proof-smoke' $checkStatus @{exit_code=$browserExit;output=($browser -join "`n")}
+try {
+  $visualPolicy = Update-GodModeVisualProofPolicy $Project
+  $visualStatus = [string](Get-GodModeProperty $visualPolicy 'status' 'failed')
+  $visualCheckStatus = if($visualStatus -eq 'passed'){'passed'}else{'failed'}
+  Add-Check 'visual-proof-policy' $visualCheckStatus @{
+    selected_visual_proof_route = Get-GodModeProperty $visualPolicy 'selected_visual_proof_route' 'unknown'
+    route_statuses = Get-GodModeProperty $visualPolicy 'route_statuses' @{}
+    optional_degraded_evidence = Get-GodModeProperty $visualPolicy 'optional_degraded_evidence' @()
+    blockers = Get-GodModeProperty $visualPolicy 'blockers' @()
+  }
+  if($visualStatus -ne 'passed'){
+    foreach($b in @(Get-GodModeProperty $visualPolicy 'blockers' @())){ if($b){ $blockers += "visual proof policy: $b" } }
+  }
+} catch {
+  Add-Check 'visual-proof-policy' 'failed' @{error=$_.Exception.Message}
+  $blockers += 'Visual proof policy evaluation failed'
+}
 if(-not $SkipWorkerSmoke){
   $workerOut = & (Join-Path $S 'Run-WorkerSmoke.ps1') -Project $Project 2>&1
   $workerExit = $LASTEXITCODE
