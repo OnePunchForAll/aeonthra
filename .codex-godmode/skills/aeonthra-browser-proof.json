@@ -1,9 +1,15 @@
 {
   "schema_version": 1,
   "id": "aeonthra-browser-proof",
-  "title": "AEONTHRA Browser Proof",
-  "purpose": "Capture or truthfully degrade Browser Use proof for Live Result Viewer and Arena.",
+  "name": "AEONTHRA Browser Proof",
+  "status": "experimental",
+  "confidence_status": "experimental",
+  "purpose": "Capture or truthfully degrade Codex in-app Browser Use proof for Live Result Viewer and Arena.",
   "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Run-BrowserProof.ps1 -Project .",
+  "success_count": 0,
+  "failure_count": 0,
+  "proof_refs": [],
   "auto_activate": false,
-  "created_by": "aeonthra-phase3-5"
+  "created_by": "aeonthra-phase5",
+  "updated_at": "2026-04-25T09:09:38.1560907Z"
 }

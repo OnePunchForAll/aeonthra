@@ -31,6 +31,30 @@ function Invoke-MasterIteration {
     $failed += @{file='visual-feedback-routing';error=$_.Exception.Message}
     Add-GodModeTraceSpan $Project $script:run 'visual-feedback-routing' 'failed' @{error=$_.Exception.Message} 'route_visual_feedback' 'MASTER' '' $null @() @('live/visual-feedback-events.jsonl') 'Visual feedback routing failed.' | Out-Null
   }
+
+  try {
+    $hookPath = Join-GodModePath $root 'events/hooks.jsonl'
+    $acceptedHooks=@(); $rejectedHooks=@()
+    if(Test-Path -LiteralPath $hookPath){
+      foreach($line in Get-Content -LiteralPath $hookPath -Encoding UTF8){
+        if([string]::IsNullOrWhiteSpace($line)){continue}
+        try{
+          $hookEvent=$line|ConvertFrom-Json
+          $scan=Test-GodModeInjectionText ([string](Get-GodModeProperty $hookEvent 'event_path' '')) $Project
+          if(-not $scan.ok){$rejectedHooks += @{reason='injection';hits=$scan.hits;event=$hookEvent}}
+          else{$acceptedHooks += $hookEvent}
+        }catch{$rejectedHooks += @{reason='parse';error=$_.Exception.Message}}
+      }
+    }
+    $hookState=@{schema_version=1;updated_at=Get-GodModeIso;accepted_count=$acceptedHooks.Count;rejected_count=$rejectedHooks.Count;write_boundary='.codex-godmode/events/hooks.jsonl'}
+    Write-GodModeJsonAtomic (Join-GodModePath $root 'state/hook-events-ingested.json') $hookState | Out-Null
+    $events += @{type='hook_events_ingested';accepted=$acceptedHooks.Count;rejected=$rejectedHooks.Count;created_at=Get-GodModeIso}
+    Add-GodModeTraceSpan $Project $script:run 'ingest-hook-events' 'success' $hookState 'ingest_hook_events' 'MASTER' '' $null @('state/hook-events-ingested.json') @('events/hooks.jsonl','state/hook-events-ingested.json') 'Hook events ingested through master projection boundary.' | Out-Null
+  } catch {
+    $failed += @{file='events/hooks.jsonl';error=$_.Exception.Message}
+    Add-GodModeTraceSpan $Project $script:run 'ingest-hook-events' 'failed' @{error=$_.Exception.Message} 'ingest_hook_events' 'MASTER' '' $null @() @('events/hooks.jsonl') 'Hook event ingestion failed.' | Out-Null
+  }
+
   foreach($file in Get-ChildItem (Join-GodModePath $root 'inbox/results') -Filter '*.json' -ErrorAction SilentlyContinue){
     try{
       $res=Get-Content $file.FullName -Raw -Encoding UTF8|ConvertFrom-Json
@@ -80,8 +104,8 @@ function Invoke-MasterIteration {
   $liveUrl=[string](Get-Content (Join-GodModePath $root 'state/latest-result.url') -ErrorAction SilentlyContinue|Select-Object -First 1)
   $arenaPort=[string](Get-Content (Join-GodModePath $root 'state/arena-port.txt') -ErrorAction SilentlyContinue|Select-Object -First 1)
   $arenaUrl=if($arenaPort){"http://127.0.0.1:$arenaPort/"}else{$null}
-  Update-GodModeLiveResult $Project @{status='VERIFIED-OPERATIONAL-PHASE4';headline='Master operational loop projected state';live_url=$liveUrl;arena_url=$arenaUrl;browser_status=if($NoBrowser){'browser disabled for master loop'}else{(Get-GodModeProperty $reality 'selected_browser_route' 'unknown')};latest_proof_bundle=if($proofs.Count){$proofs[0]}else{$null};what_changed=@("Processed inbox results: $($processed.Count)","Routed visual feedback: $(@($script:allRouted).Count)","Pending missions: $($queue.depth.pending)");what_still_failed=@($failed|%{$_.error})+@($reality.degraded_reasons);validation_logs=$logs;proof_bundles=$proofs;next_repair_action='Run Status-GodMode.ps1 or Run-GodModeValidation.ps1.';queue_depth=$queue.depth;latest_trace=(Join-GodModePath $root "traces/$script:run.summary.json")}|Out-Null
-  Update-GodModeHealth $Project 'VERIFIED-OPERATIONAL-PHASE4' @($reality.degraded_reasons) @($failed|%{$_.error}) @{selected_codex_route=$codex.structured_worker_route;selected_browser_route=$reality.selected_browser_route;selected_patch_route=$patch.selected_route;live_result_status='ready';xp_awarded_by_host=(30*$processed.Count);active_agents=0;latest_trace=(Join-GodModePath $root "traces/$script:run.summary.json")}|Out-Null
+  Update-GodModeLiveResult $Project @{status='VERIFIED-OPERATIONAL-PHASE5';headline='Master operational loop projected state';live_url=$liveUrl;arena_url=$arenaUrl;browser_status=if($NoBrowser){'browser disabled for master loop'}else{(Get-GodModeProperty $reality 'selected_browser_route' 'unknown')};latest_proof_bundle=if($proofs.Count){$proofs[0]}else{$null};what_changed=@("Processed inbox results: $($processed.Count)","Routed visual feedback: $(@($script:allRouted).Count)","Pending missions: $($queue.depth.pending)");what_still_failed=@($failed|%{$_.error})+@($reality.degraded_reasons);validation_logs=$logs;proof_bundles=$proofs;next_repair_action='Run Status-GodMode.ps1 or Run-GodModeValidation.ps1.';queue_depth=$queue.depth;latest_trace=(Join-GodModePath $root "traces/$script:run.summary.json")}|Out-Null
+  Update-GodModeHealth $Project 'VERIFIED-OPERATIONAL-PHASE5' @($reality.degraded_reasons) @($failed|%{$_.error}) @{selected_codex_route=$codex.structured_worker_route;selected_browser_route=$reality.selected_browser_route;selected_patch_route=$patch.selected_route;live_result_status='ready';xp_awarded_by_host=(30*$processed.Count);active_agents=0;latest_trace=(Join-GodModePath $root "traces/$script:run.summary.json")}|Out-Null
   $status=Get-GodModeOperationalStatusObject $Project
   Write-GodModeJsonAtomic (Join-GodModePath $root 'state/status-summary.json') $status | Out-Null
   $traceStatus = 'success'; if($failed.Count){ $traceStatus = 'degraded' }

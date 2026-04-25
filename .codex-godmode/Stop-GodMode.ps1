@@ -12,7 +12,7 @@ foreach($entry in @(Get-GodModeProperty $registry 'components' @())) {
   $scriptPath = [string](Get-GodModeProperty $entry 'script_path' '')
   $owned = [string](Get-GodModeProperty $entry 'owned_by' '')
   $event = [ordered]@{ component=$component; pid=$pidValue; attempted_at=Get-GodModeIso; result='skipped'; reason=$null }
-  if ($component -in @('arena','live') -and $owned -eq 'aeonthra-godmode' -and $scriptPath -match '\.codex-godmode' -and $null -ne $pidValue -and "$pidValue" -ne '') {
+  if ($component -in @('arena','live','mission-control') -and $owned -eq 'aeonthra-godmode' -and $scriptPath -match '\.codex-godmode' -and $null -ne $pidValue -and "$pidValue" -ne '') {
     try {
       Get-Process -Id ([int]$pidValue) -ErrorAction Stop | Out-Null
       Stop-Process -Id ([int]$pidValue) -Force -ErrorAction Stop

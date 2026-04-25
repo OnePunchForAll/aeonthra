@@ -1,13 +1,13 @@
-# AEONTHRA Browser Proof
+# AEONTHRA Git Clean Doctor
 
 Use this proposed skill only after manual review. It is not auto-activated.
 
 ## Purpose
-Capture or truthfully degrade Codex in-app Browser Use proof for Live Result Viewer and Arena.
+Verify source dirty state is safe and runtime artifacts remain ignored/not tracked.
 
 ## Daily command
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Run-BrowserProof.ps1 -Project .
+powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Test-GodModeClean.ps1 -Project .
 ```
 
 ## Safety

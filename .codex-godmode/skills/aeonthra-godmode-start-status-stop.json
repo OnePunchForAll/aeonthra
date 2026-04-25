@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "aeonthra-godmode-start-status-stop",
+  "name": "AEONTHRA GodMode Start Status Stop",
+  "status": "experimental",
+  "confidence_status": "experimental",
+  "purpose": "Run the local loopback control plane daily start/status/stop workflow without touching old app code.",
+  "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Start-GodMode.ps1 -Project . ; powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Status-GodMode.ps1 -Project . ; powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Stop-GodMode.ps1 -Project .",
+  "success_count": 0,
+  "failure_count": 0,
+  "proof_refs": [],
+  "auto_activate": false,
+  "created_by": "aeonthra-phase5",
+  "updated_at": "2026-04-25T09:09:38.1010384Z"
+}

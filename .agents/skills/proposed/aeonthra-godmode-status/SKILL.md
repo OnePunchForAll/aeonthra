@@ -1,23 +1,16 @@
----
-name: aeonthra-godmode-status
-description: "Use this proposed skill only after manual review. It is not auto-activated."
----
-
 # AEONTHRA GodMode Status
 
 Use this proposed skill only after manual review. It is not auto-activated.
 
 ## Purpose
-Summarize process, queue, proof, trace, worker, and degraded capability state.
-
-## Safe workflow
-1. Stay inside the GodMode-only repo.
-2. Prefer read-only probes before writes.
-3. Write proof bundles or exact blockers.
-4. Never claim success without the relevant command/browser/worker evidence.
+Summarize process, queue, proof, trace, worker, forge, and degraded capability state.
 
 ## Daily command
-``powershell
+```powershell
 powershell -ExecutionPolicy Bypass -File .\.codex-godmode\Status-GodMode.ps1 -Project .
-``
+```
 
+## Safety
+- Runtime proof is required before success claims.
+- Do not auto-activate this skill.
+- Do not write runtime/proof artifacts into Git.

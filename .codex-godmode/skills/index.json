@@ -1,0 +1,125 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-04-25T10:32:52.9623173Z",
+    "status":  "passed",
+    "skills":  [
+                   {
+                       "id":  "aeonthra-browser-proof",
+                       "name":  "AEONTHRA Browser Proof",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-browser-proof.json"
+                   },
+                   {
+                       "id":  "aeonthra-git-clean-doctor",
+                       "name":  "AEONTHRA Git Clean Doctor",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-git-clean-doctor.json"
+                   },
+                   {
+                       "id":  "aeonthra-godmode-start-status-stop",
+                       "name":  "AEONTHRA GodMode Start Status Stop",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-godmode-start-status-stop.json"
+                   },
+                   {
+                       "id":  "aeonthra-godmode-status",
+                       "name":  "AEONTHRA GodMode Status",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-godmode-status.json"
+                   },
+                   {
+                       "id":  "aeonthra-trace-crystal",
+                       "name":  "AEONTHRA Trace Crystal",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-trace-crystal.json"
+                   },
+                   {
+                       "id":  "aeonthra-visual-feedback-routing",
+                       "name":  "AEONTHRA Visual Feedback Routing",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-visual-feedback-routing.json"
+                   },
+                   {
+                       "id":  "aeonthra-worker-smoke",
+                       "name":  "AEONTHRA Worker Smoke",
+                       "status":  "experimental",
+                       "success_count":  0,
+                       "failure_count":  0,
+                       "proof_refs":  [
+
+                                      ],
+                       "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.codex-godmode\\skills\\aeonthra-worker-smoke.json"
+                   }
+               ],
+    "proposed_skills":  [
+                            {
+                                "id":  "aeonthra-browser-proof",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-browser-proof\\SKILL.md",
+                                "bytes":  497
+                            },
+                            {
+                                "id":  "aeonthra-git-clean-doctor",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-git-clean-doctor\\SKILL.md",
+                                "bytes":  490
+                            },
+                            {
+                                "id":  "aeonthra-godmode-start-status-stop",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-godmode-start-status-stop\\SKILL.md",
+                                "bytes":  690
+                            },
+                            {
+                                "id":  "aeonthra-godmode-status",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-godmode-status\\SKILL.md",
+                                "bytes":  472
+                            },
+                            {
+                                "id":  "aeonthra-trace-crystal",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-trace-crystal\\SKILL.md",
+                                "bytes":  480
+                            },
+                            {
+                                "id":  "aeonthra-visual-feedback-routing",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-visual-feedback-routing\\SKILL.md",
+                                "bytes":  519
+                            },
+                            {
+                                "id":  "aeonthra-worker-smoke",
+                                "path":  "C:\\Users\\aquae\\OneDrive\\Documents (Dokyumento)\\Canvas Converter\\.agents\\skills\\proposed\\aeonthra-worker-smoke\\SKILL.md",
+                                "bytes":  482
+                            }
+                        ],
+    "blockers":  [
+
+                 ],
+    "note":  "Skill definitions are not auto-activated. Promotion requires proof_refs."
+}

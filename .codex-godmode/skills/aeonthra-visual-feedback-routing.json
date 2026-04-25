@@ -1,9 +1,15 @@
 {
   "schema_version": 1,
   "id": "aeonthra-visual-feedback-routing",
-  "title": "AEONTHRA Visual Feedback Routing",
-  "purpose": "Convert persisted Comment Mode events into proof-required missions without patching directly.",
-  "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\master-controller.ps1 -Project . -Mode safe -Once -NoSpawn -NoPatch",
+  "name": "AEONTHRA Visual Feedback Routing",
+  "status": "experimental",
+  "confidence_status": "experimental",
+  "purpose": "Convert persisted Comment Mode events into proof-required review missions without patching directly.",
+  "command": "powershell -ExecutionPolicy Bypass -File .\\.codex-godmode\\Process-VisualFeedback.ps1 -Project .",
+  "success_count": 0,
+  "failure_count": 0,
+  "proof_refs": [],
   "auto_activate": false,
-  "created_by": "aeonthra-phase3-5"
+  "created_by": "aeonthra-phase5",
+  "updated_at": "2026-04-25T09:09:38.1842215Z"
 }
